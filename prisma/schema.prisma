@@ -1,0 +1,668 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Core auth ───────────────────────────────────────────────────────────────
+
+model User {
+  id           String            @id @default(cuid())
+  email        String            @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  memberships  WorkspaceMember[]
+}
+
+model Workspace {
+  id                    String               @id @default(cuid())
+  name                  String
+  slug                  String               @unique
+  plan                  Plan                 @default(starter)
+  isAgency              Boolean              @default(false)
+  segment               String?
+  logoUrl               String?
+  primaryColor          String?
+  metaPixelId           String?
+  metaAccessToken       String?
+  metaAdAccountId       String?
+  instagramAccountId    String?
+  googleAdsCustomerId   String?
+  googleAdsRefreshToken String?
+  currency              String               @default("BRL")
+  svcTrafeqoPago        Boolean              @default(false)
+  svcSocialMedia        Boolean              @default(false)
+  svcGoogleBusiness     Boolean              @default(false)
+  svcGoogleLocal        Boolean              @default(false)
+  metaVisibleMetrics    String[]             @default([])
+  googleVisibleMetrics  String[]             @default([])
+  funnelMetrics         String[]             @default([])
+  pipelineColumns       Json?
+  uazapiUrl             String?
+  uazapiAdminToken      String?
+  uazapiInstanceName    String?
+  uazapiToken           String?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  members               WorkspaceMember[]
+  leads                 Lead[]
+  stages                PipelineStage[]
+  capiEvents            CAPIEvent[]
+  trackerEvents         TrackerEvent[]
+  campaigns             Campaign[]
+  manualMetrics         ManualMetric[]
+  deals                 Deal[]
+  products              Product[]
+  metaAdsData           MetaAdsData[]
+  metaAdsDailyData      MetaAdsDailyData[]
+  googleAdsData         GoogleAdsData[]
+  googleAdsDailyData    GoogleAdsDailyData[]
+  googleAdsKeywords     GoogleAdsKeyword[]
+  googleBusinessData    GoogleBusinessData[]
+  socialMediaData       SocialMediaData[]
+  socialPosts           SocialPost[]
+  insights              Insight[]
+  conversations         Conversation[]
+  supportTags           SupportTag[]
+  taskSpaces            TaskSpace[]
+  taskProjects          TaskProject[]
+  tasks                 Task[]
+  customFields          CustomField[]
+  mediaFiles            MediaFile[]
+}
+
+model ManualMetric {
+  id          String    @id @default(cuid())
+  workspaceId String
+  service     String
+  metricKey   String
+  value       Float
+  period      String
+  note        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, service, metricKey, period])
+}
+
+model WorkspaceMember {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        Role      @default(attendant)
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+}
+
+// ─── CRM / Pipeline ──────────────────────────────────────────────────────────
+
+model PipelineStage {
+  id               String      @id @default(cuid())
+  workspaceId      String
+  name             String
+  color            String      @default("#6a11cb")
+  order            Int         @default(0)
+  triggerCapiEvent CAPITrigger @default(none)
+  createdAt        DateTime    @default(now())
+  workspace        Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  leads            Lead[]
+}
+
+model Lead {
+  id              String        @id @default(cuid())
+  workspaceId     String
+  name            String
+  email           String?
+  phone           String?
+  source          String?
+  utmSource       String?
+  utmMedium       String?
+  utmCampaign     String?
+  utmContent      String?
+  utmTerm         String?
+  fbclid          String?
+  gclid           String?
+  ctwaClid        String?
+  pipelineStageId String        @map("stageId")
+  dealValue       Float?
+  closedAt        DateTime?
+  tags            String[]      @default([])
+  notes           String?
+  metadata        Json?
+  displayOrder    Int?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  workspace       Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  stage           PipelineStage @relation(fields: [pipelineStageId], references: [id])
+  capiEvents      CAPIEvent[]
+  deals           Deal[]
+  conversations   Conversation[]
+}
+
+model Deal {
+  id          String    @id @default(cuid())
+  workspaceId String
+  leadId      String
+  productId   String?
+  value       Float
+  status      String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  lead        Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  product     Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+}
+
+model Product {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  price       Float
+  description String?
+  currency    String    @default("BRL")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  deals       Deal[]
+}
+
+// ─── CAPI / Tracking ─────────────────────────────────────────────────────────
+
+model CAPIEvent {
+  id           String      @id @default(cuid())
+  workspaceId  String
+  leadId       String?
+  eventName    String
+  eventTime    DateTime
+  eventId      String      @unique
+  source       EventSource
+  matchQuality Float?
+  attempts     Int         @default(0)
+  sentAt       DateTime?
+  metaResponse Json?
+  status       EventStatus @default(queued)
+  createdAt    DateTime    @default(now())
+  userData     Json?
+  customData   Json?
+  workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  lead         Lead?       @relation(fields: [leadId], references: [id], onDelete: SetNull)
+}
+
+model TrackerEvent {
+  id          String    @id @default(cuid())
+  workspaceId String
+  eventType   String
+  url         String
+  referrer    String?
+  userAgent   String?
+  ip          String?
+  fbclid      String?
+  gclid       String?
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmContent  String?
+  utmTerm     String?
+  userEmail   String?
+  userPhone   String?
+  fbp         String?
+  fbc         String?
+  sentAt      DateTime
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model Campaign {
+  id          String    @id @default(cuid())
+  workspaceId String
+  platform    Platform
+  externalId  String
+  name        String
+  status      String    @default("active")
+  spend       Float     @default(0)
+  impressions Int       @default(0)
+  clicks      Int       @default(0)
+  leads       Int       @default(0)
+  sales       Int       @default(0)
+  revenue     Float     @default(0)
+  syncedAt    DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, platform, externalId])
+}
+
+// ─── Meta Ads ────────────────────────────────────────────────────────────────
+
+model MetaAdsData {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  period         String    // YYYY-MM
+  valorGasto     Float?
+  impressoes     Float?
+  alcance        Float?
+  frequencia     Float?
+  cliques        Float?
+  ctr            Float?
+  cpc            Float?
+  resultados     Float?
+  custoResultado Float?
+  roas           Float?
+  observations   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, period])
+}
+
+model MetaAdsDailyData {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  date           DateTime
+  campaignName   String?
+  campaignId     String?
+  valorGasto     Float?
+  impressoes     Float?
+  alcance        Float?
+  cliques        Float?
+  ctr            Float?
+  cpc            Float?
+  resultados     Float?
+  custoResultado Float?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, date, campaignId])
+}
+
+// ─── Google Ads ──────────────────────────────────────────────────────────────
+
+model GoogleAdsData {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  period         String    // YYYY-MM
+  valorGasto     Float?
+  impressoes     Float?
+  cliques        Float?
+  ctr            Float?
+  cpc            Float?
+  resultados     Float?
+  custoResultado Float?
+  leadesBc       Float?
+  observations   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, period])
+}
+
+model GoogleAdsDailyData {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  date           DateTime
+  campaignName   String?
+  campaignId     String?
+  valorGasto     Float?
+  impressoes     Float?
+  cliques        Float?
+  ctr            Float?
+  cpc            Float?
+  resultados     Float?
+  custoResultado Float?
+  leadesBc       Float?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, date, campaignId])
+}
+
+model GoogleAdsKeyword {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  period       String    // YYYY-MM
+  keyword      String
+  matchType    String?
+  campaignName String?
+  adGroupName  String?
+  impressions  Float     @default(0)
+  clicks       Float     @default(0)
+  ctr          Float     @default(0)
+  cost         Float     @default(0)
+  conversions  Float     @default(0)
+  cpc          Float     @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, period, keyword, matchType, campaignName])
+}
+
+// ─── Google Business Profile ──────────────────────────────────────────────────
+
+model GoogleBusinessData {
+  id                     String    @id @default(cuid())
+  workspaceId            String
+  period                 String    // YYYY-MM
+  profileViews           Float?
+  phoneCalls             Float?
+  routeRequests          Float?
+  websiteVisits          Float?
+  chatMessages           Float?
+  whatsappClicks         Float?
+  googleSearchViews      Float?
+  googleMapsViews        Float?
+  totalReviews           Float?
+  averageStars           Float?
+  newReviewsThisMonth    Float?
+  reviewsWithoutComments Float?
+  likesPositiveReviews   Float?
+  likesNegativeReviews   Float?
+  totalCitations         Float?
+  routeSimulations       Float?
+  citationsThisMonth     Float?
+  keywords               Json?
+  profileRating          Float?
+  postsThisMonth         Float?
+  mapPositionAvg         Float?
+  searchPositionAvg      Float?
+  competitorCount        Float?
+  observations           String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  workspace              Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, period])
+}
+
+// ─── Social Media ─────────────────────────────────────────────────────────────
+
+model SocialMediaData {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  period          String    // YYYY-MM
+  platform        String    // instagram | facebook | tiktok | youtube
+  followers       Float?
+  followersGrowth Float?
+  reach           Float?
+  impressions     Float?
+  engagement      Float?
+  engagementRate  Float?
+  posts           Float?
+  stories         Float?
+  saves           Float?
+  shares          Float?
+  comments        Float?
+  likes           Float?
+  profileVisits   Float?
+  websiteClicks   Float?
+  observations    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, period, platform])
+}
+
+model SocialPost {
+  id          String    @id @default(cuid())
+  workspaceId String
+  platform    String
+  postId      String?
+  type        String?   // reel | post | story | carrossel | video
+  publishedAt DateTime?
+  caption     String?
+  mediaUrl    String?
+  likes       Float?
+  comments    Float?
+  shares      Float?
+  saves       Float?
+  reach       Float?
+  impressions Float?
+  plays       Float?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, platform, postId])
+}
+
+// ─── Support / Conversas ─────────────────────────────────────────────────────
+
+model Conversation {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  customerPhone String
+  customerName  String?
+  leadId        String?
+  assignedTo    String?
+  status        String    @default("open")
+  lastMessageAt DateTime?
+  unreadCount   Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  lead      Lead?             @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  messages  Message[]
+  tags      ConversationTag[]
+
+  @@unique([workspaceId, customerPhone])
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  content        String
+  direction      String
+  senderName     String?
+  senderUserId   String?
+  externalId     String?  @unique
+  reactions      Json     @default("[]")
+  sentAt         DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
+
+model SupportTag {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  color       String   @default("#6a11cb")
+  createdAt   DateTime @default(now())
+
+  workspace     Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversations ConversationTag[]
+}
+
+model ConversationTag {
+  conversationId String
+  tagId          String
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  tag          SupportTag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, tagId])
+}
+
+// ─── Task management ─────────────────────────────────────────────────────────
+
+model TaskSpace {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  color       String   @default("#6a11cb")
+  icon        String?
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  folders      TaskFolder[]
+  lists        TaskProject[]
+  customFields CustomField[]
+}
+
+model TaskFolder {
+  id        String   @id @default(cuid())
+  spaceId   String
+  name      String
+  color     String   @default("#475569")
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+  space     TaskSpace    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  lists     TaskProject[]
+}
+
+model TaskProject {
+  id          String   @id @default(cuid())
+  workspaceId String
+  spaceId     String?
+  folderId    String?
+  name        String
+  color       String   @default("#6a11cb")
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  space     TaskSpace?  @relation(fields: [spaceId], references: [id], onDelete: SetNull)
+  folder    TaskFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  tasks     Task[]
+}
+
+model Task {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  projectId     String?
+  title         String
+  description   String?
+  status        String    @default("todo")
+  priority      String    @default("medium")
+  assigneeId    String?
+  assigneeName  String?
+  startDate     DateTime?
+  dueDate       DateTime?
+  position      Float     @default(0)
+  parentId      String?
+  taskTags      String[]  @default([])
+  createdById   String
+  createdByName String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  workspace         Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project           TaskProject?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  parent            Task?             @relation("TaskSubtasks", fields: [parentId], references: [id], onDelete: Cascade)
+  subtasks          Task[]            @relation("TaskSubtasks")
+  comments          TaskComment[]
+  customFieldValues CustomFieldValue[]
+}
+
+model TaskComment {
+  id        String   @id @default(cuid())
+  taskId    String
+  userId    String
+  userName  String
+  content   String
+  createdAt DateTime @default(now())
+  task      Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model CustomField {
+  id          String   @id @default(cuid())
+  workspaceId String
+  spaceId     String?
+  name        String
+  type        String   @default("text")   // text | number | date | select | checkbox | url
+  options     Json?                        // [{label, color}] for select type
+  required    Boolean  @default(false)
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  space     TaskSpace? @relation(fields: [spaceId], references: [id], onDelete: SetNull)
+  values    CustomFieldValue[]
+}
+
+model CustomFieldValue {
+  id            String   @id @default(cuid())
+  taskId        String
+  customFieldId String
+  value         String?
+  task          Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  field         CustomField @relation(fields: [customFieldId], references: [id], onDelete: Cascade)
+  @@unique([taskId, customFieldId])
+}
+
+// ─── Insights / Notes ─────────────────────────────────────────────────────────
+
+model Insight {
+  id          String    @id @default(cuid())
+  workspaceId String
+  service     String    // meta | google | social | gbp | crm | geral
+  period      String?   // YYYY-MM
+  content     String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Plan {
+  starter
+  pro
+  agency
+}
+
+enum Role {
+  admin
+  manager
+  attendant
+  viewer
+}
+
+enum CAPITrigger {
+  none
+  lead
+  purchase
+}
+
+enum EventSource {
+  site
+  crm
+  whatsapp
+  manual
+  webhook
+}
+
+enum EventStatus {
+  queued
+  sent
+  failed
+}
+
+enum Platform {
+  meta
+  google
+}
+
+model MediaFile {
+  id          String   @id @default(cuid())
+  workspaceId String
+  mimeType    String
+  data        String   // base64 data URL (data:image/jpeg;base64,...)
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
