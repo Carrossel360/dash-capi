@@ -9,6 +9,7 @@ export interface WorkspaceServices {
   socialMedia: boolean
   googleBusiness: boolean
   googleLocal: boolean
+  contentStudio: boolean
 }
 
 export interface WorkspaceInfo {

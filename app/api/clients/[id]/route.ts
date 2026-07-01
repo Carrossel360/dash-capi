@@ -36,7 +36,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const {
     name, segment, plan, metaPixelId, metaAccessToken, googleAdsCustomerId,
-    currency, svcTrafeqoPago, svcSocialMedia, svcGoogleBusiness, svcGoogleLocal,
+    currency, svcTrafeqoPago, svcSocialMedia, svcGoogleBusiness, svcGoogleLocal, svcContentStudio,
     metaVisibleMetrics, googleVisibleMetrics, funnelMetrics,
   } = await req.json()
 
@@ -54,6 +54,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(svcSocialMedia !== undefined && { svcSocialMedia }),
       ...(svcGoogleBusiness !== undefined && { svcGoogleBusiness }),
       ...(svcGoogleLocal !== undefined && { svcGoogleLocal }),
+      ...(svcContentStudio !== undefined && { svcContentStudio }),
       ...(metaVisibleMetrics !== undefined && { metaVisibleMetrics }),
       ...(googleVisibleMetrics !== undefined && { googleVisibleMetrics }),
       ...(funnelMetrics !== undefined && { funnelMetrics }),

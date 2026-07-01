@@ -40,6 +40,7 @@ model Workspace {
   svcSocialMedia        Boolean              @default(false)
   svcGoogleBusiness     Boolean              @default(false)
   svcGoogleLocal        Boolean              @default(false)
+  svcContentStudio      Boolean              @default(false)
   metaVisibleMetrics    String[]             @default([])
   googleVisibleMetrics  String[]             @default([])
   funnelMetrics         String[]             @default([])
@@ -75,6 +76,7 @@ model Workspace {
   tasks                 Task[]
   customFields          CustomField[]
   mediaFiles            MediaFile[]
+  carousels             Carousel[]
 }
 
 model ManualMetric {
@@ -657,12 +659,31 @@ enum Platform {
   google
 }
 
+enum CarouselFormat {
+  square // 1:1
+  story  // 9:16
+}
+
 model MediaFile {
   id          String   @id @default(cuid())
   workspaceId String
   mimeType    String
   data        String   // base64 data URL (data:image/jpeg;base64,...)
   createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+// ─── Content Studio ──────────────────────────────────────────────────────────
+
+model Carousel {
+  id          String         @id @default(cuid())
+  workspaceId String
+  title       String
+  format      CarouselFormat @default(square)
+  slides      Json           // Slide[] — see lib/content-studio/types.ts
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }

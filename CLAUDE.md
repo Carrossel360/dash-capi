@@ -27,6 +27,7 @@ Copy `.env.example` to `.env`. Required vars:
 - `NEXT_PUBLIC_API_URL` — public URL used inside the generated tracker script
 - `CRON_SECRET` — guards `/api/cron/capi`
 - `META_TEST_EVENT_CODE` — optional, activates Meta test event mode
+- `OPENAI_API_KEY` — used by Content Studio for GPT-4o (slide text) and DALL·E 3 (slide images)
 
 ## Architecture
 
@@ -51,12 +52,15 @@ All data is scoped to a `Workspace`. Every authenticated API route reads `worksp
 ### Data hashing
 `buildHashedUserData` in `lib/utils.ts` SHA-256 hashes email (lowercased+trimmed) and phone (digits only) before sending to Meta. `calculateMatchQuality` scores 0–10 based on which fields are present.
 
+### Content Studio (AI carousel generator)
+Gated by the `svcContentStudio` workspace flag (same pattern as `svcSocialMedia` etc. — toggled per client under `clientes/[id]`). Flow: the list page (`content-studio`) collects a topic/slide count/format, calls `POST /api/content-studio/generate` (GPT-4o via `lib/openai.ts`) to get slide text, assembles full `Slide`/`CanvasElement` JSON using the presets in `lib/content-studio/layouts.ts`, then persists via `POST /api/content-studio` as a `Carousel` row (`slides` stored as `Json`). The editor (`content-studio/[id]`) renders/edits slides with Fabric.js (dynamically imported, client-only) and can generate per-slide background images via `POST /api/content-studio/generate-image` (DALL·E 3), stored through the existing `uploadMedia` (`lib/storage.ts`) base64-in-Postgres pattern. Export (single PNG / ZIP of all slides) happens entirely client-side via Fabric's `toDataURL` + `jszip`/`file-saver` — no server round-trip.
+
 ### Frontend routing
 Uses Next.js App Router with two route groups:
 - `app/(auth)/` — login page, no sidebar
 - `app/(dashboard)/` — authenticated pages with `Sidebar` + `Toaster`
 
-Dashboard pages: `dashboard`, `campanhas` (campaigns), `clientes` (clients/CRM), `pipeline` (kanban), `trafego-pago`, `social-media`, `google-business`, `google-local`, `conversas`, `events`, `settings`.
+Dashboard pages: `dashboard`, `campanhas` (campaigns), `clientes` (clients/CRM), `pipeline` (kanban), `trafego-pago`, `social-media`, `google-business`, `google-local`, `conversas`, `events`, `settings`, `content-studio` (AI carousel generator + canvas editor).
 
 ### State management
 Zustand (`lib/store/auth.ts`) is the only global store — holds user, JWT token, current workspace, and list of accessible workspaces. All API calls from the client attach `Authorization: Bearer <token>` manually.

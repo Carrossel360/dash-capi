@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import {
   ArrowLeft, Save, Eye, EyeOff, Loader2, CheckCircle, Copy, Users, Zap, BarChart2,
-  TrendingUp, Share2, MapPin, Star, DollarSign, MessageCircle,
+  TrendingUp, Share2, MapPin, Star, DollarSign, MessageCircle, Sparkles,
   UserPlus, Trash2, ChevronDown, Key, Smartphone, Wifi, WifiOff, RefreshCw, Link2,
 } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
@@ -31,6 +31,7 @@ const SERVICES = [
   { key: 'svcSocialMedia', label: 'Social Media', icon: Share2, desc: 'Instagram + Facebook' },
   { key: 'svcGoogleBusiness', label: 'Google Business Profile', icon: MapPin, desc: 'Perfil no Maps + Avaliações' },
   { key: 'svcGoogleLocal', label: 'Google Local Service', icon: Star, desc: 'Anúncios locais do Google' },
+  { key: 'svcContentStudio', label: 'Content Studio (IA)', icon: Sparkles, desc: 'Carrosséis gerados com IA' },
 ]
 
 const META_METRICS = [
@@ -80,7 +81,7 @@ interface ClientDetail {
   googleAdsCustomerId: string | null; createdAt: string
   currency: string
   svcTrafeqoPago: boolean; svcSocialMedia: boolean
-  svcGoogleBusiness: boolean; svcGoogleLocal: boolean
+  svcGoogleBusiness: boolean; svcGoogleLocal: boolean; svcContentStudio: boolean
   metaVisibleMetrics: string[]; googleVisibleMetrics: string[]; funnelMetrics: string[]
   members: { id: string; role: string; user: { id: string; name: string; email: string } }[]
   stages: { id: string; name: string; color: string; order: number; triggerCapiEvent: string }[]
@@ -127,7 +128,7 @@ export default function ClienteDetailPage() {
   const [googleAdsCustomerId, setGoogleAdsCustomerId] = useState('')
   const [services, setServices] = useState({
     svcTrafeqoPago: false, svcSocialMedia: false,
-    svcGoogleBusiness: false, svcGoogleLocal: false,
+    svcGoogleBusiness: false, svcGoogleLocal: false, svcContentStudio: false,
   })
   const [metaVisible, setMetaVisible] = useState<string[]>([])
   const [googleVisible, setGoogleVisible] = useState<string[]>([])
@@ -150,6 +151,7 @@ export default function ClienteDetailPage() {
           svcSocialMedia: w.svcSocialMedia ?? false,
           svcGoogleBusiness: w.svcGoogleBusiness ?? false,
           svcGoogleLocal: w.svcGoogleLocal ?? false,
+          svcContentStudio: w.svcContentStudio ?? false,
         })
         setMetaVisible(w.metaVisibleMetrics ?? [])
         setGoogleVisible(w.googleVisibleMetrics ?? [])

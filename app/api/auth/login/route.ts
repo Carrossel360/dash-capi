@@ -50,6 +50,7 @@ export async function POST(req: NextRequest) {
           socialMedia: ws.svcSocialMedia,
           googleBusiness: ws.svcGoogleBusiness,
           googleLocal: ws.svcGoogleLocal,
+          contentStudio: ws.svcContentStudio,
         },
         funnelMetrics: ws.funnelMetrics,
         metaVisibleMetrics: ws.metaVisibleMetrics,

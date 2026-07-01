@@ -6,11 +6,11 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, TrendingUp, Share2, MapPin, Star,
   Users, Megaphone, MessageSquare, Zap, Settings, Building2,
-  ChevronLeft, ChevronRight, LogOut, Lock, X, Phone, CheckSquare,
+  ChevronLeft, ChevronRight, LogOut, Lock, X, Phone, CheckSquare, Sparkles,
 } from 'lucide-react'
 import { useAuthStore } from '@/lib/store/auth'
 
-type ServiceKey = 'trafeqoPago' | 'socialMedia' | 'googleBusiness' | 'googleLocal'
+type ServiceKey = 'trafeqoPago' | 'socialMedia' | 'googleBusiness' | 'googleLocal' | 'contentStudio'
 
 const navGroups = [
   {
@@ -21,6 +21,12 @@ const navGroups = [
       { label: 'Social Media', href: '/social-media', icon: Share2, service: 'socialMedia' as ServiceKey, adminOnly: false },
       { label: 'Google Business', href: '/google-business', icon: MapPin, service: 'googleBusiness' as ServiceKey, adminOnly: false },
       { label: 'Google Local', href: '/google-local', icon: Star, service: 'googleLocal' as ServiceKey, adminOnly: false },
+    ],
+  },
+  {
+    label: 'Criação',
+    items: [
+      { label: 'Content Studio', href: '/content-studio', icon: Sparkles, service: 'contentStudio' as ServiceKey, adminOnly: false },
     ],
   },
   {
@@ -51,6 +57,7 @@ const SERVICE_LABELS: Record<ServiceKey, string> = {
   socialMedia: 'Social Media',
   googleBusiness: 'Google Business Profile',
   googleLocal: 'Google Local Service',
+  contentStudio: 'Content Studio (IA)',
 }
 
 export default function Sidebar() {
