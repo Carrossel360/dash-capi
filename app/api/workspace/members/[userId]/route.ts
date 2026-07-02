@@ -40,9 +40,21 @@ export async function DELETE(req: NextRequest, { params }: { params: { userId: s
     return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
   }
 
+  const workspace = await prisma.workspace.findUnique({
+    where: { id: auth.workspaceId },
+    select: { isAgency: true },
+  })
+
   await prisma.workspaceMember.delete({
     where: { workspaceId_userId: { workspaceId: auth.workspaceId, userId: params.userId } },
   })
+
+  // Acesso "Agência" é replicado em todos os clientes — remoção precisa ser simétrica.
+  if (workspace?.isAgency) {
+    await prisma.workspaceMember.deleteMany({
+      where: { userId: params.userId, workspace: { isAgency: false } },
+    })
+  }
 
   return NextResponse.json({ ok: true })
 }

@@ -130,6 +130,17 @@ export default function SettingsPage() {
   const [loadingQr, setLoadingQr] = useState(false)
   const [waStatus,  setWaStatus]  = useState<'connected' | 'disconnected' | 'unknown'>('unknown')
 
+  // Adicionar membro (Equipe)
+  const [showAddMember, setShowAddMember] = useState(false)
+  const [addingMember, setAddingMember] = useState(false)
+  const [newMemberName, setNewMemberName] = useState('')
+  const [newMemberEmail, setNewMemberEmail] = useState('')
+  const [newMemberPassword, setNewMemberPassword] = useState('')
+  const [newMemberRole, setNewMemberRole] = useState('viewer')
+  const [accessMode, setAccessMode] = useState<'client' | 'agency'>('client')
+  const [clientOptions, setClientOptions] = useState<{ id: string; name: string }[]>([])
+  const [selectedClientId, setSelectedClientId] = useState('')
+
   const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
 
   const load = useCallback(async () => {
@@ -215,6 +226,56 @@ export default function SettingsPage() {
       setStages(p => p.filter(s => s.id !== id))
       toast.success('Estágio removido')
     } catch { toast.error('Não foi possível remover — existem leads neste estágio') }
+  }
+
+  async function openAddMember() {
+    setShowAddMember(true)
+    if (clientOptions.length === 0) {
+      try {
+        const res = await fetch('/api/clients', { headers: { Authorization: `Bearer ${token}` } })
+        const data = await res.json()
+        setClientOptions((data.clients ?? []).map((c: { id: string; name: string }) => ({ id: c.id, name: c.name })))
+      } catch { /* dropdown fica vazio, usuário pode tentar de novo */ }
+    }
+  }
+
+  function resetAddMemberForm() {
+    setShowAddMember(false)
+    setNewMemberName('')
+    setNewMemberEmail('')
+    setNewMemberPassword('')
+    setNewMemberRole('viewer')
+    setAccessMode('client')
+    setSelectedClientId('')
+  }
+
+  async function handleAddMember() {
+    if (!newMemberName || !newMemberEmail || !newMemberPassword) {
+      toast.error('Preencha nome, e-mail e senha'); return
+    }
+    if (accessMode === 'client' && !selectedClientId) {
+      toast.error('Escolha um cliente'); return
+    }
+
+    setAddingMember(true)
+    try {
+      const url = accessMode === 'agency'
+        ? '/api/workspace/members'
+        : `/api/clients/${selectedClientId}/members`
+      const res = await fetch(url, {
+        method: 'POST', headers: h,
+        body: JSON.stringify({ name: newMemberName, email: newMemberEmail, password: newMemberPassword, role: newMemberRole }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao adicionar membro')
+      toast.success(accessMode === 'agency' ? `Membro adicionado com acesso a ${data.clientsGranted} clientes` : 'Membro adicionado')
+      resetAddMemberForm()
+      load()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao adicionar membro')
+    } finally {
+      setAddingMember(false)
+    }
   }
 
   async function saveWhatsApp() {
@@ -446,12 +507,97 @@ export default function SettingsPage() {
           {/* ── Equipe ── */}
           {tab === 'equipe' && (
             <div className="glass rounded-2xl p-5 space-y-5">
-              <div>
-                <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-                  <Users className="w-4 h-4 text-[#8b5cf6]" /> Equipe
-                </h2>
-                <p className="text-xs text-slate-500 mt-1">Membros com acesso a <span className="text-white">{currentWorkspace?.name}</span>.</p>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                    <Users className="w-4 h-4 text-[#8b5cf6]" /> Equipe
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-1">Membros com acesso a <span className="text-white">{currentWorkspace?.name}</span>.</p>
+                </div>
+                {canManage && isAgency && !showAddMember && (
+                  <button onClick={openAddMember}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-white gradient-brand hover:opacity-90 transition-all flex-shrink-0">
+                    <Plus className="w-3.5 h-3.5" /> Adicionar membro
+                  </button>
+                )}
               </div>
+
+              {showAddMember && (
+                <div className="p-4 rounded-xl border border-[#2d2550] bg-[#0f0b1e] space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Nome">
+                      <TextInput value={newMemberName} onChange={setNewMemberName} placeholder="Nome completo" />
+                    </Field>
+                    <Field label="E-mail">
+                      <TextInput value={newMemberEmail} onChange={setNewMemberEmail} placeholder="email@exemplo.com" />
+                    </Field>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Senha inicial">
+                      <TextInput value={newMemberPassword} onChange={setNewMemberPassword} placeholder="Senha" secret />
+                    </Field>
+                    <Field label="Permissão">
+                      <select
+                        value={newMemberRole}
+                        onChange={e => setNewMemberRole(e.target.value)}
+                        className="w-full px-3 py-2.5 text-sm bg-[#1e1635] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb] transition-colors"
+                      >
+                        {Object.entries(ROLE_LABELS).map(([id, label]) => (
+                          <option key={id} value={id}>{label}</option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+
+                  <Field label="Acesso">
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setAccessMode('client')}
+                        className="flex-1 py-2 rounded-lg text-xs font-semibold border transition-all"
+                        style={accessMode === 'client'
+                          ? { background: 'rgba(106,17,203,0.15)', borderColor: '#6a11cb', color: '#fff' }
+                          : { borderColor: '#2d2550', color: '#94a3b8' }}>
+                        Cliente específico
+                      </button>
+                      <button type="button" onClick={() => setAccessMode('agency')}
+                        className="flex-1 py-2 rounded-lg text-xs font-semibold border transition-all"
+                        style={accessMode === 'agency'
+                          ? { background: 'rgba(245,163,20,0.15)', borderColor: '#F5A314', color: '#fff' }
+                          : { borderColor: '#2d2550', color: '#94a3b8' }}>
+                        Agência (acesso total)
+                      </button>
+                    </div>
+                  </Field>
+
+                  {accessMode === 'client' && (
+                    <Field label="Cliente">
+                      <select
+                        value={selectedClientId}
+                        onChange={e => setSelectedClientId(e.target.value)}
+                        className="w-full px-3 py-2.5 text-sm bg-[#1e1635] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb] transition-colors"
+                      >
+                        <option value="">Selecione um cliente...</option>
+                        {clientOptions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </Field>
+                  )}
+                  {accessMode === 'agency' && (
+                    <p className="text-[11px] text-slate-500">Essa pessoa vai enxergar todos os clientes existentes e os que forem criados no futuro.</p>
+                  )}
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <button onClick={handleAddMember} disabled={addingMember}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg gradient-brand text-white text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-all">
+                      {addingMember ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                      Adicionar
+                    </button>
+                    <button onClick={resetAddMemberForm}
+                      className="px-4 py-2 rounded-lg text-xs font-medium text-slate-400 border border-[#2d2550] hover:text-white transition-all">
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
                 {(ws?.members ?? []).map(m => {
                   const isSelf = m.user.id === (currentWorkspace as any)?.userId

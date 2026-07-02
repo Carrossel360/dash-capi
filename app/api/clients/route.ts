@@ -93,6 +93,18 @@ export async function POST(req: NextRequest) {
     create: { workspaceId: workspace.id, userId: auth.userId, role: 'admin' },
   })
 
+  // Membros com acesso "Agência" (acesso total) ganham acesso automático a clientes novos também
+  const agencyMembers = await prisma.workspaceMember.findMany({
+    where: { workspace: { isAgency: true }, userId: { not: auth.userId } },
+  })
+  for (const am of agencyMembers) {
+    await prisma.workspaceMember.upsert({
+      where: { workspaceId_userId: { workspaceId: workspace.id, userId: am.userId } },
+      update: { role: am.role },
+      create: { workspaceId: workspace.id, userId: am.userId, role: am.role },
+    })
+  }
+
   // Cria estágios padrão do pipeline
   const stages = [
     { name: 'Novo Lead', color: '#6a11cb', order: 0, triggerCapiEvent: 'none' as const },
