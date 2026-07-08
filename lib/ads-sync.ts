@@ -1,7 +1,17 @@
 import type { Workspace } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { fetchMetaInsights } from '@/lib/meta-ads'
+import { fetchMetaInsights, type MetaInsightAction } from '@/lib/meta-ads'
 import { fetchGoogleAdsReport, isGoogleAdsConfigured, type GoogleAdsMcc } from '@/lib/google-ads'
+
+// Action types que a Meta usa pra "Conversa iniciada" (objetivo Mensagens — WhatsApp/Messenger/IG Direct).
+const MESSAGING_ACTION_TYPES = ['onsite_conversion.messaging_conversation_started_7d', 'messaging_conversation_started_7d']
+
+function sumActions(actions: MetaInsightAction[] | undefined, types: string[]): number {
+  if (!actions) return 0
+  return actions
+    .filter(a => types.includes(a.action_type))
+    .reduce((acc, a) => acc + (parseFloat(a.value) || 0), 0)
+}
 
 const SYNC_WINDOW_DAYS = 3 // janela deslizante: reprocessa os últimos dias a cada sync, corrige atraso de atribuição
 
@@ -53,6 +63,7 @@ export async function syncWorkspaceMetaAds(workspace: Workspace): Promise<SyncRe
           cliques: f(r.clicks),
           ctr: f(r.ctr),
           cpc: f(r.cpc),
+          conversasIniciadas: sumActions(r.actions, MESSAGING_ACTION_TYPES),
         },
         update: {
           campaignName: r.campaign_name ?? null,
@@ -62,6 +73,7 @@ export async function syncWorkspaceMetaAds(workspace: Workspace): Promise<SyncRe
           cliques: f(r.clicks),
           ctr: f(r.ctr),
           cpc: f(r.cpc),
+          conversasIniciadas: sumActions(r.actions, MESSAGING_ACTION_TYPES),
         },
       })
     }

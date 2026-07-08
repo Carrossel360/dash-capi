@@ -74,6 +74,7 @@ export async function GET(req: NextRequest) {
       daily.reduce((acc, r) => acc + (Number((r as Record<string, unknown>)[key]) || 0), 0)
 
     const cpm = (spend: number, impressions: number) => impressions > 0 ? (spend / impressions) * 1000 : 0
+    const costPer = (spend: number, count: number) => count > 0 ? spend / count : 0
 
     const kpis = daily.length > 0 ? {
       spend:           sum('valorGasto'),
@@ -85,8 +86,10 @@ export async function GET(req: NextRequest) {
       cpc:             daily.length ? sum('cpc') / daily.length : 0,
       cost_per_result: daily.length ? sum('custoResultado') / daily.length : 0,
       roas:            monthly?.roas ?? null,
-      leads_bc: null, messaging_conversations_started: null,
-      cost_per_conversation: null, post_engagement: null,
+      leads_bc: null,
+      messaging_conversations_started: sum('conversasIniciadas'),
+      cost_per_conversation: costPer(sum('valorGasto'), sum('conversasIniciadas')),
+      post_engagement: null,
       followers: null, profile_visits: null, cost_per_link_click: null,
       cpm:             cpm(sum('valorGasto'), sum('impressoes')),
       hasData: true,
@@ -101,6 +104,7 @@ export async function GET(req: NextRequest) {
       cpc:             monthly?.cpc ?? 0,
       cost_per_result: monthly?.custoResultado ?? 0,
       roas:            monthly?.roas ?? null,
+      // Dado mensal legado (importado do Supabase) não tem conversas iniciadas por campanha.
       leads_bc: null, messaging_conversations_started: null,
       cost_per_conversation: null, post_engagement: null,
       followers: null, profile_visits: null, cost_per_link_click: null,

@@ -7,6 +7,11 @@ interface MetaInsightsOptions {
   until: string // YYYY-MM-DD
 }
 
+export interface MetaInsightAction {
+  action_type: string
+  value: string
+}
+
 export interface MetaInsightRow {
   date_start: string
   campaign_id?: string
@@ -18,6 +23,7 @@ export interface MetaInsightRow {
   clicks?: string
   ctr?: string
   cpc?: string
+  actions?: MetaInsightAction[]
 }
 
 // Busca insights diários por campanha via Meta Graph API (Marketing API / ads_read).
@@ -31,7 +37,7 @@ export async function fetchMetaInsights({ adAccountId, accessToken, since, until
       level: 'campaign',
       time_increment: 1,
       time_range: JSON.stringify({ since, until }),
-      fields: 'campaign_id,campaign_name,spend,impressions,reach,frequency,clicks,ctr,cpc',
+      fields: 'campaign_id,campaign_name,spend,impressions,reach,frequency,clicks,ctr,cpc,actions',
     },
   })
 

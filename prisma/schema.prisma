@@ -282,6 +282,7 @@ model MetaAdsDailyData {
   cpc            Float?
   resultados     Float?
   custoResultado Float?
+  conversasIniciadas Float?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
