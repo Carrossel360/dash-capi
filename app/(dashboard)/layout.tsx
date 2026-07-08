@@ -6,12 +6,23 @@ import Sidebar from '@/components/Sidebar'
 import { useAuthStore } from '@/lib/store/auth'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, _hydrated } = useAuthStore()
+  const { isAuthenticated, _hydrated, token, updateCurrentWorkspace } = useAuthStore()
   const router = useRouter()
 
   useEffect(() => {
     if (_hydrated && !isAuthenticated) router.push('/login')
   }, [isAuthenticated, _hydrated, router])
+
+  // Refresca currentWorkspace do banco ao carregar o app — sem isso, mudanças feitas pelo
+  // admin (métricas visíveis, serviços contratados, etc.) só chegam no cliente se ele
+  // deslogar/logar de novo ou trocar de workspace explicitamente.
+  useEffect(() => {
+    if (!_hydrated || !isAuthenticated || !token) return
+    fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.workspace) updateCurrentWorkspace(d.workspace) })
+      .catch(() => {})
+  }, [_hydrated, isAuthenticated, token]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!_hydrated) {
     return (

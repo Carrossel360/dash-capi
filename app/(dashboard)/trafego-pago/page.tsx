@@ -169,6 +169,11 @@ function MatrixParticles({ color, topPct }: { color: string; topPct: number }) {
 
 type LayerColor = typeof FC[0]
 
+// Camadas estreitas do funil não têm espaço pro rótulo completo — usa iniciais (ex: "Conversas Iniciadas" -> "CI")
+function labelInitials(label: string): string {
+  return label.split(' ').filter(w => w.length > 2).slice(0, 2).map(w => w[0]).join('').toUpperCase() || label.slice(0, 2).toUpperCase()
+}
+
 function VisualFunnel({ keys, kpiMap, currency, palette = FC }: {
   keys: string[]
   kpiMap: Record<string, { label: string; value: number; fmt: (v: number, c: string) => string }>
@@ -225,14 +230,18 @@ function VisualFunnel({ keys, kpiMap, currency, palette = FC }: {
                   </div>
                 </div>
                 <div style={{ position: 'absolute', top: -(RIM_H / 2), left: `${tL}%`, width: `${tW}%`, height: RIM_H, borderRadius: '50%', background: [`radial-gradient(ellipse at 50% 32%, rgba(255,255,255,0.35) 0%, transparent 55%)`, `radial-gradient(ellipse at 50% 82%, rgba(0,0,0,0.22) 0%, transparent 55%)`, `linear-gradient(180deg, ${c.light} 0%, ${c.mid} 100%)`].join(', '), boxShadow: `0 0 16px ${c.mid}88, 0 2px 8px rgba(0,0,0,0.35)`, zIndex: 4 }} />
-                <div style={{ position: 'absolute', inset: 0, zIndex: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                <div style={{ position: 'absolute', top: 0, left: `${bL}%`, width: `${bW}%`, height: '100%', zIndex: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, overflow: 'hidden' }}>
                   <div style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0, background: 'rgba(255,255,255,0.15)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Icon style={{ width: 14, height: 14, color: '#fff' }} />
                   </div>
-                  <div style={{ minWidth: 0 }}>
-                    <p style={{ color: '#fff', fontWeight: 700, fontSize: 12, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{step.label}</p>
-                    {convRate && <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, marginTop: 1 }}>↓ {convRate}% conv.</p>}
-                  </div>
+                  {bW >= 34 && (
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ color: '#fff', fontWeight: 700, fontSize: 12, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {bW >= 55 ? step.label : labelInitials(step.label)}
+                      </p>
+                      {bW >= 55 && convRate && <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, marginTop: 1 }}>↓ {convRate}% conv.</p>}
+                    </div>
+                  )}
                 </div>
               </div>
             )

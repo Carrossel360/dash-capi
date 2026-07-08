@@ -5,6 +5,8 @@ import { fetchGoogleAdsReport, isGoogleAdsConfigured, type GoogleAdsMcc } from '
 
 // Action types que a Meta usa pra "Conversa iniciada" (objetivo Mensagens — WhatsApp/Messenger/IG Direct).
 const MESSAGING_ACTION_TYPES = ['onsite_conversion.messaging_conversation_started_7d', 'messaging_conversation_started_7d']
+// Action types de "Lead" (objetivo Cadastro/Lead Ads) — só aparecem em campanhas desse objetivo, sem ambiguidade.
+const LEAD_ACTION_TYPES = ['lead', 'onsite_conversion.lead_grouped']
 
 function sumActions(actions: MetaInsightAction[] | undefined, types: string[]): number {
   if (!actions) return 0
@@ -13,7 +15,10 @@ function sumActions(actions: MetaInsightAction[] | undefined, types: string[]): 
     .reduce((acc, a) => acc + (parseFloat(a.value) || 0), 0)
 }
 
-const SYNC_WINDOW_DAYS = 3 // janela deslizante: reprocessa os últimos dias a cada sync, corrige atraso de atribuição
+// Janela deslizante: reprocessa os últimos N dias a cada sync (corrige atraso de atribuição
+// e faz upsert de novo em cima de dias já sincronizados). 30 dias garante que o filtro de
+// período "Últimos 30 dias" na tela sempre tenha os dados completos, sem depender de backfill manual.
+const SYNC_WINDOW_DAYS = 30
 
 function ymd(d: Date): string {
   return d.toISOString().slice(0, 10)
@@ -44,6 +49,10 @@ export async function syncWorkspaceMetaAds(workspace: Workspace): Promise<SyncRe
     const rows = await fetchMetaInsights({ adAccountId: workspace.metaAdAccountId, accessToken, since, until })
 
     for (const r of rows) {
+      const conversasIniciadas = sumActions(r.actions, MESSAGING_ACTION_TYPES)
+      const leads = sumActions(r.actions, LEAD_ACTION_TYPES)
+      const spend = f(r.spend) ?? 0
+
       await prisma.metaAdsDailyData.upsert({
         where: {
           workspaceId_date_campaignId: {
@@ -63,7 +72,9 @@ export async function syncWorkspaceMetaAds(workspace: Workspace): Promise<SyncRe
           cliques: f(r.clicks),
           ctr: f(r.ctr),
           cpc: f(r.cpc),
-          conversasIniciadas: sumActions(r.actions, MESSAGING_ACTION_TYPES),
+          conversasIniciadas,
+          resultados: leads,
+          custoResultado: leads > 0 ? spend / leads : 0,
         },
         update: {
           campaignName: r.campaign_name ?? null,
@@ -73,7 +84,9 @@ export async function syncWorkspaceMetaAds(workspace: Workspace): Promise<SyncRe
           cliques: f(r.clicks),
           ctr: f(r.ctr),
           cpc: f(r.cpc),
-          conversasIniciadas: sumActions(r.actions, MESSAGING_ACTION_TYPES),
+          conversasIniciadas,
+          resultados: leads,
+          custoResultado: leads > 0 ? spend / leads : 0,
         },
       })
     }

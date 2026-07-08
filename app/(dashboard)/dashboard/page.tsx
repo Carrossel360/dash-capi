@@ -90,10 +90,10 @@ export default function DashboardPage() {
 
       setData({
         metaSpend: meta?.kpis?.spend ?? 0,
-        metaLeads: meta?.kpis?.leads ?? 0,
+        metaLeads: (meta?.kpis?.results ?? 0) + (meta?.kpis?.messaging_conversations_started ?? 0),
         metaRoas:  meta?.kpis?.roas ?? 0,
         googSpend: goog?.kpis?.spend ?? 0,
-        googLeads: goog?.kpis?.leads ?? 0,
+        googLeads: goog?.kpis?.conversions ?? 0,
         eventsSent: sent, eventsFailed: failed, eventsQueued: queued,
         avgQuality: avgQ,
         crmLeads: leads.length,
@@ -114,7 +114,7 @@ export default function DashboardPage() {
     { label: 'Investimento Total', value: `R$ ${fmt(totalSpend)}`, icon: DollarSign, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)', border: 'rgba(139,92,246,0.25)', sub: `Meta: R$${fmt(data.metaSpend)} · Google: R$${fmt(data.googSpend)}` },
     { label: 'Leads Gerados', value: fmt(totalLeads), icon: Users, color: '#10b981', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.25)', sub: `Meta: ${data.metaLeads} · Google: ${data.googLeads}` },
     { label: 'Leads CRM', value: String(data.crmLeads), icon: Share2, color: '#2575fc', bg: 'rgba(37,117,252,0.1)', border: 'rgba(37,117,252,0.25)', sub: `R$ ${fmt(data.crmDeals)} em vendas` },
-    { label: 'Eventos CAPI', value: String(data.eventsSent + data.eventsFailed + data.eventsQueued), icon: Zap, color: '#F5A314', bg: 'rgba(245,163,20,0.1)', border: 'rgba(245,163,20,0.25)', sub: `${data.eventsSent} enviados · ${data.eventsFailed} falhas` },
+    { label: 'Faturamento', value: `R$ ${fmt(data.crmDeals)}`, icon: DollarSign, color: '#F5A314', bg: 'rgba(245,163,20,0.1)', border: 'rgba(245,163,20,0.25)', sub: 'Vendas marcadas no CRM' },
   ]
 
   const channels = [
