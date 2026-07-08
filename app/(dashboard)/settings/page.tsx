@@ -12,6 +12,9 @@ import { useAuthStore } from '@/lib/store/auth'
 interface Stage {
   id: string; name: string; color: string; order: number; triggerCapiEvent: string
 }
+interface ProductRow {
+  id: string; name: string; price: number; currency: string; description: string
+}
 interface Member {
   id: string; role: string
   user: { id: string; name: string; email: string }
@@ -96,6 +99,7 @@ export default function SettingsPage() {
     { id: 'meta',       label: 'Meta CAPI',          agencyOnly: true },
     { id: 'contas',     label: 'Contas de Anúncios',  agencyOnly: true },
     { id: 'pipeline',   label: 'Pipeline',             agencyOnly: false },
+    { id: 'produtos',   label: 'Produtos',              agencyOnly: false },
     { id: 'equipe',     label: 'Equipe',               agencyOnly: false },
     { id: 'whatsapp',   label: 'WhatsApp',             agencyOnly: false },
   ]
@@ -117,6 +121,9 @@ export default function SettingsPage() {
 
   // Pipeline stages
   const [stages, setStages] = useState<Stage[]>([])
+
+  // Produtos
+  const [products, setProducts] = useState<ProductRow[]>([])
 
   // WhatsApp — admin fields
   const [uazapiUrl,          setUazapiUrl]          = useState('')
@@ -161,6 +168,12 @@ export default function SettingsPage() {
       setUazapiAdminToken(data.uazapiAdminToken ?? '')
       setUazapiInstanceName(data.uazapiInstanceName ?? '')
       setUazapiToken(data.uazapiToken ?? '')
+
+      const prodRes = await fetch('/api/products', { headers: { Authorization: `Bearer ${token}` } })
+      if (prodRes.ok) {
+        const prodData = await prodRes.json()
+        setProducts(prodData.products ?? [])
+      }
     } catch { toast.error('Erro ao carregar configurações') }
     finally { setLoading(false) }
   }, [token])
@@ -226,6 +239,36 @@ export default function SettingsPage() {
       setStages(p => p.filter(s => s.id !== id))
       toast.success('Estágio removido')
     } catch { toast.error('Não foi possível remover — existem leads neste estágio') }
+  }
+
+  async function saveProducts() {
+    setSaving(true)
+    try {
+      await Promise.all(products.map(p => {
+        if (p.id.startsWith('new-')) {
+          return fetch('/api/products', {
+            method: 'POST', headers: h,
+            body: JSON.stringify({ name: p.name, price: p.price, currency: p.currency, description: p.description }),
+          })
+        }
+        return fetch(`/api/products/${p.id}`, {
+          method: 'PATCH', headers: h,
+          body: JSON.stringify({ name: p.name, price: p.price, currency: p.currency, description: p.description }),
+        })
+      }))
+      toast.success('Produtos salvos!')
+      load()
+    } catch { toast.error('Erro ao salvar produtos') } finally { setSaving(false) }
+  }
+
+  async function deleteProduct(id: string) {
+    if (id.startsWith('new-')) { setProducts(p => p.filter(x => x.id !== id)); return }
+    try {
+      const res = await fetch(`/api/products/${id}`, { method: 'DELETE', headers: h })
+      if (!res.ok) throw new Error()
+      setProducts(p => p.filter(x => x.id !== id))
+      toast.success('Produto removido')
+    } catch { toast.error('Erro ao remover produto') }
   }
 
   async function openAddMember() {
@@ -501,6 +544,75 @@ export default function SettingsPage() {
                 )}
               </div>
               {canManage && <SaveBtn onClick={savePipeline} loading={saving} />}
+            </div>
+          )}
+
+          {/* ── Produtos ── */}
+          {tab === 'produtos' && (
+            <div className="glass rounded-2xl p-5 space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-white">Produtos / Serviços</h2>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {canManage ? 'Produtos vendidos e seus tickets — usados no popup de venda do Pipeline.' : 'Produtos e serviços vendidos.'}
+                  </p>
+                </div>
+                {canManage && (
+                  <button
+                    onClick={() => setProducts(prev => [...prev, {
+                      id: `new-${Date.now()}`, name: 'Novo Produto',
+                      price: 0, currency: 'BRL', description: '',
+                    }])}
+                    className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-brand text-white font-medium hover:opacity-90">
+                    <Plus className="w-3.5 h-3.5" /> Adicionar
+                  </button>
+                )}
+              </div>
+              <div className="space-y-2">
+                {products.map(product => (
+                  <div key={product.id} className="flex items-center gap-2 p-3 bg-[#0f0b1e] rounded-xl border border-[#1e1635]">
+                    <input
+                      value={product.name}
+                      readOnly={!canManage}
+                      placeholder="Nome do produto"
+                      onChange={e => canManage && setProducts(prev => prev.map(p => p.id === product.id ? { ...p, name: e.target.value } : p))}
+                      className="flex-1 text-sm bg-transparent text-white placeholder-slate-600 focus:outline-none border-b border-transparent focus:border-[#6a11cb] transition-colors min-w-0" />
+                    <input
+                      value={product.description}
+                      readOnly={!canManage}
+                      placeholder="Descrição (opcional)"
+                      onChange={e => canManage && setProducts(prev => prev.map(p => p.id === product.id ? { ...p, description: e.target.value } : p))}
+                      className="flex-1 text-xs bg-transparent text-slate-400 placeholder-slate-600 focus:outline-none border-b border-transparent focus:border-[#6a11cb] transition-colors min-w-0" />
+                    {canManage && (
+                      <>
+                        <select
+                          value={product.currency}
+                          onChange={e => setProducts(prev => prev.map(p => p.id === product.id ? { ...p, currency: e.target.value } : p))}
+                          className="text-xs bg-[#1e1635] border border-[#2d2550] text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none flex-shrink-0">
+                          <option value="BRL">R$</option>
+                          <option value="USD">US$</option>
+                        </select>
+                        <input
+                          type="number"
+                          value={product.price}
+                          onChange={e => setProducts(prev => prev.map(p => p.id === product.id ? { ...p, price: parseFloat(e.target.value) || 0 } : p))}
+                          placeholder="0,00"
+                          className="w-24 text-sm bg-[#1e1635] border border-[#2d2550] text-white rounded-lg px-2 py-1.5 focus:outline-none flex-shrink-0" />
+                        <button onClick={() => deleteProduct(product.id)} className="text-slate-600 hover:text-red-400 transition-colors flex-shrink-0">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                    {!canManage && (
+                      <span className="text-sm text-white flex-shrink-0">{product.currency === 'USD' ? 'US$' : 'R$'} {product.price.toLocaleString('pt-BR')}</span>
+                    )}
+                  </div>
+                ))}
+                {products.length === 0 && (
+                  <p className="text-xs text-slate-500 text-center py-6">Nenhum produto configurado.</p>
+                )}
+              </div>
+              {canManage && <SaveBtn onClick={saveProducts} loading={saving} />}
             </div>
           )}
 

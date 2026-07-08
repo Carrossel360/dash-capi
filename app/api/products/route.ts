@@ -13,3 +13,23 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({ products })
 }
+
+export async function POST(req: NextRequest) {
+  const auth = await getAuthPayload(req)
+  if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { name, price, currency, description } = await req.json()
+  if (!name) return NextResponse.json({ error: 'name obrigatório' }, { status: 400 })
+
+  const product = await prisma.product.create({
+    data: {
+      workspaceId: auth.workspaceId,
+      name,
+      price: Number(price) || 0,
+      currency: currency || 'BRL',
+      description: description || null,
+    },
+  })
+
+  return NextResponse.json(product, { status: 201 })
+}

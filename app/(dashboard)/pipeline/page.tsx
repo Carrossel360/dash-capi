@@ -171,7 +171,7 @@ function DealPopup({ lead, stageId, products, currency, token, onConfirm, onCanc
 
 // ── Lead Modal ────────────────────────────────────────────────────────────────
 
-function LeadModal({ lead, stages, products, token, onClose, onSaved, onDeleted }: {
+function LeadModal({ lead, stages, products, token, onClose, onSaved, onDeleted, onRequestDeal }: {
   lead: Lead
   stages: Stage[]
   products: Product[]
@@ -179,6 +179,7 @@ function LeadModal({ lead, stages, products, token, onClose, onSaved, onDeleted 
   onClose: () => void
   onSaved: (lead: Lead) => void
   onDeleted: (id: string) => void
+  onRequestDeal: (lead: Lead, stageId: string) => void
 }) {
   const [form, setForm] = useState({
     name: lead.name,
@@ -196,6 +197,25 @@ function LeadModal({ lead, stages, products, token, onClose, onSaved, onDeleted 
   async function handleSave() {
     setSaving(true)
     try {
+      const movingToStage = form.pipelineStageId !== lead.pipelineStageId
+      const targetStage = stages.find(s => s.id === form.pipelineStageId)
+
+      // Mudar pra um estágio "de venda" precisa passar pelo popup de produto/valor
+      // (mesmo caminho do drag-and-drop) em vez de mover direto sem registrar Deal.
+      if (movingToStage && targetStage?.triggerCapiEvent === 'purchase') {
+        const { pipelineStageId, ...rest } = form
+        const res = await fetch(`/api/leads/${lead.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify(rest),
+        })
+        if (!res.ok) throw new Error()
+        const updated = await res.json()
+        onSaved({ ...lead, ...rest, ...updated })
+        onRequestDeal({ ...lead, ...rest, ...updated }, form.pipelineStageId)
+        return
+      }
+
       const res = await fetch(`/api/leads/${lead.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -636,6 +656,7 @@ export default function PipelinePage() {
           onClose={() => setSelectedLead(null)}
           onSaved={handleLeadSaved}
           onDeleted={handleLeadDeleted}
+          onRequestDeal={(lead, stageId) => { setSelectedLead(null); setDealPending({ lead, stageId }) }}
         />
       )}
 
