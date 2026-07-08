@@ -73,6 +73,8 @@ export async function GET(req: NextRequest) {
     const sum = (key: string) =>
       daily.reduce((acc, r) => acc + (Number((r as Record<string, unknown>)[key]) || 0), 0)
 
+    const cpm = (spend: number, impressions: number) => impressions > 0 ? (spend / impressions) * 1000 : 0
+
     const kpis = daily.length > 0 ? {
       spend:           sum('valorGasto'),
       impressions:     sum('impressoes'),
@@ -85,7 +87,8 @@ export async function GET(req: NextRequest) {
       roas:            monthly?.roas ?? null,
       leads_bc: null, messaging_conversations_started: null,
       cost_per_conversation: null, post_engagement: null,
-      followers: null, profile_visits: null, cost_per_link_click: null, cpm: null,
+      followers: null, profile_visits: null, cost_per_link_click: null,
+      cpm:             cpm(sum('valorGasto'), sum('impressoes')),
       hasData: true,
     } : isRangedQuery ? emptyKpis : {
       // Sem dado diário e período = 'all': cai para o último mês importado do Supabase (histórico legado)
@@ -100,7 +103,8 @@ export async function GET(req: NextRequest) {
       roas:            monthly?.roas ?? null,
       leads_bc: null, messaging_conversations_started: null,
       cost_per_conversation: null, post_engagement: null,
-      followers: null, profile_visits: null, cost_per_link_click: null, cpm: null,
+      followers: null, profile_visits: null, cost_per_link_click: null,
+      cpm:             cpm(monthly?.valorGasto ?? 0, monthly?.impressoes ?? 0),
       hasData: monthly != null,
     }
 

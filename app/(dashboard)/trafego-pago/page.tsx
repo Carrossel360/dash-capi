@@ -445,44 +445,50 @@ export default function TrafegoPagoPage() {
             </div>
           )}
 
-          {/* 3D Funnel */}
-          {!loading && animated && (
-            <VisualFunnel keys={activeFunnel} kpiMap={kpiMap} currency={currency} palette={isMeta ? FC : FC_GOOGLE} />
+          {/* Funil + Leads por Dia lado a lado */}
+          {!loading && (animated || chart.length > 0) && (
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+              {animated && (
+                <div className="lg:col-span-2">
+                  <VisualFunnel keys={activeFunnel} kpiMap={kpiMap} currency={currency} palette={isMeta ? FC : FC_GOOGLE} />
+                </div>
+              )}
+              {chart.length > 0 && (
+                <div className="glass rounded-xl p-4 lg:col-span-3">
+                  <h3 className="text-sm font-semibold text-white mb-4">Leads & Resultados</h3>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <AreaChart data={chart} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="gla" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={accentColor} stopOpacity={0.3} />
+                          <stop offset="95%" stopColor={accentColor} stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e1635" />
+                      <XAxis dataKey="dia" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Area type="monotone" dataKey="leads" name="Resultados" stroke={accentColor} strokeWidth={2} fill="url(#gla)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
           )}
 
-          {/* Charts */}
+          {/* Gasto Diário — largura total */}
           {!loading && chart.length > 0 && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div className="glass rounded-xl p-4 lg:col-span-2">
-                <h3 className="text-sm font-semibold text-white mb-4">Leads & Resultados</h3>
-                <ResponsiveContainer width="100%" height={180}>
-                  <AreaChart data={chart} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="gla" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={accentColor} stopOpacity={0.3} />
-                        <stop offset="95%" stopColor={accentColor} stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e1635" />
-                    <XAxis dataKey="dia" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Area type="monotone" dataKey="leads" name="Resultados" stroke={accentColor} strokeWidth={2} fill="url(#gla)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="glass rounded-xl p-4">
-                <h3 className="text-sm font-semibold text-white mb-4">Gasto Diário ({currencySymbol(currency)})</h3>
-                <ResponsiveContainer width="100%" height={180}>
-                  <BarChart data={chart} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e1635" />
-                    <XAxis dataKey="dia" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Bar dataKey="gasto" name="Gasto" fill={accentColor} radius={[4, 4, 0, 0]} fillOpacity={0.85} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+            <div className="glass rounded-xl p-4">
+              <h3 className="text-sm font-semibold text-white mb-4">Gasto Diário ({currencySymbol(currency)})</h3>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={chart} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e1635" />
+                  <XAxis dataKey="dia" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <Tooltip content={<ChartTooltip />} />
+                  <Bar dataKey="gasto" name="Gasto" fill={accentColor} radius={[4, 4, 0, 0]} fillOpacity={0.85} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           )}
 
