@@ -57,6 +57,9 @@ async function migrateWorkspaces(dash: Client) {
 
   for (const r of rows) {
     const slug = r.name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    // Nota: svc* e *VisibleMetrics/funnelMetrics só são setados na criação.
+    // Workspaces já existentes são geridos pela UI nova (clientes/[id] -> PATCH
+    // /api/clients/[id]) e não devem ser revertidos por re-execuções deste script.
     const ws = await prisma.workspace.upsert({
       where: { slug },
       create: {
@@ -67,21 +70,11 @@ async function migrateWorkspaces(dash: Client) {
         svcTrafeqoPago:    !!r.svc_trafego,
         svcSocialMedia:    !!r.svc_social,
         svcGoogleBusiness: !!r.svc_gbp,
-        svcGoogleLocal:    false,
         metaVisibleMetrics:   Array.isArray(r.meta_metrics)   ? r.meta_metrics   : r.meta_metrics   ? Object.keys(r.meta_metrics)   : [],
         googleVisibleMetrics: Array.isArray(r.google_metrics) ? r.google_metrics : r.google_metrics ? Object.keys(r.google_metrics) : [],
         funnelMetrics:        Array.isArray(r.funnel_metrics)  ? r.funnel_metrics  : r.funnel_metrics  ? Object.keys(r.funnel_metrics)  : [],
       },
-      update: {
-        currency: r.currency || 'BRL',
-        svcTrafeqoPago:    !!r.svc_trafego,
-        svcSocialMedia:    !!r.svc_social,
-        svcGoogleBusiness: !!r.svc_gbp,
-        svcGoogleLocal:    false,
-        metaVisibleMetrics:   Array.isArray(r.meta_metrics)   ? r.meta_metrics   : r.meta_metrics   ? Object.keys(r.meta_metrics)   : [],
-        googleVisibleMetrics: Array.isArray(r.google_metrics) ? r.google_metrics : r.google_metrics ? Object.keys(r.google_metrics) : [],
-        funnelMetrics:        Array.isArray(r.funnel_metrics)  ? r.funnel_metrics  : r.funnel_metrics  ? Object.keys(r.funnel_metrics)  : [],
-      },
+      update: {},
     })
     idMap.set(r.id, ws.id)
     console.log(`  ✓ ${r.name}  (${r.id})`)
@@ -428,6 +421,8 @@ async function migrateCrmPipelineColumns(crm: Client) {
       const color = col.color ?? STAGE_COLORS[i % STAGE_COLORS.length]
       // Stable ID: prevents duplicate stages on re-runs
       const stageId = `crm-${workspaceId.slice(-8)}-${col.id}`.slice(0, 30)
+      // update: {} — estágios já existentes podem ter sido renomeados/reordenados
+      // via PATCH /api/stages/[id] na UI nova; não reverter isso em re-execuções.
       await prisma.pipelineStage.upsert({
         where: { id: stageId },
         create: {
@@ -438,7 +433,7 @@ async function migrateCrmPipelineColumns(crm: Client) {
           order: i,
           triggerCapiEvent: 'none',
         },
-        update: { name: col.title, color, order: i },
+        update: {},
       })
       colStageMap.set(col.id, stageId)
       total++
@@ -530,6 +525,9 @@ async function migrateCrmLeads(crm: Client) {
       // Resolve source/origin
       const source = (sourceCol ? r[sourceCol] : null) ?? r.utm_source ?? r.utmSource ?? null
 
+      // update: {} — leads já existentes podem ter sido movidos no Kanban
+      // (PATCH /api/leads/[id]/stage) ou editados (PATCH /api/leads/[id]) na
+      // UI nova; não reverter isso em re-execuções. Só leads novos são criados.
       await prisma.lead.upsert({
         where: { id: r.id },
         create: {
@@ -546,16 +544,7 @@ async function migrateCrmLeads(crm: Client) {
           pipelineStageId: stageId,
           createdAt: r.created_at ? new Date(r.created_at) : undefined,
         },
-        update: {
-          name: r.name || 'Lead',
-          email: r.email ?? null,
-          phone: r.phone ?? null,
-          source,
-          notes: r.notes ?? null,
-          metadata: r.metadata ?? null,
-          displayOrder: r.display_order ?? null,
-          pipelineStageId: stageId,
-        },
+        update: {},
       })
       count++
     } catch (e: any) { console.log(`  ⚠️  lead ${r.id}: ${e.message}`) }

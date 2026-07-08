@@ -18,11 +18,15 @@ const PERIODS: Period[] = ['all', '30d', '7d', 'yesterday', 'today', 'custom']
 interface Props {
   value: Period
   onChange: (p: Period) => void
+  onCustomChange?: (from: string, to: string) => void
 }
 
-export default function PeriodSelector({ value, onChange }: Props) {
+export default function PeriodSelector({ value, onChange, onCustomChange }: Props) {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+
+  const updateFrom = (v: string) => { setFrom(v); if (v && to) onCustomChange?.(v, to) }
+  const updateTo = (v: string) => { setTo(v); if (from && v) onCustomChange?.(from, v) }
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -46,14 +50,14 @@ export default function PeriodSelector({ value, onChange }: Props) {
           <input
             type="date"
             value={from}
-            onChange={e => setFrom(e.target.value)}
+            onChange={e => updateFrom(e.target.value)}
             className="px-2 py-1.5 bg-[#1a1230] border border-[#2d2550] rounded-lg text-xs text-white focus:outline-none focus:border-[#6a11cb]"
           />
           <span className="text-slate-600 text-xs">–</span>
           <input
             type="date"
             value={to}
-            onChange={e => setTo(e.target.value)}
+            onChange={e => updateTo(e.target.value)}
             className="px-2 py-1.5 bg-[#1a1230] border border-[#2d2550] rounded-lg text-xs text-white focus:outline-none focus:border-[#6a11cb]"
           />
         </div>

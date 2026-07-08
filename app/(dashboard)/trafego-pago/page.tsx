@@ -5,6 +5,8 @@ import {
   TrendingUp, TrendingDown, DollarSign, Users, ShoppingCart, Zap,
   Edit3, Check, X, Eye, MessageCircle, MousePointer, Target,
 } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { RefreshCw } from 'lucide-react'
 import TopBar from '@/components/TopBar'
 import PeriodSelector, { type Period } from '@/components/PeriodSelector'
 import { useAuthStore } from '@/lib/store/auth'
@@ -276,6 +278,9 @@ export default function TrafegoPagoPage() {
 
   const [tab, setTab]         = useState<'meta' | 'google'>('meta')
   const [period, setPeriod]   = useState<Period>('30d')
+  const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [syncNonce, setSyncNonce] = useState(0)
   const [animated, setAnimated] = useState(false)
   const [manualEdit, setManualEdit]       = useState<{ key: string; label: string; value: string } | null>(null)
   const [manualOverrides, setManualOverrides] = useState<Record<string, number>>({})
@@ -288,12 +293,17 @@ export default function TrafegoPagoPage() {
   const [googCampaigns, setGoogCampaigns] = useState<Campaign[]>([])
   const [keywords,      setKeywords]      = useState<Keyword[]>([])
   const [loading,       setLoading]       = useState(true)
+  const [metaHasData,   setMetaHasData]   = useState(true)
+  const [googHasData,   setGoogHasData]   = useState(true)
 
   useEffect(() => {
     if (!token) return
+    if (period === 'custom' && !customRange) return
     setLoading(true)
     const headers = { Authorization: `Bearer ${token}` }
-    const q = `?period=${period}`
+    const q = period === 'custom' && customRange
+      ? `?period=custom&from=${customRange.from}&to=${customRange.to}`
+      : `?period=${period}`
     Promise.all([
       fetch(`/api/trafego/meta${q}`,    { headers }).then(r => r.ok ? r.json() : r.json().then(d => { throw new Error(d.error ?? `meta ${r.status}`) })),
       fetch(`/api/trafego/google${q}`,  { headers }).then(r => r.ok ? r.json() : r.json().then(d => { throw new Error(d.error ?? `google ${r.status}`) })),
@@ -301,12 +311,30 @@ export default function TrafegoPagoPage() {
       setMetaKpis(meta.kpis ?? {})
       setMetaChart(meta.chart ?? [])
       setMetaCampaigns(meta.campaigns ?? [])
+      setMetaHasData(meta.kpis?.hasData ?? true)
       setGoogKpis(goog.kpis ?? {})
       setGoogChart(goog.chart ?? [])
       setGoogCampaigns(goog.campaigns ?? [])
+      setGoogHasData(goog.kpis?.hasData ?? true)
       setKeywords(goog.keywords ?? [])
     }).finally(() => setLoading(false))
-  }, [token, period])
+  }, [token, period, customRange, syncNonce])
+
+  async function handleSyncNow() {
+    if (!token || syncing) return
+    setSyncing(true)
+    try {
+      const res = await fetch('/api/trafego/sync', { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Falha ao sincronizar')
+      toast.success('Dados de tráfego atualizados')
+      setSyncNonce(n => n + 1)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Falha ao sincronizar')
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   useEffect(() => { setAnimated(false); setTimeout(() => setAnimated(true), 50) }, [tab, period])
 
@@ -361,13 +389,31 @@ export default function TrafegoPagoPage() {
               ))}
             </div>
             <div className="w-px h-5 bg-[#1e1635]" />
-            <PeriodSelector value={period} onChange={setPeriod} />
+            <PeriodSelector
+              value={period}
+              onChange={p => { setPeriod(p); if (p !== 'custom') setCustomRange(null) }}
+              onCustomChange={(from, to) => setCustomRange({ from, to })}
+            />
+            <button
+              onClick={handleSyncNow}
+              disabled={syncing}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 border border-[#1e1635] hover:text-white hover:border-[#6a11cb] transition-all disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+              Atualizar agora
+            </button>
           </div>
 
           {/* Loading */}
           {loading && (
             <div className="flex items-center justify-center py-12">
               <div className="w-6 h-6 rounded-full border-2 border-[#6a11cb] border-t-transparent animate-spin" />
+            </div>
+          )}
+
+          {!loading && !(isMeta ? metaHasData : googHasData) && (
+            <div className="glass rounded-xl px-4 py-3 text-xs text-amber-400 bg-amber-400/5 border border-amber-400/20">
+              Nenhum dado sincronizado para este período ainda. Clique em "Atualizar agora" ou aguarde a próxima sincronização automática.
             </div>
           )}
 

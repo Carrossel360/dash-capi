@@ -2,17 +2,39 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthPayload } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
-function dateRange(period: string): { gte: Date } | undefined {
-  const days =
-    period === '7d' ? 7 :
-    period === '30d' ? 30 :
-    period === 'yesterday' ? 2 :
-    period === 'today' ? 1 : null
+function dateRange(period: string, from?: string | null, to?: string | null): { gte: Date; lte: Date } | undefined {
+  const now = new Date()
+
+  if (period === 'custom') {
+    if (!from || !to) return undefined
+    const gte = new Date(from); gte.setHours(0, 0, 0, 0)
+    const lte = new Date(to); lte.setHours(23, 59, 59, 999)
+    return { gte, lte }
+  }
+  if (period === 'today') {
+    const gte = new Date(now); gte.setHours(0, 0, 0, 0)
+    const lte = new Date(now); lte.setHours(23, 59, 59, 999)
+    return { gte, lte }
+  }
+  if (period === 'yesterday') {
+    const gte = new Date(now); gte.setDate(gte.getDate() - 1); gte.setHours(0, 0, 0, 0)
+    const lte = new Date(now); lte.setDate(lte.getDate() - 1); lte.setHours(23, 59, 59, 999)
+    return { gte, lte }
+  }
+  const days = period === '7d' ? 7 : period === '30d' ? 30 : null
   if (!days) return undefined
-  const d = new Date()
-  d.setDate(d.getDate() - days)
-  d.setHours(0, 0, 0, 0)
-  return { gte: d }
+  const gte = new Date(now); gte.setDate(gte.getDate() - days); gte.setHours(0, 0, 0, 0)
+  const lte = new Date(now); lte.setHours(23, 59, 59, 999)
+  return { gte, lte }
+}
+
+const emptyKpis = {
+  spend: 0, impressions: 0, reach: 0, link_clicks: 0, results: 0,
+  ctr: 0, cpc: 0, cost_per_result: 0, roas: null as number | null,
+  leads_bc: null, messaging_conversations_started: null,
+  cost_per_conversation: null, post_engagement: null,
+  followers: null, profile_visits: null, cost_per_link_click: null, cpm: null,
+  hasData: false,
 }
 
 function cs(currency: string | null | undefined) {
@@ -26,7 +48,10 @@ export async function GET(req: NextRequest) {
 
     const { workspaceId } = auth
     const period = req.nextUrl.searchParams.get('period') ?? 'all'
-    const range = dateRange(period)
+    const from = req.nextUrl.searchParams.get('from')
+    const to = req.nextUrl.searchParams.get('to')
+    const range = dateRange(period, from, to)
+    const isRangedQuery = period !== 'all'
 
     const [daily, monthly, ws] = await Promise.all([
       prisma.metaAdsDailyData.findMany({
@@ -61,7 +86,9 @@ export async function GET(req: NextRequest) {
       leads_bc: null, messaging_conversations_started: null,
       cost_per_conversation: null, post_engagement: null,
       followers: null, profile_visits: null, cost_per_link_click: null, cpm: null,
-    } : {
+      hasData: true,
+    } : isRangedQuery ? emptyKpis : {
+      // Sem dado diário e período = 'all': cai para o último mês importado do Supabase (histórico legado)
       spend:           monthly?.valorGasto ?? 0,
       impressions:     monthly?.impressoes ?? 0,
       reach:           monthly?.alcance ?? 0,
@@ -74,6 +101,7 @@ export async function GET(req: NextRequest) {
       leads_bc: null, messaging_conversations_started: null,
       cost_per_conversation: null, post_engagement: null,
       followers: null, profile_visits: null, cost_per_link_click: null, cpm: null,
+      hasData: monthly != null,
     }
 
     // Chart grouped by date

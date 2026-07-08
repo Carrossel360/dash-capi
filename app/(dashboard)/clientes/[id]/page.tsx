@@ -78,6 +78,7 @@ const GOOGLE_METRICS = [
 interface ClientDetail {
   id: string; name: string; slug: string; segment: string | null
   plan: string; metaPixelId: string | null; metaAccessToken: string | null
+  metaAdAccountId: string | null
   googleAdsCustomerId: string | null; createdAt: string
   currency: string
   svcTrafeqoPago: boolean; svcSocialMedia: boolean
@@ -125,6 +126,11 @@ export default function ClienteDetailPage() {
   const [currency, setCurrency] = useState('BRL')
   const [metaPixelId, setMetaPixelId] = useState('')
   const [metaAccessToken, setMetaAccessToken] = useState('')
+  const [metaAdAccountId, setMetaAdAccountId] = useState('')
+  const [metaAdAccounts, setMetaAdAccounts] = useState<{ id: string; name: string; account_status: number }[]>([])
+  const [adAccountsLoaded, setAdAccountsLoaded] = useState(false)
+  const [adAccountsLoading, setAdAccountsLoading] = useState(false)
+  const [manualAdAccount, setManualAdAccount] = useState(false)
   const [googleAdsCustomerId, setGoogleAdsCustomerId] = useState('')
   const [services, setServices] = useState({
     svcTrafeqoPago: false, svcSocialMedia: false,
@@ -145,6 +151,7 @@ export default function ClienteDetailPage() {
         setPlan(w.plan ?? 'starter')
         setCurrency(w.currency ?? 'BRL')
         setMetaPixelId(w.metaPixelId ?? '')
+        setMetaAdAccountId(w.metaAdAccountId ?? '')
         setGoogleAdsCustomerId(w.googleAdsCustomerId ?? '')
         setServices({
           svcTrafeqoPago: w.svcTrafeqoPago ?? false,
@@ -166,6 +173,7 @@ export default function ClienteDetailPage() {
       const body: Record<string, unknown> = { name, segment, plan, currency, ...services, ...extra }
       if (metaPixelId) body.metaPixelId = metaPixelId
       if (metaAccessToken) body.metaAccessToken = metaAccessToken
+      if (metaAdAccountId) body.metaAdAccountId = metaAdAccountId
       if (googleAdsCustomerId) body.googleAdsCustomerId = googleAdsCustomerId
 
       const res = await fetch(`/api/clients/${clientId}`, {
@@ -216,6 +224,16 @@ export default function ClienteDetailPage() {
           if (w?.uazapiInstanceName) setLinkedInstance(w.uazapiInstanceName)
           if (w?.uazapiInstanceName) setSelectedInstance(w.uazapiInstanceName)
         })
+    }
+    if (tab === 'meta' && !adAccountsLoaded) {
+      setAdAccountsLoading(true)
+      fetch('/api/meta/ad-accounts', { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json())
+        .then(d => {
+          if (d.accounts) setMetaAdAccounts(d.accounts)
+          else if (d.error) toast.error(d.error)
+        })
+        .finally(() => { setAdAccountsLoaded(true); setAdAccountsLoading(false) })
     }
   }, [tab])
 
@@ -617,6 +635,40 @@ export default function ClienteDetailPage() {
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
                       {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
+                  </div>
+                </div>
+                <div className="pt-3 border-t border-[#1e1635] space-y-3">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Sincronização de gasto (Meta Ads)</p>
+                    <p className="text-xs text-slate-500 mt-1">ID da conta de anúncio deste cliente — usado para buscar gasto/impressões/cliques direto da Meta (diferente do Pixel/Token acima, que é da CAPI).</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-slate-400">Conta de Anúncio</label>
+                      <button type="button" onClick={() => setManualAdAccount(v => !v)}
+                        className="text-[11px] text-slate-500 hover:text-[#6a11cb]">
+                        {manualAdAccount ? 'Escolher da lista' : 'Digitar ID manualmente'}
+                      </button>
+                    </div>
+                    {manualAdAccount ? (
+                      <input value={metaAdAccountId} onChange={e => setMetaAdAccountId(e.target.value)}
+                        placeholder="Ex: 123456789012345 (sem o prefixo act_)"
+                        className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb] transition-all"
+                      />
+                    ) : adAccountsLoading ? (
+                      <p className="text-xs text-slate-500 flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando contas de anúncio…</p>
+                    ) : metaAdAccounts.length === 0 ? (
+                      <p className="text-xs text-amber-400">Nenhuma conta encontrada com o token da agência. Verifique o acesso no Business Manager ou digite o ID manualmente.</p>
+                    ) : (
+                      <select value={metaAdAccountId} onChange={e => setMetaAdAccountId(e.target.value)}
+                        className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb] transition-all"
+                      >
+                        <option value="">Selecione uma conta…</option>
+                        {metaAdAccounts.map(a => (
+                          <option key={a.id} value={a.id}>{a.name} ({a.id}){a.account_status !== 1 ? ' — inativa' : ''}</option>
+                        ))}
+                      </select>
+                    )}
                   </div>
                 </div>
                 <div className="pt-3 border-t border-[#1e1635] space-y-2">
