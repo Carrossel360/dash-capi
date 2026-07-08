@@ -33,7 +33,7 @@ function WorkspaceRow({ ws, isCurrent, loading, onSwitch }: {
   )
 }
 
-export default function TopBar({ title }: { title: string }) {
+export default function TopBar({ title, hideWorkspaceSwitcher }: { title: string; hideWorkspaceSwitcher?: boolean }) {
   const { user, token, currentWorkspace, accessibleWorkspaces, setAccessibleWorkspaces, switchWorkspace } = useAuthStore()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -85,7 +85,7 @@ export default function TopBar({ title }: { title: string }) {
 
       {/* Left: client selector */}
       <div className="flex items-center gap-3">
-        {clientWorkspaces.length > 0 && (
+        {!hideWorkspaceSwitcher && clientWorkspaces.length > 0 && (
           <div ref={ref} className="relative flex items-center gap-2">
             <div className="flex items-center gap-1.5 text-xs text-slate-500">
               <Building2 className="w-3 h-3" />

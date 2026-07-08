@@ -1,10 +1,10 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import {
   ArrowLeft, Save, Eye, EyeOff, Loader2, CheckCircle, Copy, Users, Zap, BarChart2,
   TrendingUp, Share2, MapPin, Star, DollarSign, MessageCircle, Sparkles,
-  UserPlus, Trash2, ChevronDown, Key, Smartphone, Wifi, WifiOff, RefreshCw, Link2,
+  UserPlus, Trash2, ChevronDown, Key, Smartphone, Wifi, WifiOff, RefreshCw, Link2, Search,
 } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
@@ -131,6 +131,9 @@ export default function ClienteDetailPage() {
   const [adAccountsLoaded, setAdAccountsLoaded] = useState(false)
   const [adAccountsLoading, setAdAccountsLoading] = useState(false)
   const [manualAdAccount, setManualAdAccount] = useState(false)
+  const [acctPickerOpen, setAcctPickerOpen] = useState(false)
+  const [acctSearch, setAcctSearch] = useState('')
+  const acctPickerRef = useRef<HTMLDivElement>(null)
   const [googleAdsCustomerId, setGoogleAdsCustomerId] = useState('')
   const [services, setServices] = useState({
     svcTrafeqoPago: false, svcSocialMedia: false,
@@ -202,6 +205,17 @@ export default function ClienteDetailPage() {
   function toggleMetric(key: string, list: string[], setter: (v: string[]) => void) {
     setter(list.includes(key) ? list.filter(k => k !== key) : [...list, key])
   }
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (acctPickerRef.current && !acctPickerRef.current.contains(e.target as Node)) {
+        setAcctPickerOpen(false)
+        setAcctSearch('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   useEffect(() => {
     if (tab === 'whatsapp' && !instancesLoaded) {
@@ -366,10 +380,16 @@ export default function ClienteDetailPage() {
   const trackerScript = `<script src="${origin}/api/t/${clientId}" async></script>`
   const webhookUrl = `${origin}/api/webhooks/whatsapp/${clientId}`
 
+  const acctQ = acctSearch.trim().toLowerCase()
+  const filteredAdAccounts = acctQ
+    ? metaAdAccounts.filter(a => a.name.toLowerCase().includes(acctQ) || a.id.includes(acctQ))
+    : metaAdAccounts
+  const selectedAdAccount = metaAdAccounts.find(a => a.id === metaAdAccountId)
+
   if (loading) {
     return (
       <div className="flex flex-col h-full overflow-hidden">
-        <TopBar title="Configurar Cliente" />
+        <TopBar title="Configurar Cliente" hideWorkspaceSwitcher />
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="w-6 h-6 animate-spin" style={{ color: '#6a11cb' }} />
         </div>
@@ -391,7 +411,7 @@ export default function ClienteDetailPage() {
     <>
       <Toaster position="top-right" toastOptions={{ style: { background: '#0f0b1e', color: '#e2e8f0', border: '1px solid #2d2550', borderRadius: '10px', fontSize: '13px' } }} />
       <div className="flex flex-col h-full overflow-hidden">
-        <TopBar title={client?.name ?? 'Configurar Cliente'} />
+        <TopBar title={`Configurando: ${client?.name ?? '...'}`} hideWorkspaceSwitcher />
         <main className="flex-1 overflow-y-auto p-5">
           <div className="max-w-2xl space-y-5">
 
@@ -660,14 +680,52 @@ export default function ClienteDetailPage() {
                     ) : metaAdAccounts.length === 0 ? (
                       <p className="text-xs text-amber-400">Nenhuma conta encontrada com o token da agência. Verifique o acesso no Business Manager ou digite o ID manualmente.</p>
                     ) : (
-                      <select value={metaAdAccountId} onChange={e => setMetaAdAccountId(e.target.value)}
-                        className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb] transition-all"
-                      >
-                        <option value="">Selecione uma conta…</option>
-                        {metaAdAccounts.map(a => (
-                          <option key={a.id} value={a.id}>{a.name} ({a.id}){a.account_status !== 1 ? ' — inativa' : ''}</option>
-                        ))}
-                      </select>
+                      <div ref={acctPickerRef} className="relative">
+                        <button type="button" onClick={() => setAcctPickerOpen(v => !v)}
+                          className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-sm bg-[#1a1230] border rounded-lg text-left focus:outline-none transition-all"
+                          style={{ borderColor: acctPickerOpen ? '#6a11cb' : '#2d2550' }}
+                        >
+                          <span className={`truncate ${selectedAdAccount ? 'text-white' : 'text-slate-500'}`}>
+                            {selectedAdAccount ? `${selectedAdAccount.name} (${selectedAdAccount.id})` : 'Selecione uma conta…'}
+                          </span>
+                          <ChevronDown className={`w-3.5 h-3.5 text-slate-500 flex-shrink-0 transition-transform ${acctPickerOpen ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {acctPickerOpen && (
+                          <div className="absolute top-full left-0 mt-1.5 w-full rounded-xl border border-[#2d2550] shadow-2xl z-[200] overflow-hidden"
+                            style={{ background: '#0d0a1f' }}
+                          >
+                            <div className="px-3 pt-2.5 pb-2 border-b border-[#1e1635]">
+                              <div className="relative">
+                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+                                <input
+                                  autoFocus
+                                  value={acctSearch}
+                                  onChange={e => setAcctSearch(e.target.value)}
+                                  placeholder="Buscar por nome ou ID..."
+                                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-[#1a1230] border border-[#2d2550] rounded-lg text-white placeholder-slate-600 focus:outline-none focus:border-[#6a11cb] transition-colors"
+                                />
+                              </div>
+                            </div>
+                            <div className="overflow-y-auto" style={{ maxHeight: 260 }}>
+                              {filteredAdAccounts.length === 0 ? (
+                                <p className="text-xs text-slate-500 text-center py-6">Nenhum resultado para "{acctSearch}"</p>
+                              ) : (
+                                filteredAdAccounts.map(a => (
+                                  <button key={a.id} type="button"
+                                    onClick={() => { setMetaAdAccountId(a.id); setAcctPickerOpen(false); setAcctSearch('') }}
+                                    className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-xs hover:bg-white/[0.04] transition-colors"
+                                    style={a.id === metaAdAccountId ? { background: 'rgba(106,17,203,0.1)' } : {}}
+                                  >
+                                    <span className="truncate text-slate-200">{a.name} <span className="text-slate-500">({a.id})</span></span>
+                                    {a.account_status !== 1 && <span className="text-[10px] text-amber-400 flex-shrink-0">inativa</span>}
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
