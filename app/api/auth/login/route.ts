@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { signToken } from '@/lib/auth'
+import { buildWorkspaceServices } from '@/lib/utils'
 import crypto from 'crypto'
 
 function hashPassword(password: string): string {
@@ -45,13 +46,7 @@ export async function POST(req: NextRequest) {
         segment: ws.segment, isAgency: ws.isAgency,
         role: membership.role,
         currency: ws.currency,
-        services: {
-          trafeqoPago: ws.svcTrafeqoPago,
-          socialMedia: ws.svcSocialMedia,
-          googleBusiness: ws.svcGoogleBusiness,
-          googleLocal: ws.svcGoogleLocal,
-          contentStudio: ws.svcContentStudio,
-        },
+        services: buildWorkspaceServices(ws),
         funnelMetrics: ws.funnelMetrics,
         metaVisibleMetrics: ws.metaVisibleMetrics,
         googleVisibleMetrics: ws.googleVisibleMetrics,

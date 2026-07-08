@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
 
   const {
     name, segment, plan, loginEmail, loginPassword,
-    currency, svcTrafeqoPago, svcSocialMedia, svcGoogleBusiness, svcGoogleLocal,
+    currency, svcMetaAds, svcGoogleAds, svcSocialMedia, svcGoogleBusiness, svcGoogleLocal,
   } = await req.json()
   if (!name || !loginEmail || !loginPassword) {
     return NextResponse.json({ error: 'name, loginEmail e loginPassword são obrigatórios' }, { status: 400 })
@@ -67,7 +67,8 @@ export async function POST(req: NextRequest) {
     data: {
       name, slug, segment, plan: plan ?? 'starter',
       currency: currency ?? 'BRL',
-      svcTrafeqoPago: svcTrafeqoPago ?? false,
+      svcMetaAds: svcMetaAds ?? false,
+      svcGoogleAds: svcGoogleAds ?? false,
       svcSocialMedia: svcSocialMedia ?? false,
       svcGoogleBusiness: svcGoogleBusiness ?? false,
       svcGoogleLocal: svcGoogleLocal ?? false,

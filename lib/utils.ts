@@ -1,4 +1,19 @@
 import crypto from 'crypto'
+import type { Workspace } from '@prisma/client'
+
+// Monta o objeto `services` retornado por login/switch/me — os três precisam do mesmo shape
+// pra alimentar WorkspaceServices (lib/store/auth.ts) no Zustand.
+export function buildWorkspaceServices(ws: Workspace) {
+  return {
+    trafeqoPago: ws.svcTrafeqoPago,
+    metaAds: ws.svcMetaAds,
+    googleAds: ws.svcGoogleAds,
+    socialMedia: ws.svcSocialMedia,
+    googleBusiness: ws.svcGoogleBusiness,
+    googleLocal: ws.svcGoogleLocal,
+    contentStudio: ws.svcContentStudio,
+  }
+}
 
 export function generateEventId(): string {
   return `eid_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`

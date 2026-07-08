@@ -36,7 +36,9 @@ model Workspace {
   googleAdsCustomerId   String?
   googleAdsRefreshToken String?
   currency              String               @default("BRL")
-  svcTrafeqoPago        Boolean              @default(false)
+  svcTrafeqoPago        Boolean              @default(false) // legado — substituído por svcMetaAds/svcGoogleAds, mantido só pra não quebrar leituras antigas
+  svcMetaAds            Boolean              @default(false)
+  svcGoogleAds          Boolean              @default(false)
   svcSocialMedia        Boolean              @default(false)
   svcGoogleBusiness     Boolean              @default(false)
   svcGoogleLocal        Boolean              @default(false)

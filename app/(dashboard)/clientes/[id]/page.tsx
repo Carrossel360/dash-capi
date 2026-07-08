@@ -27,7 +27,8 @@ const PLANS = [
   { id: 'agency', label: 'Agency' },
 ]
 const SERVICES = [
-  { key: 'svcTrafeqoPago', label: 'Tráfego Pago', icon: TrendingUp, desc: 'Meta Ads + Google Ads' },
+  { key: 'svcMetaAds', label: 'Meta Ads', icon: TrendingUp, desc: 'Facebook + Instagram Ads' },
+  { key: 'svcGoogleAds', label: 'Google Ads', icon: BarChart2, desc: 'Rede de Pesquisa + Display' },
   { key: 'svcSocialMedia', label: 'Social Media', icon: Share2, desc: 'Instagram + Facebook' },
   { key: 'svcGoogleBusiness', label: 'Google Business Profile', icon: MapPin, desc: 'Perfil no Maps + Avaliações' },
   { key: 'svcGoogleLocal', label: 'Google Local Service', icon: Star, desc: 'Anúncios locais do Google' },
@@ -81,7 +82,7 @@ interface ClientDetail {
   metaAdAccountId: string | null
   googleAdsCustomerId: string | null; createdAt: string
   currency: string
-  svcTrafeqoPago: boolean; svcSocialMedia: boolean
+  svcMetaAds: boolean; svcGoogleAds: boolean; svcSocialMedia: boolean
   svcGoogleBusiness: boolean; svcGoogleLocal: boolean; svcContentStudio: boolean
   metaVisibleMetrics: string[]; googleVisibleMetrics: string[]; funnelMetrics: string[]
   members: { id: string; role: string; user: { id: string; name: string; email: string } }[]
@@ -136,7 +137,7 @@ export default function ClienteDetailPage() {
   const acctPickerRef = useRef<HTMLDivElement>(null)
   const [googleAdsCustomerId, setGoogleAdsCustomerId] = useState('')
   const [services, setServices] = useState({
-    svcTrafeqoPago: false, svcSocialMedia: false,
+    svcMetaAds: false, svcGoogleAds: false, svcSocialMedia: false,
     svcGoogleBusiness: false, svcGoogleLocal: false, svcContentStudio: false,
   })
   const [metaVisible, setMetaVisible] = useState<string[]>([])
@@ -157,7 +158,8 @@ export default function ClienteDetailPage() {
         setMetaAdAccountId(w.metaAdAccountId ?? '')
         setGoogleAdsCustomerId(w.googleAdsCustomerId ?? '')
         setServices({
-          svcTrafeqoPago: w.svcTrafeqoPago ?? false,
+          svcMetaAds: w.svcMetaAds ?? false,
+          svcGoogleAds: w.svcGoogleAds ?? false,
           svcSocialMedia: w.svcSocialMedia ?? false,
           svcGoogleBusiness: w.svcGoogleBusiness ?? false,
           svcGoogleLocal: w.svcGoogleLocal ?? false,

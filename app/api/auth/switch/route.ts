@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthPayload, signToken } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { buildWorkspaceServices } from '@/lib/utils'
 
 export async function POST(req: NextRequest) {
   const auth = await getAuthPayload(req)
@@ -29,13 +30,7 @@ export async function POST(req: NextRequest) {
       segment: ws.segment, isAgency: ws.isAgency,
       role: membership.role,
       currency: ws.currency,
-      services: {
-        trafeqoPago: ws.svcTrafeqoPago,
-        socialMedia: ws.svcSocialMedia,
-        googleBusiness: ws.svcGoogleBusiness,
-        googleLocal: ws.svcGoogleLocal,
-        contentStudio: ws.svcContentStudio,
-      },
+      services: buildWorkspaceServices(ws),
       funnelMetrics: ws.funnelMetrics,
       metaVisibleMetrics: ws.metaVisibleMetrics,
       googleVisibleMetrics: ws.googleVisibleMetrics,

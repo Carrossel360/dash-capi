@@ -5,7 +5,9 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 interface User { id: string; name: string; email: string }
 
 export interface WorkspaceServices {
-  trafeqoPago: boolean
+  trafeqoPago: boolean // legado — ver metaAds/googleAds
+  metaAds: boolean
+  googleAds: boolean
   socialMedia: boolean
   googleBusiness: boolean
   googleLocal: boolean

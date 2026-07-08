@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const workspaces = await prisma.workspace.findMany({ where: { svcTrafeqoPago: true } })
+  const workspaces = await prisma.workspace.findMany({ where: { OR: [{ svcMetaAds: true }, { svcGoogleAds: true }] } })
 
   let metaOk = 0, metaSkip = 0, metaErr = 0
   let googleOk = 0, googleSkip = 0, googleErr = 0

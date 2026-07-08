@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Plus, Search, Users, Zap, Settings2, X, Eye, EyeOff,
-  Loader2, CheckCircle, Building2, TrendingUp, Share2, MapPin, Star,
+  Loader2, CheckCircle, Building2, TrendingUp, BarChart2, Share2, MapPin, Star,
   DollarSign, Trash2, AlertTriangle,
 } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
@@ -23,7 +23,8 @@ const PLAN_COLOR: Record<string, string> = {
 const SEGMENTS = ['Estética', 'Jurídico', 'Academia', 'Imobiliário', 'Saúde', 'Educação', 'E-commerce', 'Outros']
 
 const SERVICES = [
-  { key: 'svcTrafeqoPago', label: 'Tráfego Pago', icon: TrendingUp },
+  { key: 'svcMetaAds', label: 'Meta Ads', icon: TrendingUp },
+  { key: 'svcGoogleAds', label: 'Google Ads', icon: BarChart2 },
   { key: 'svcSocialMedia', label: 'Social Media', icon: Share2 },
   { key: 'svcGoogleBusiness', label: 'Google Business Profile', icon: MapPin },
   { key: 'svcGoogleLocal', label: 'Google Local Service', icon: Star },
@@ -49,7 +50,8 @@ function NovoCLienteModal({ onClose, onCreated }: { onClose: () => void; onCreat
     name: '', segment: '', plan: 'starter',
     currency: 'BRL',
     loginEmail: '', loginPassword: '',
-    svcTrafeqoPago: false,
+    svcMetaAds: false,
+    svcGoogleAds: false,
     svcSocialMedia: false,
     svcGoogleBusiness: false,
     svcGoogleLocal: false,

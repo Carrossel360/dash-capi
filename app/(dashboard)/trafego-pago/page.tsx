@@ -3,12 +3,13 @@ import { useState, useEffect, useRef } from 'react'
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   TrendingUp, TrendingDown, DollarSign, Users, ShoppingCart, Zap,
-  Edit3, Check, X, Eye, MessageCircle, MousePointer, Target,
+  Edit3, Check, X, Eye, MessageCircle, MousePointer, Target, Lock,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { RefreshCw } from 'lucide-react'
 import TopBar from '@/components/TopBar'
 import PeriodSelector, { type Period } from '@/components/PeriodSelector'
+import LockedServiceModal from '@/components/LockedServiceModal'
 import { useAuthStore } from '@/lib/store/auth'
 
 const currencySymbol = (c?: string) => c === 'USD' ? 'US$' : 'R$'
@@ -285,7 +286,16 @@ export default function TrafegoPagoPage() {
   const visibleMeta = currentWorkspace?.metaVisibleMetrics   ?? []
   const visibleGoog = currentWorkspace?.googleVisibleMetrics ?? []
 
-  const [tab, setTab]         = useState<'meta' | 'google'>('meta')
+  // Mesma regra de bloqueio do Sidebar (components/Sidebar.tsx): só bloqueia
+  // pra viewer de workspace de cliente — agência e admin/manager sempre veem tudo.
+  const isAgency = currentWorkspace?.isAgency ?? true
+  const isViewer = currentWorkspace?.role === 'viewer'
+  const services = currentWorkspace?.services
+  const metaLocked   = !isAgency && isViewer && !(services?.metaAds ?? false)
+  const googleLocked = !isAgency && isViewer && !(services?.googleAds ?? false)
+
+  const [tab, setTab] = useState<'meta' | 'google'>(() => (metaLocked && !googleLocked) ? 'google' : 'meta')
+  const [lockedTab, setLockedTab] = useState<'meta' | 'google' | null>(null)
   const [period, setPeriod]   = useState<Period>('30d')
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null)
   const [syncing, setSyncing] = useState(false)
@@ -380,6 +390,10 @@ export default function TrafegoPagoPage() {
         />
       )}
 
+      {lockedTab && (
+        <LockedServiceModal label={lockedTab === 'meta' ? 'Meta Ads' : 'Google Ads'} onClose={() => setLockedTab(null)} />
+      )}
+
       <div className="flex flex-col h-full overflow-hidden">
         <TopBar title="Tráfego Pago" />
         <main className="flex-1 overflow-y-auto p-5 space-y-5">
@@ -387,15 +401,19 @@ export default function TrafegoPagoPage() {
           {/* Platform tabs + Period */}
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex gap-2">
-              {(['meta', 'google'] as const).map((p) => (
-                <button key={p} onClick={() => setTab(p)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${tab === p ? 'text-white border-transparent' : 'bg-transparent text-slate-400 border-[#1e1635] hover:text-white'}`}
-                  style={tab === p ? { background: p === 'meta' ? '#6a11cb' : '#ea4335', boxShadow: `0 4px 16px ${p === 'meta' ? 'rgba(106,17,203,0.3)' : 'rgba(234,67,53,0.3)'}` } : {}}
-                >
-                  <span className="text-base font-bold">{p === 'meta' ? 'f' : 'G'}</span>
-                  {p === 'meta' ? 'Meta Ads' : 'Google Ads'}
-                </button>
-              ))}
+              {(['meta', 'google'] as const).map((p) => {
+                const locked = p === 'meta' ? metaLocked : googleLocked
+                return (
+                  <button key={p} onClick={() => locked ? setLockedTab(p) : setTab(p)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${tab === p && !locked ? 'text-white border-transparent' : 'bg-transparent text-slate-400 border-[#1e1635] hover:text-white'}`}
+                    style={tab === p && !locked ? { background: p === 'meta' ? '#6a11cb' : '#ea4335', boxShadow: `0 4px 16px ${p === 'meta' ? 'rgba(106,17,203,0.3)' : 'rgba(234,67,53,0.3)'}` } : {}}
+                  >
+                    <span className="text-base font-bold">{p === 'meta' ? 'f' : 'G'}</span>
+                    {p === 'meta' ? 'Meta Ads' : 'Google Ads'}
+                    {locked && <Lock className="w-3 h-3 text-slate-600" />}
+                  </button>
+                )
+              })}
             </div>
             <div className="w-px h-5 bg-[#1e1635]" />
             <PeriodSelector
