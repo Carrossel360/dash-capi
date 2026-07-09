@@ -74,6 +74,7 @@ export interface GoogleAdsReportRow {
   clicks: number
   ctr: number
   averageCpcMicros: number
+  conversions: number
 }
 
 interface FetchGoogleAdsReportOptions {
@@ -93,7 +94,7 @@ export async function fetchGoogleAdsReport({ mcc, customerId, since, until }: Fe
   const query = `
     SELECT segments.date, campaign.id, campaign.name,
            metrics.cost_micros, metrics.impressions, metrics.clicks,
-           metrics.ctr, metrics.average_cpc
+           metrics.ctr, metrics.average_cpc, metrics.conversions
     FROM campaign
     WHERE segments.date BETWEEN '${since}' AND '${until}'
       AND campaign.advertising_channel_type != 'LOCAL_SERVICES'
@@ -107,6 +108,7 @@ export async function fetchGoogleAdsReport({ mcc, customerId, since, until }: Fe
     costMicros: Number(r.metrics.costMicros ?? 0),
     impressions: Number(r.metrics.impressions ?? 0),
     clicks: Number(r.metrics.clicks ?? 0),
+    conversions: Number(r.metrics.conversions ?? 0),
     ctr: Number(r.metrics.ctr ?? 0),
     averageCpcMicros: Number(r.metrics.averageCpc ?? 0),
   }))

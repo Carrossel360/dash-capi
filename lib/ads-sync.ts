@@ -98,6 +98,10 @@ export async function syncWorkspaceGoogleAds(workspace: Workspace): Promise<Sync
     const rows = await fetchGoogleAdsReport({ mcc, customerId: workspace.googleAdsCustomerId, since, until })
 
     for (const r of rows) {
+      const spend = r.costMicros / 1_000_000
+      const conversions = Math.round(r.conversions)
+      const custoResultado = conversions > 0 ? spend / conversions : 0
+
       await prisma.googleAdsDailyData.upsert({
         where: {
           workspaceId_date_campaignId: {
@@ -111,19 +115,23 @@ export async function syncWorkspaceGoogleAds(workspace: Workspace): Promise<Sync
           date: new Date(r.date),
           campaignId: r.campaignId || ACCOUNT_TOTAL_ID,
           campaignName: r.campaignName ?? null,
-          valorGasto: r.costMicros / 1_000_000,
+          valorGasto: spend,
           impressoes: r.impressions,
           cliques: r.clicks,
           ctr: r.ctr,
           cpc: r.averageCpcMicros / 1_000_000,
+          resultados: conversions,
+          custoResultado,
         },
         update: {
           campaignName: r.campaignName ?? null,
-          valorGasto: r.costMicros / 1_000_000,
+          valorGasto: spend,
           impressoes: r.impressions,
           cliques: r.clicks,
           ctr: r.ctr,
           cpc: r.averageCpcMicros / 1_000_000,
+          resultados: conversions,
+          custoResultado,
         },
       })
     }
