@@ -58,7 +58,7 @@ export async function fetchMetaInsights({ adAccountId, accessToken, since, until
   }
 
   while (url) {
-    const { data } = await axios.get(url, params ? { params } : undefined)
+    const { data }: { data: { data?: MetaInsightRow[]; paging?: { next?: string } } } = await axios.get(url, { params })
     results.push(...(data.data ?? []))
     url = data.paging?.next
     params = undefined // a URL de "next" já vem com todos os query params (incluindo access_token)
