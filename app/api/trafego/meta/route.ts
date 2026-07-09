@@ -10,6 +10,7 @@ const COMPARISON_KEYS = [
 
 const emptyKpis = {
   spend: 0, impressions: 0, reach: 0, link_clicks: 0, results: 0,
+  resultsFromForm: 0, resultsFromConversas: 0,
   ctr: 0, cpc: 0, cost_per_result: 0, roas: null as number | null,
   leads_bc: null, messaging_conversations_started: null,
   cost_per_conversation: null, post_engagement: null,
@@ -68,12 +69,23 @@ export async function GET(req: NextRequest) {
     function buildAggregate(rows: typeof daily) {
       const sum = (key: string) => rows.reduce((acc, r) => acc + (Number((r as Record<string, unknown>)[key]) || 0), 0)
       const totalResults = rows.reduce((acc, r) => acc + resultOf(r), 0)
+      // De onde veio cada linha somada em `results`: lead real (campanha de Cadastro/Formulário)
+      // ou conversa iniciada usada como fallback (campanha de Mensagens sem lead). Só informativo
+      // pro usuário entender a composição do número — não afeta o cálculo em si.
+      let resultsFromForm = 0, resultsFromConversas = 0
+      for (const r of rows) {
+        const leads = Number(r.resultados) || 0
+        if (leads > 0) resultsFromForm += leads
+        else resultsFromConversas += Number(r.conversasIniciadas) || 0
+      }
       return {
         spend:           sum('valorGasto'),
         impressions:     sum('impressoes'),
         reach:           sum('alcance'),
         link_clicks:     sum('cliques'),
         results:         totalResults,
+        resultsFromForm,
+        resultsFromConversas,
         ctr:             rows.length ? sum('ctr') / rows.length : 0,
         cpc:             rows.length ? sum('cpc') / rows.length : 0,
         cost_per_result: costPer(sum('valorGasto'), totalResults),

@@ -74,6 +74,19 @@ const statusColor: Record<string, string> = {
 const LOWER_IS_BETTER = new Set(['cpc', 'cpm', 'cost_per_result', 'cost_per_conversation', 'cost_per_link_click', 'cost_per_conversion'])
 const NEUTRAL_COMPARISON = new Set(['spend'])
 
+// "Resultados" mistura duas origens: lead real (campanha de Cadastro/Formulário) e conversa
+// iniciada usada como fallback quando a campanha é de Mensagens e não gera lead. Composição
+// só informativa — não some quando é só uma fonte, só ajusta o texto pra ficar claro.
+function ResultsBreakdown({ fromForm, fromConversas }: { fromForm: number | null | undefined; fromConversas: number | null | undefined }) {
+  const form = fromForm ?? 0
+  const conv = fromConversas ?? 0
+  if (form === 0 && conv === 0) return null
+  const parts: string[] = []
+  if (form > 0) parts.push(`${form} lead${form > 1 ? 's' : ''} formulário Meta`)
+  if (conv > 0) parts.push(`${conv} conversa${conv > 1 ? 's' : ''} iniciada${conv > 1 ? 's' : ''}`)
+  return <p className="text-[10px] text-slate-600 mt-0.5">{parts.join(' + ')}</p>
+}
+
 function ComparisonBadge({ metricKey, pct }: { metricKey: string; pct: number | null | undefined }) {
   if (pct === null || pct === undefined || !isFinite(pct)) return null
   const improved = LOWER_IS_BETTER.has(metricKey) ? pct < 0 : pct > 0
@@ -769,6 +782,9 @@ export default function TrafegoPagoPage() {
                     <p className="text-xs text-slate-500">{label}</p>
                     <ComparisonBadge metricKey={key} pct={comparison[key]} />
                   </div>
+                  {key === 'results' && isMeta && (
+                    <ResultsBreakdown fromForm={apiKpis.resultsFromForm} fromConversas={apiKpis.resultsFromConversas} />
+                  )}
                 </div>
               ))}
             </div>
