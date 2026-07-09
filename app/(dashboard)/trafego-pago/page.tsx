@@ -54,7 +54,8 @@ const defaultFunnelGoogle = ['spend', 'impressions', 'clicks', 'conversions']
 type ApiKpis  = Record<string, number | null>
 type ChartRow = { dia: string; leads: number; vendas: number; gasto: number }
 type Campaign = { name: string; status: string; gasto: string; impressoes: string; cliques: string; ctr: string; leads: number; cpl: string; vendas: number; roas: string }
-type Keyword  = { keyword: string; match: string; impressions: number; clicks: number; ctr: string; cpc: string; position: number | null; quality: number | null }
+type GoogleKeyword    = { campaign: string; keyword: string; matchType: string; impressions: number; clicks: number; conversions: number; ctr: number; cost: number }
+type GoogleSearchTerm = { campaign: string; term: string; status: string; impressions: number; clicks: number; conversions: number; ctr: number; cost: number }
 type Creative = {
   id: string; name: string; status: string; effectiveStatus: string
   thumbnailUrl: string | null; imageUrl: string | null; videoId: string | null
@@ -97,6 +98,60 @@ function ComparisonBadge({ metricKey, pct }: { metricKey: string; pct: number | 
       <Arrow className="w-2.5 h-2.5" />
       {Math.abs(pct).toFixed(0)}%
     </span>
+  )
+}
+
+const matchTypeLabel: Record<string, string> = { EXACT: 'Exata', PHRASE: 'Frase', BROAD: 'Ampla' }
+
+// Lista compacta e rolável de palavras-chave/termos de pesquisa, já ordenada por impressões
+// pela própria API — ranqueia naturalmente as campanhas com mais volume no topo.
+function KeywordListCard({ title, loading, rows }: {
+  title: string
+  loading: boolean
+  rows: { label: string; sub: string; tag: string | null; impressions: number; clicks: number; conversions: number }[]
+}) {
+  return (
+    <div className="glass rounded-xl overflow-hidden">
+      <div className="px-4 py-3 border-b border-[#1e1635] flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-white">{title}</h3>
+        <span className="text-xs text-slate-500">{rows.length} {rows.length === 1 ? 'registro' : 'registros'}</span>
+      </div>
+      <div className="max-h-72 overflow-y-auto">
+        {loading ? (
+          <div className="flex items-center justify-center py-10">
+            <Loader2 className="w-5 h-5 text-[#ea4335] animate-spin" />
+          </div>
+        ) : rows.length === 0 ? (
+          <p className="text-xs text-slate-500 text-center py-8">Nenhum dado para o período selecionado.</p>
+        ) : (
+          rows.map((r, i) => (
+            <div key={i} className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-[#1e1635]/50 hover:bg-white/[0.02] transition-colors">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs font-medium text-white truncate">{r.label}</p>
+                  {r.tag && <span className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-medium text-slate-400 bg-slate-400/10">{r.tag}</span>}
+                </div>
+                <p className="text-[10px] text-slate-600 truncate">{r.sub}</p>
+              </div>
+              <div className="flex items-center gap-3 text-right shrink-0">
+                <div>
+                  <p className="text-xs text-white">{r.impressions.toLocaleString('pt-BR')}</p>
+                  <p className="text-[9px] text-slate-600">Impr.</p>
+                </div>
+                <div>
+                  <p className="text-xs text-white">{r.clicks.toLocaleString('pt-BR')}</p>
+                  <p className="text-[9px] text-slate-600">Cliques</p>
+                </div>
+                <div>
+                  <p className={`text-xs ${r.conversions > 0 ? 'text-emerald-400 font-medium' : 'text-slate-500'}`}>{r.conversions}</p>
+                  <p className="text-[9px] text-slate-600">Conv.</p>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -489,7 +544,9 @@ export default function TrafegoPagoPage() {
   const [googChart,      setGoogChart]      = useState<ChartRow[]>([])
   const [googCampaigns,  setGoogCampaigns]  = useState<Campaign[]>([])
   const [googComparison, setGoogComparison] = useState<Record<string, number | null>>({})
-  const [keywords,      setKeywords]      = useState<Keyword[]>([])
+  const [googleKeywords,     setGoogleKeywords]     = useState<GoogleKeyword[]>([])
+  const [googleSearchTerms,  setGoogleSearchTerms]  = useState<GoogleSearchTerm[]>([])
+  const [keywordsLoading,    setKeywordsLoading]    = useState(false)
   const [loading,       setLoading]       = useState(true)
   const [metaHasData,   setMetaHasData]   = useState(true)
   const [googHasData,   setGoogHasData]   = useState(true)
@@ -524,7 +581,6 @@ export default function TrafegoPagoPage() {
       setGoogCampaigns(goog.campaigns ?? [])
       setGoogComparison(goog.comparison ?? {})
       setGoogHasData(goog.kpis?.hasData ?? true)
-      setKeywords(goog.keywords ?? [])
     }).finally(() => setLoading(false))
   }, [token, period, customRange, syncNonce])
 
@@ -558,6 +614,21 @@ export default function TrafegoPagoPage() {
       .catch(err => toast.error(err instanceof Error ? err.message : 'Erro ao buscar criativos'))
       .finally(() => setCreativesLoading(false))
   }, [token, showCreatives, period, customRange])
+
+  useEffect(() => {
+    if (!token || tab !== 'google') return
+    if (period === 'custom' && !customRange) return
+    setKeywordsLoading(true)
+    const headers = { Authorization: `Bearer ${token}` }
+    const q = period === 'custom' && customRange
+      ? `?period=custom&from=${customRange.from}&to=${customRange.to}`
+      : `?period=${period}`
+    fetch(`/api/trafego/google/keywords${q}`, { headers })
+      .then(r => r.ok ? r.json() : r.json().then(d => { throw new Error(d.error ?? 'Erro ao buscar palavras-chave') }))
+      .then(d => { setGoogleKeywords(d.keywords ?? []); setGoogleSearchTerms(d.searchTerms ?? []) })
+      .catch(err => toast.error(err instanceof Error ? err.message : 'Erro ao buscar palavras-chave'))
+      .finally(() => setKeywordsLoading(false))
+  }, [token, tab, period, customRange])
 
   useEffect(() => { setAnimated(false); setTimeout(() => setAnimated(true), 50) }, [tab, period])
 
@@ -821,6 +892,23 @@ export default function TrafegoPagoPage() {
             </div>
           )}
 
+          {/* Palavras-chave + Termos de Pesquisa (Google) — ao lado do gráfico de Resultados,
+              não no fim da página. Cada lista rola independente pra não esticar o layout. */}
+          {!loading && !isMeta && (googleKeywords.length > 0 || googleSearchTerms.length > 0 || keywordsLoading) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <KeywordListCard
+                title="Palavras-chave"
+                loading={keywordsLoading}
+                rows={googleKeywords.map(k => ({ label: k.keyword, sub: k.campaign, tag: matchTypeLabel[k.matchType] ?? k.matchType, impressions: k.impressions, clicks: k.clicks, conversions: k.conversions }))}
+              />
+              <KeywordListCard
+                title="Termos de Pesquisa"
+                loading={keywordsLoading}
+                rows={googleSearchTerms.map(t => ({ label: t.term, sub: t.campaign, tag: null, impressions: t.impressions, clicks: t.clicks, conversions: t.conversions }))}
+              />
+            </div>
+          )}
+
           {/* Gasto Diário — largura total */}
           {!loading && chart.length > 0 && (
             <div className="glass rounded-xl p-4">
@@ -834,41 +922,6 @@ export default function TrafegoPagoPage() {
                   <Bar dataKey="gasto" name="Gasto" fill={accentColor} radius={[4, 4, 0, 0]} fillOpacity={0.85} />
                 </BarChart>
               </ResponsiveContainer>
-            </div>
-          )}
-
-          {/* Google Keywords */}
-          {!loading && !isMeta && keywords.length > 0 && (
-            <div className="glass rounded-xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-[#1e1635] flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-white">Palavras-chave</h3>
-                <span className="text-xs text-slate-500">{keywords.length} registradas</span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-[#1e1635]">
-                      {['Keyword', 'Correspondência', 'Impr.', 'Cliques', 'CTR', 'CPC'].map(h => (
-                        <th key={h} className="px-4 py-3 text-left font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {keywords.map((k, i) => (
-                      <tr key={i} className="border-b border-[#1e1635]/50 hover:bg-white/[0.02] transition-colors">
-                        <td className="px-4 py-3 font-medium text-white">{k.keyword}</td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${k.match === 'Exata' ? 'text-emerald-400 bg-emerald-400/10' : k.match === 'Frase' ? 'text-[#8b5cf6] bg-[#8b5cf6]/10' : 'text-slate-400 bg-slate-400/10'}`}>{k.match}</span>
-                        </td>
-                        <td className="px-4 py-3 text-slate-300">{k.impressions.toLocaleString('pt-BR')}</td>
-                        <td className="px-4 py-3 text-slate-300">{k.clicks.toLocaleString('pt-BR')}</td>
-                        <td className="px-4 py-3 text-emerald-400 font-medium">{k.ctr}</td>
-                        <td className="px-4 py-3 text-slate-300">{k.cpc}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
             </div>
           )}
 

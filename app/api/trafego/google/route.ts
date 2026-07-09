@@ -12,17 +12,6 @@ const emptyKpis = {
   hasData: false,
 }
 
-function monthsInRange(gte: Date, lte: Date): string[] {
-  const months = new Set<string>()
-  const cur = new Date(gte.getFullYear(), gte.getMonth(), 1)
-  const end = new Date(lte.getFullYear(), lte.getMonth(), 1)
-  while (cur <= end) {
-    months.add(cur.toISOString().slice(0, 7))
-    cur.setMonth(cur.getMonth() + 1)
-  }
-  return Array.from(months)
-}
-
 function cs(currency: string | null | undefined) {
   return currency === 'USD' ? 'US$' : 'R$'
 }
@@ -135,37 +124,11 @@ export async function GET(req: NextRequest) {
         roas:       '-',
       }))
 
-    // Keywords: período específico usa o(s) mês(es) cobertos pelo range pedido;
-    // 'all' cai para o último mês mensal importado (comportamento anterior).
-    const keywordPeriods = range ? monthsInRange(range.gte, range.lte) : (monthly?.period ? [monthly.period] : [])
-    const rawKeywords = keywordPeriods.length
-      ? await prisma.googleAdsKeyword.findMany({
-          where: { workspaceId, period: { in: keywordPeriods } },
-          orderBy: { clicks: 'desc' },
-          take: 20,
-        })
-      : []
-
-    const matchLabel: Record<string, string> = {
-      EXACT: 'Exata', PHRASE: 'Frase', BROAD: 'Ampla',
-      exact: 'Exata', phrase: 'Frase', broad: 'Ampla',
-    }
-    const keywords = rawKeywords.map(k => ({
-      keyword:     k.keyword,
-      match:       matchLabel[k.matchType ?? ''] ?? k.matchType ?? '-',
-      impressions: Math.round(Number(k.impressions)),
-      clicks:      Math.round(Number(k.clicks)),
-      ctr:         `${(Number(k.ctr) * 100).toFixed(1)}%`,
-      cpc:         `${curr} ${Number(k.cpc).toFixed(2)}`,
-      position:    null,
-      quality:     null,
-    }))
-
     const comparison = daily.length > 0 && dailyPrev.length > 0
       ? buildComparison(kpis, buildAggregate(dailyPrev), COMPARISON_KEYS)
       : {}
 
-    return NextResponse.json({ kpis, chart, campaigns, keywords, comparison })
+    return NextResponse.json({ kpis, chart, campaigns, comparison })
   } catch (err) {
     console.error('[/api/trafego/google]', err)
     return NextResponse.json(
