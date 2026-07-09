@@ -11,14 +11,18 @@ interface MccCreds {
 }
 
 // Credenciais por MCC (a agência tem uma MCC no Brasil e outra nos EUA).
+// Client ID/Secret também são por MCC, não compartilhados: um projeto do Google Cloud
+// fica permanentemente vinculado ao primeiro developer token usado nele (comportamento
+// da própria Google Ads API) — usar o mesmo Client ID pras duas MCCs faz a segunda travar
+// com DEVELOPER_TOKEN_PROHIBITED assim que a primeira for autenticada.
 // Faltam client_id/secret/refresh_token até o usuário concluir o consent OAuth2 —
 // isGoogleAdsConfigured() protege as chamadas até essas env vars existirem.
 function getMccCreds(mcc: GoogleAdsMcc): MccCreds {
   return {
     developerToken: process.env[`GOOGLE_ADS_DEV_TOKEN_${mcc}`] ?? '',
     loginCustomerId: process.env[`GOOGLE_ADS_LOGIN_CUSTOMER_ID_${mcc}`] ?? '',
-    clientId: process.env.GOOGLE_ADS_CLIENT_ID ?? '',
-    clientSecret: process.env.GOOGLE_ADS_CLIENT_SECRET ?? '',
+    clientId: process.env[`GOOGLE_ADS_CLIENT_ID_${mcc}`] ?? '',
+    clientSecret: process.env[`GOOGLE_ADS_CLIENT_SECRET_${mcc}`] ?? '',
     refreshToken: process.env[`GOOGLE_ADS_REFRESH_TOKEN_${mcc}`] ?? '',
   }
 }
@@ -57,7 +61,7 @@ interface FetchGoogleAdsReportOptions {
 }
 
 // Busca relatório diário por campanha via Google Ads API (GAQL). Inativa até
-// GOOGLE_ADS_CLIENT_ID/SECRET e GOOGLE_ADS_REFRESH_TOKEN_<mcc> serem configurados.
+// GOOGLE_ADS_CLIENT_ID_<mcc>/CLIENT_SECRET_<mcc> e GOOGLE_ADS_REFRESH_TOKEN_<mcc> serem configurados.
 export async function fetchGoogleAdsReport({ mcc, customerId, since, until }: FetchGoogleAdsReportOptions): Promise<GoogleAdsReportRow[]> {
   const creds = getMccCreds(mcc)
   const accessToken = await refreshGoogleAccessToken(creds)
