@@ -4,6 +4,7 @@ import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 import {
   TrendingUp, TrendingDown, DollarSign, Users, ShoppingCart, Zap,
   Edit3, Check, X, Eye, MessageCircle, MousePointer, Target, Lock,
+  Loader2, PlayCircle, ExternalLink, Image as ImageIcon, ArrowUpDown, Film, ChevronDown,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { RefreshCw } from 'lucide-react'
@@ -54,6 +55,13 @@ type ApiKpis  = Record<string, number | null>
 type ChartRow = { dia: string; leads: number; vendas: number; gasto: number }
 type Campaign = { name: string; status: string; gasto: string; impressoes: string; cliques: string; ctr: string; leads: number; cpl: string; vendas: number; roas: string }
 type Keyword  = { keyword: string; match: string; impressions: number; clicks: number; ctr: string; cpc: string; position: number | null; quality: number | null }
+type Creative = {
+  id: string; name: string; status: string; effectiveStatus: string
+  thumbnailUrl: string | null; imageUrl: string | null; videoId: string | null
+  body: string | null; title: string | null
+  spend: number; impressions: number; clicks: number; ctr: number; cpm: number; cpc: number
+  leads: number; cpl: number
+}
 
 const statusColor: Record<string, string> = {
   Ativo: 'text-emerald-400 bg-emerald-400/10',
@@ -92,6 +100,124 @@ function ManualEditModal({ metric, value, currency, onSave, onClose }: {
             style={{ background: '#6a11cb' }}>
             <Check className="w-3.5 h-3.5" /> Salvar
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Creative modal ── */
+function CreativeModal({ creative, adAccountId, currency, token, onClose }: {
+  creative: Creative; adAccountId: string; currency: string; token: string; onClose: () => void
+}) {
+  const [videoSrc, setVideoSrc] = useState<string | null>(null)
+  const [videoPermalink, setVideoPermalink] = useState<string | null>(null)
+  const [loadingVideo, setLoadingVideo] = useState(false)
+  const cs = currencySymbol(currency)
+  const active = creative.effectiveStatus === 'ACTIVE'
+
+  useEffect(() => {
+    if (!creative.videoId) return
+    setLoadingVideo(true)
+    fetch(`/api/trafego/meta/creatives/${creative.id}/video?videoId=${creative.videoId}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => { setVideoSrc(d.source ?? null); setVideoPermalink(d.permalinkUrl ?? null) })
+      .finally(() => setLoadingVideo(false))
+  }, [creative.id, creative.videoId, token])
+
+  const metrics = [
+    { label: 'Investido',   value: `${cs} ${creative.spend.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` },
+    { label: 'Impressões',  value: creative.impressions.toLocaleString('pt-BR') },
+    { label: 'Cliques',     value: creative.clicks.toLocaleString('pt-BR') },
+    { label: 'CTR',         value: `${creative.ctr.toFixed(2)}%` },
+    { label: 'CPM',         value: `${cs}${creative.cpm.toFixed(2)}` },
+    { label: 'CPC',         value: `${cs} ${creative.cpc.toFixed(2)}` },
+    { label: 'Leads Reais', value: creative.leads.toLocaleString('pt-BR') },
+    { label: 'CPL',         value: creative.leads > 0 ? `${cs} ${creative.cpl.toFixed(2)}` : '-' },
+  ]
+
+  return (
+    <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative rounded-2xl w-full max-w-3xl shadow-2xl z-10 overflow-y-auto max-h-[90vh]"
+        style={{ background: '#0d0a1f', border: '1px solid rgba(106,17,203,0.3)' }}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#1e1635]">
+          <div>
+            <h3 className="text-sm font-bold text-white">{creative.name}</h3>
+            <div className="flex items-center gap-2 mt-1">
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${active ? statusColor.Ativo : statusColor.Pausado}`}>
+                {active ? 'Ativo' : 'Pausado'}
+              </span>
+              <span className="text-[10px] text-slate-600">{creative.id}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <a href={`https://adsmanager.facebook.com/adsmanager/manage/ads?act=${adAccountId}&selected_ad_ids=${creative.id}`}
+              target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-[#2d2550] text-slate-300 hover:text-white hover:border-[#6a11cb] transition-colors"
+            >
+              <ExternalLink className="w-3.5 h-3.5" /> Abrir no Meta
+            </a>
+            <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="rounded-xl overflow-hidden bg-black flex items-center justify-center" style={{ minHeight: 280 }}>
+            {creative.videoId ? (
+              loadingVideo ? (
+                <Loader2 className="w-6 h-6 text-slate-500 animate-spin" />
+              ) : videoSrc ? (
+                <video src={videoSrc} controls className="w-full h-full" poster={creative.thumbnailUrl ?? undefined} />
+              ) : (
+                <div className="relative w-full h-full">
+                  {creative.thumbnailUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={creative.thumbnailUrl} alt={creative.name} className="w-full h-full object-cover opacity-50" />
+                  )}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center">
+                    <PlayCircle className="w-10 h-10 text-white/80" />
+                    <p className="text-xs text-slate-300">A Meta não libera o arquivo do vídeo por essa API.</p>
+                    {videoPermalink && (
+                      <a href={videoPermalink} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg text-white font-medium"
+                        style={{ background: '#6a11cb' }}
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" /> Assistir no Facebook
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )
+            ) : (creative.imageUrl || creative.thumbnailUrl) ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={creative.imageUrl ?? creative.thumbnailUrl ?? ''} alt={creative.name} className="w-full h-full object-contain" />
+            ) : (
+              <ImageIcon className="w-10 h-10 text-slate-700" />
+            )}
+          </div>
+
+          <div className="space-y-4">
+            {(creative.title || creative.body) && (
+              <div>
+                {creative.title && <p className="text-sm font-semibold text-white mb-1">{creative.title}</p>}
+                {creative.body && <p className="text-xs text-slate-400 whitespace-pre-wrap">{creative.body}</p>}
+              </div>
+            )}
+            <div>
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Performance</p>
+              <div className="grid grid-cols-2 gap-3">
+                {metrics.map(m => (
+                  <div key={m.label}>
+                    <p className="text-sm font-bold text-white">{m.value}</p>
+                    <p className="text-[10px] text-slate-500">{m.label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -315,6 +441,14 @@ export default function TrafegoPagoPage() {
   const [metaHasData,   setMetaHasData]   = useState(true)
   const [googHasData,   setGoogHasData]   = useState(true)
 
+  const [showCreatives, setShowCreatives] = useState(false)
+  const [creatives, setCreatives] = useState<Creative[]>([])
+  const [creativesLoading, setCreativesLoading] = useState(false)
+  const [creativeAdAccountId, setCreativeAdAccountId] = useState('')
+  const [creativeStatusFilter, setCreativeStatusFilter] = useState<'all' | 'active' | 'paused'>('all')
+  const [creativeSort, setCreativeSort] = useState<'spend' | 'ctr' | 'leads'>('spend')
+  const [selectedCreative, setSelectedCreative] = useState<Creative | null>(null)
+
   useEffect(() => {
     if (!token) return
     if (period === 'custom' && !customRange) return
@@ -355,6 +489,21 @@ export default function TrafegoPagoPage() {
     }
   }
 
+  useEffect(() => {
+    if (!token || !showCreatives) return
+    if (period === 'custom' && !customRange) return
+    setCreativesLoading(true)
+    const headers = { Authorization: `Bearer ${token}` }
+    const q = period === 'custom' && customRange
+      ? `?period=custom&from=${customRange.from}&to=${customRange.to}`
+      : `?period=${period}`
+    fetch(`/api/trafego/meta/creatives${q}`, { headers })
+      .then(r => r.ok ? r.json() : r.json().then(d => { throw new Error(d.error ?? 'Erro ao buscar criativos') }))
+      .then(d => { setCreatives(d.creatives ?? []); setCreativeAdAccountId(d.adAccountId ?? '') })
+      .catch(err => toast.error(err instanceof Error ? err.message : 'Erro ao buscar criativos'))
+      .finally(() => setCreativesLoading(false))
+  }, [token, showCreatives, period, customRange])
+
   useEffect(() => { setAnimated(false); setTimeout(() => setAnimated(true), 50) }, [tab, period])
 
   const isMeta      = tab === 'meta'
@@ -378,6 +527,10 @@ export default function TrafegoPagoPage() {
     ? (funnelKeys.length > 0 ? funnelKeys : defaultFunnelMeta)
     : defaultFunnelGoogle
 
+  const filteredCreatives = creatives
+    .filter(c => creativeStatusFilter === 'all' || (creativeStatusFilter === 'active') === (c.effectiveStatus === 'ACTIVE'))
+    .sort((a, b) => b[creativeSort] - a[creativeSort])
+
   return (
     <>
       {manualEdit && (
@@ -392,6 +545,16 @@ export default function TrafegoPagoPage() {
 
       {lockedTab && (
         <LockedServiceModal label={lockedTab === 'meta' ? 'Meta Ads' : 'Google Ads'} onClose={() => setLockedTab(null)} />
+      )}
+
+      {selectedCreative && (
+        <CreativeModal
+          creative={selectedCreative}
+          adAccountId={creativeAdAccountId}
+          currency={currency}
+          token={token!}
+          onClose={() => setSelectedCreative(null)}
+        />
       )}
 
       <div className="flex flex-col h-full overflow-hidden">
@@ -585,6 +748,98 @@ export default function TrafegoPagoPage() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {/* Análise de Criativos (Meta) */}
+          {isMeta && (
+            <div className="glass rounded-xl overflow-hidden">
+              <button onClick={() => setShowCreatives(v => !v)}
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/[0.02] transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Film className="w-4 h-4" style={{ color: '#6a11cb' }} />
+                  <h3 className="text-sm font-semibold text-white">Análise de Criativos</h3>
+                </div>
+                <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${showCreatives ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showCreatives && (
+                <div className="border-t border-[#1e1635] p-4 space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {(['all', 'active', 'paused'] as const).map(s => (
+                      <button key={s} onClick={() => setCreativeStatusFilter(s)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                        style={creativeStatusFilter === s
+                          ? { background: '#6a11cb', color: '#fff' }
+                          : { background: 'rgba(15,11,30,0.7)', color: '#94a3b8', border: '1px solid #1e1635' }}
+                      >
+                        {s === 'all' ? 'Todos' : s === 'active' ? 'Ativos' : 'Pausados'}
+                      </button>
+                    ))}
+                    <div className="w-px h-5 bg-[#1e1635]" />
+                    <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                      <ArrowUpDown className="w-3.5 h-3.5" /> Ordenar:
+                    </div>
+                    {(['spend', 'ctr', 'leads'] as const).map(s => (
+                      <button key={s} onClick={() => setCreativeSort(s)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                        style={creativeSort === s
+                          ? { background: '#6a11cb', color: '#fff' }
+                          : { background: 'rgba(15,11,30,0.7)', color: '#94a3b8', border: '1px solid #1e1635' }}
+                      >
+                        {s === 'spend' ? 'Gasto' : s === 'ctr' ? 'CTR' : 'Leads'}
+                      </button>
+                    ))}
+                  </div>
+
+                  {creativesLoading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="w-5 h-5 text-[#6a11cb] animate-spin" />
+                    </div>
+                  ) : filteredCreatives.length === 0 ? (
+                    <p className="text-xs text-slate-500 text-center py-8">Nenhum criativo encontrado para o período selecionado.</p>
+                  ) : (
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                      {filteredCreatives.map(c => {
+                        const active = c.effectiveStatus === 'ACTIVE'
+                        return (
+                          <button key={c.id} onClick={() => setSelectedCreative(c)}
+                            className="glass rounded-xl overflow-hidden text-left hover:border-[#6a11cb]/50 transition-all group"
+                          >
+                            <div className="relative aspect-square bg-black flex items-center justify-center overflow-hidden">
+                              {c.thumbnailUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={c.thumbnailUrl} alt={c.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                              ) : (
+                                <ImageIcon className="w-8 h-8 text-slate-700" />
+                              )}
+                              {c.videoId && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                                  <PlayCircle className="w-8 h-8 text-white/90" />
+                                </div>
+                              )}
+                              <span className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[10px] font-medium ${active ? statusColor.Ativo : statusColor.Pausado}`}>
+                                {active ? 'Ativo' : 'Pausado'}
+                              </span>
+                              <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md text-[10px] font-semibold text-white bg-black/60">
+                                {currencySymbol(currency)} {c.spend.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                            <div className="p-2.5">
+                              <p className="text-xs font-medium text-white truncate">{c.name}</p>
+                              <div className="flex items-center justify-between mt-1.5 text-[10px] text-slate-500">
+                                <span>{c.impressions.toLocaleString('pt-BR')} impr.</span>
+                                <span className="text-emerald-400">{c.ctr.toFixed(2)}%</span>
+                              </div>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

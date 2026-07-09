@@ -1,19 +1,7 @@
 import type { Workspace } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { fetchMetaInsights, type MetaInsightAction } from '@/lib/meta-ads'
+import { fetchMetaInsights, sumActions, MESSAGING_ACTION_TYPES, LEAD_ACTION_TYPES } from '@/lib/meta-ads'
 import { fetchGoogleAdsReport, isGoogleAdsConfigured, type GoogleAdsMcc } from '@/lib/google-ads'
-
-// Action types que a Meta usa pra "Conversa iniciada" (objetivo Mensagens — WhatsApp/Messenger/IG Direct).
-const MESSAGING_ACTION_TYPES = ['onsite_conversion.messaging_conversation_started_7d', 'messaging_conversation_started_7d']
-// Action types de "Lead" (objetivo Cadastro/Lead Ads) — só aparecem em campanhas desse objetivo, sem ambiguidade.
-const LEAD_ACTION_TYPES = ['lead', 'onsite_conversion.lead_grouped']
-
-function sumActions(actions: MetaInsightAction[] | undefined, types: string[]): number {
-  if (!actions) return 0
-  return actions
-    .filter(a => types.includes(a.action_type))
-    .reduce((acc, a) => acc + (parseFloat(a.value) || 0), 0)
-}
 
 // Janela deslizante: reprocessa os últimos N dias a cada sync (corrige atraso de atribuição
 // e faz upsert de novo em cima de dias já sincronizados). 30 dias garante que o filtro de
