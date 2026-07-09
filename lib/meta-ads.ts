@@ -40,20 +40,31 @@ export interface MetaAdInsightRow {
 
 // Busca insights diários por campanha via Meta Graph API (Marketing API / ads_read).
 // Não confundir com lib/meta-capi.ts, que envia eventos de conversão (produto diferente).
+//
+// Segue paginação (data.paging.next): a Graph API pagina em ~25 linhas por página por padrão,
+// ordenadas da data mais antiga pra mais nova. Numa janela de 30 dias com múltiplas campanhas
+// por dia, isso facilmente passa de 25 linhas — sem seguir a paginação, a primeira página
+// cortada nunca chega nos dias mais recentes (inclusive hoje), mesmo a request tendo sucesso.
 export async function fetchMetaInsights({ adAccountId, accessToken, since, until }: MetaInsightsOptions): Promise<MetaInsightRow[]> {
-  const url = `https://graph.facebook.com/v21.0/act_${adAccountId}/insights`
+  const results: MetaInsightRow[] = []
+  let url: string | undefined = `https://graph.facebook.com/v21.0/act_${adAccountId}/insights`
+  let params: Record<string, unknown> | undefined = {
+    access_token: accessToken,
+    level: 'campaign',
+    time_increment: 1,
+    time_range: JSON.stringify({ since, until }),
+    fields: 'campaign_id,campaign_name,spend,impressions,reach,frequency,clicks,ctr,cpc,actions',
+    limit: 500,
+  }
 
-  const { data } = await axios.get(url, {
-    params: {
-      access_token: accessToken,
-      level: 'campaign',
-      time_increment: 1,
-      time_range: JSON.stringify({ since, until }),
-      fields: 'campaign_id,campaign_name,spend,impressions,reach,frequency,clicks,ctr,cpc,actions',
-    },
-  })
+  while (url) {
+    const { data } = await axios.get(url, params ? { params } : undefined)
+    results.push(...(data.data ?? []))
+    url = data.paging?.next
+    params = undefined // a URL de "next" já vem com todos os query params (incluindo access_token)
+  }
 
-  return data.data ?? []
+  return results
 }
 
 // Action types que a Meta usa pra "Conversa iniciada" (objetivo Mensagens — WhatsApp/Messenger/IG Direct).
