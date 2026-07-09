@@ -200,7 +200,7 @@ function CreativeModal({ creative, adAccountId, currency, token, onClose }: {
               loadingVideo ? (
                 <Loader2 className="w-6 h-6 text-slate-500 animate-spin" />
               ) : videoSrc ? (
-                <video src={videoSrc} controls className="w-full h-full" poster={creative.thumbnailUrl ?? undefined} />
+                <video src={videoSrc} controls className="w-full h-full object-contain" poster={creative.thumbnailUrl ?? undefined} />
               ) : previewSrc ? (
                 <iframe
                   src={previewSrc}

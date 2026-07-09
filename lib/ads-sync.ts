@@ -1,6 +1,6 @@
 import type { Workspace } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { fetchMetaInsights, sumActions, MESSAGING_ACTION_TYPES, LEAD_ACTION_TYPES } from '@/lib/meta-ads'
+import { fetchMetaInsights, sumActions, leadCount, MESSAGING_ACTION_TYPES } from '@/lib/meta-ads'
 import { fetchGoogleAdsReport, isGoogleAdsConfigured, type GoogleAdsMcc } from '@/lib/google-ads'
 
 // Janela deslizante: reprocessa os últimos N dias a cada sync (corrige atraso de atribuição
@@ -38,7 +38,7 @@ export async function syncWorkspaceMetaAds(workspace: Workspace): Promise<SyncRe
 
     for (const r of rows) {
       const conversasIniciadas = sumActions(r.actions, MESSAGING_ACTION_TYPES)
-      const leads = sumActions(r.actions, LEAD_ACTION_TYPES)
+      const leads = leadCount(r.actions)
       const spend = f(r.spend) ?? 0
 
       await prisma.metaAdsDailyData.upsert({

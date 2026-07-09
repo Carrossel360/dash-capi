@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthPayload } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { fetchMetaAdCreatives, sumActions, MESSAGING_ACTION_TYPES, LEAD_ACTION_TYPES } from '@/lib/meta-ads'
+import { fetchMetaAdCreatives, sumActions, leadCount, MESSAGING_ACTION_TYPES } from '@/lib/meta-ads'
 
 function ymd(d: Date): string {
   return d.toISOString().slice(0, 10)
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
     const creatives = ads.map(ad => {
       const row = ad.insights?.data?.[0]
       const spend = Number(row?.spend) || 0
-      const leads = sumActions(row?.actions, [...MESSAGING_ACTION_TYPES, ...LEAD_ACTION_TYPES])
+      const leads = leadCount(row?.actions) + sumActions(row?.actions, MESSAGING_ACTION_TYPES)
       return {
         id: ad.id,
         name: ad.name,

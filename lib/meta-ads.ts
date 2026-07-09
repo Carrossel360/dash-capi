@@ -69,14 +69,24 @@ export async function fetchMetaInsights({ adAccountId, accessToken, since, until
 
 // Action types que a Meta usa pra "Conversa iniciada" (objetivo Mensagens — WhatsApp/Messenger/IG Direct).
 export const MESSAGING_ACTION_TYPES = ['onsite_conversion.messaging_conversation_started_7d', 'messaging_conversation_started_7d']
-// Action types de "Lead" (objetivo Cadastro/Lead Ads) — só aparecem em campanhas desse objetivo, sem ambiguidade.
-export const LEAD_ACTION_TYPES = ['lead', 'onsite_conversion.lead_grouped']
 
 export function sumActions(actions: MetaInsightAction[] | undefined, types: string[]): number {
   if (!actions) return 0
   return actions
     .filter(a => types.includes(a.action_type))
     .reduce((acc, a) => acc + (parseFloat(a.value) || 0), 0)
+}
+
+// 'lead' e 'onsite_conversion.lead_grouped' reportam o MESMO lead de formulário nativo
+// (Instant Forms) por dois action_types diferentes — na prática vêm sempre com valor idêntico
+// na mesma linha. Somar os dois (como um LEAD_ACTION_TYPES ingênuo faria) dobra a contagem de
+// resultado em toda campanha de Cadastro/Lead Ads. `onsite_conversion.lead_grouped` é o mais
+// específico pra Instant Forms (bate com a coluna "Resultados" do Gerenciador de Anúncios pra
+// esse objetivo); cai pra `lead` só quando o lead vem de fora do Facebook (ex.: Pixel numa
+// landing page), caso em que `lead_grouped` nem aparece.
+export function leadCount(actions: MetaInsightAction[] | undefined): number {
+  const grouped = sumActions(actions, ['onsite_conversion.lead_grouped'])
+  return grouped > 0 ? grouped : sumActions(actions, ['lead'])
 }
 
 export interface MetaAdAccount {
