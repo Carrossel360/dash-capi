@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthPayload } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { dateRange, previousRange, buildComparison } from '@/lib/trafego-period'
-import { fetchGoogleAdsConversionBreakdown, isGoogleAdsConfigured, type GoogleAdsMcc } from '@/lib/google-ads'
+import { fetchGoogleAdsConversionBreakdown, fetchGoogleAdsQualitySummary, isGoogleAdsConfigured, type GoogleAdsMcc } from '@/lib/google-ads'
 
 // Rótulo em PT-BR pras categorias padronizadas de conversão da Google Ads API — cobre as mais
 // comuns; categoria sem tradução cai pro nome bruto em minúsculas (melhor que sumir do card).
@@ -86,24 +86,32 @@ export async function GET(req: NextRequest) {
 
     const curr = cs(ws?.currency)
 
-    // Breakdown de conversões por tipo (chamada, formulário, agendamento...) — busca ao vivo
-    // na API, mesmo padrão de keywords/search terms: só faz sentido pro período selecionado
-    // atual, não persiste histórico. Pulado em 'Todo período' (sem range concreto) e quando
-    // o cliente não tem Google Ads configurado.
+    // Breakdown de conversões por tipo, Índice de Qualidade e Parcela de Impressões — busca
+    // ao vivo na API, mesmo padrão de keywords/search terms: só fazem sentido pro período
+    // selecionado atual, não persistem histórico (Quality Score só existe a nível de
+    // keyword, Search Impr. Share só a nível de campanha de Pesquisa — nenhum dos dois tem
+    // coluna equivalente em GoogleAdsDailyData). Pulado em 'Todo período' (sem range
+    // concreto) e quando o cliente não tem Google Ads configurado.
     let conversionsBreakdown: { label: string; count: number }[] = []
+    let qualityScore: number | null = null
+    let searchImpressionShare: number | null = null
     if (range && ws?.googleAdsCustomerId) {
       const mcc = mccForWorkspace(ws.currency)
       if (isGoogleAdsConfigured(mcc)) {
+        const since = ymd(range.gte), until = ymd(range.lte)
         try {
-          const rows = await fetchGoogleAdsConversionBreakdown({
-            mcc, customerId: ws.googleAdsCustomerId, since: ymd(range.gte), until: ymd(range.lte),
-          })
-          conversionsBreakdown = rows.map(r => ({
+          const [breakdownRows, quality] = await Promise.all([
+            fetchGoogleAdsConversionBreakdown({ mcc, customerId: ws.googleAdsCustomerId, since, until }),
+            fetchGoogleAdsQualitySummary({ mcc, customerId: ws.googleAdsCustomerId, since, until }),
+          ])
+          conversionsBreakdown = breakdownRows.map(r => ({
             label: CONVERSION_CATEGORY_LABELS[r.category] ?? r.category.toLowerCase().replace(/_/g, ' '),
             count: r.conversions,
           }))
+          qualityScore = quality.avgQualityScore != null ? Math.round(quality.avgQualityScore * 10) / 10 : null
+          searchImpressionShare = quality.avgSearchImpressionShare != null ? Math.round(quality.avgSearchImpressionShare * 10) / 10 : null
         } catch (err) {
-          console.error('[/api/trafego/google] conversionsBreakdown', err)
+          console.error('[/api/trafego/google] conversionsBreakdown/qualitySummary', err)
         }
       }
     }
@@ -126,7 +134,7 @@ export async function GET(req: NextRequest) {
 
     const kpis = daily.length > 0 ? {
       ...buildAggregate(daily),
-      roas:                null, quality_score: null, search_impression_share: null,
+      roas: null, quality_score: qualityScore, search_impression_share: searchImpressionShare,
       hasData: true,
     } : isRangedQuery ? emptyKpis : {
       // Sem dado diário e período = 'all': cai para o último mês importado do Supabase (histórico legado)

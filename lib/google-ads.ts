@@ -219,3 +219,59 @@ export async function fetchGoogleAdsConversionBreakdown({ mcc, customerId, since
     .filter(r => r.conversions > 0)
     .sort((a, b) => b.conversions - a.conversions)
 }
+
+export interface GoogleAdsQualitySummary {
+  avgSearchImpressionShare: number | null // 0–100 (já em %, pronto pro fmt do frontend)
+  avgQualityScore: number | null // 1–10
+}
+
+// Duas métricas sem equivalente direto em MetaAdsDailyData/GoogleAdsDailyData, por isso
+// calculadas ao vivo (mesmo padrão de keywords/conversionsBreakdown), não persistidas:
+// - search_impression_share só existe a nível de campanha, e só pra campanhas de Pesquisa
+//   (Local/PMax/Smart não retornam o campo) — média ponderada por impressões.
+// - quality_score só existe a nível de PALAVRA-CHAVE (não tem equivalente de conta/campanha),
+//   e só quando o Google já acumulou volume suficiente pra calcular — keywords novas/de baixo
+//   volume vêm sem o campo, por isso a média só soma quem tem nota.
+export async function fetchGoogleAdsQualitySummary({ mcc, customerId, since, until }: FetchGoogleAdsReportOptions): Promise<GoogleAdsQualitySummary> {
+  const campaignQuery = `
+    SELECT metrics.search_impression_share, metrics.impressions
+    FROM campaign
+    WHERE segments.date BETWEEN '${since}' AND '${until}'
+      AND campaign.advertising_channel_type = 'SEARCH'
+  `
+  const keywordQuery = `
+    SELECT ad_group_criterion.quality_info.quality_score
+    FROM keyword_view
+    WHERE segments.date BETWEEN '${since}' AND '${until}'
+      AND ad_group_criterion.status = 'ENABLED'
+  `
+
+  const [campaignRows, keywordRows] = await Promise.all([
+    searchStream(mcc, customerId, campaignQuery),
+    searchStream(mcc, customerId, keywordQuery),
+  ])
+
+  let sisWeightedSum = 0, sisWeightTotal = 0
+  for (const r of campaignRows) {
+    const share = r.metrics?.searchImpressionShare
+    const impressions = Number(r.metrics?.impressions ?? 0)
+    if (share != null && impressions > 0) {
+      sisWeightedSum += Number(share) * impressions
+      sisWeightTotal += impressions
+    }
+  }
+
+  let qsSum = 0, qsCount = 0
+  for (const r of keywordRows) {
+    const score = r.adGroupCriterion?.qualityInfo?.qualityScore
+    if (score != null) {
+      qsSum += Number(score)
+      qsCount++
+    }
+  }
+
+  return {
+    avgSearchImpressionShare: sisWeightTotal > 0 ? (sisWeightedSum / sisWeightTotal) * 100 : null,
+    avgQualityScore: qsCount > 0 ? qsSum / qsCount : null,
+  }
+}
