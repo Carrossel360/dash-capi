@@ -1,32 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthPayload } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { dateRange, previousRange, buildComparison } from '@/lib/trafego-period'
 
-function dateRange(period: string, from?: string | null, to?: string | null): { gte: Date; lte: Date } | undefined {
-  const now = new Date()
-
-  if (period === 'custom') {
-    if (!from || !to) return undefined
-    const gte = new Date(from); gte.setHours(0, 0, 0, 0)
-    const lte = new Date(to); lte.setHours(23, 59, 59, 999)
-    return { gte, lte }
-  }
-  if (period === 'today') {
-    const gte = new Date(now); gte.setHours(0, 0, 0, 0)
-    const lte = new Date(now); lte.setHours(23, 59, 59, 999)
-    return { gte, lte }
-  }
-  if (period === 'yesterday') {
-    const gte = new Date(now); gte.setDate(gte.getDate() - 1); gte.setHours(0, 0, 0, 0)
-    const lte = new Date(now); lte.setDate(lte.getDate() - 1); lte.setHours(23, 59, 59, 999)
-    return { gte, lte }
-  }
-  const days = period === '7d' ? 7 : period === '30d' ? 30 : null
-  if (!days) return undefined
-  const gte = new Date(now); gte.setDate(gte.getDate() - days); gte.setHours(0, 0, 0, 0)
-  const lte = new Date(now); lte.setHours(23, 59, 59, 999)
-  return { gte, lte }
-}
+const COMPARISON_KEYS = ['spend', 'impressions', 'clicks', 'conversions', 'ctr', 'cpc', 'cost_per_conversion']
 
 const emptyKpis = {
   spend: 0, impressions: 0, clicks: 0, conversions: 0,
@@ -61,12 +38,16 @@ export async function GET(req: NextRequest) {
     const to = req.nextUrl.searchParams.get('to')
     const range = dateRange(period, from, to)
     const isRangedQuery = period !== 'all'
+    const prevRange = isRangedQuery ? previousRange(period, range) : undefined
 
-    const [daily, monthly, ws] = await Promise.all([
+    const [daily, dailyPrev, monthly, ws] = await Promise.all([
       prisma.googleAdsDailyData.findMany({
         where: { workspaceId, ...(range ? { date: range } : {}) },
         orderBy: { date: 'asc' },
       }),
+      prevRange
+        ? prisma.googleAdsDailyData.findMany({ where: { workspaceId, date: prevRange } })
+        : Promise.resolve([]),
       prisma.googleAdsData.findFirst({
         where: { workspaceId },
         orderBy: { period: 'desc' },
@@ -79,18 +60,24 @@ export async function GET(req: NextRequest) {
 
     const curr = cs(ws?.currency)
 
-    const sum = (key: string) =>
-      daily.reduce((acc, r) => acc + (Number((r as Record<string, unknown>)[key]) || 0), 0)
+    // Usado tanto pro período atual quanto pro anterior (comparação percentual) — mesma
+    // lógica de agregação, só troca as linhas de entrada.
+    function buildAggregate(rows: typeof daily) {
+      const sum = (key: string) => rows.reduce((acc, r) => acc + (Number((r as Record<string, unknown>)[key]) || 0), 0)
+      return {
+        spend:               sum('valorGasto'),
+        impressions:         sum('impressoes'),
+        clicks:              sum('cliques'),
+        conversions:         sum('resultados'),
+        ctr:                 rows.length ? sum('ctr') / rows.length : 0,
+        cpc:                 rows.length ? sum('cpc') / rows.length : 0,
+        cost_per_conversion: rows.length ? sum('custoResultado') / rows.length : 0,
+        leads_bc:            sum('leadesBc'),
+      }
+    }
 
     const kpis = daily.length > 0 ? {
-      spend:               sum('valorGasto'),
-      impressions:         sum('impressoes'),
-      clicks:              sum('cliques'),
-      conversions:         sum('resultados'),
-      ctr:                 daily.length ? sum('ctr') / daily.length : 0,
-      cpc:                 daily.length ? sum('cpc') / daily.length : 0,
-      cost_per_conversion: daily.length ? sum('custoResultado') / daily.length : 0,
-      leads_bc:            sum('leadesBc'),
+      ...buildAggregate(daily),
       roas:                null, quality_score: null, search_impression_share: null,
       hasData: true,
     } : isRangedQuery ? emptyKpis : {
@@ -174,7 +161,11 @@ export async function GET(req: NextRequest) {
       quality:     null,
     }))
 
-    return NextResponse.json({ kpis, chart, campaigns, keywords })
+    const comparison = daily.length > 0 && dailyPrev.length > 0
+      ? buildComparison(kpis, buildAggregate(dailyPrev), COMPARISON_KEYS)
+      : {}
+
+    return NextResponse.json({ kpis, chart, campaigns, keywords, comparison })
   } catch (err) {
     console.error('[/api/trafego/google]', err)
     return NextResponse.json(

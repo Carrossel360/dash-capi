@@ -1,19 +1,21 @@
 'use client'
-import { useState } from 'react'
-import { Calendar } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Calendar, ChevronDown } from 'lucide-react'
 
-export type Period = 'all' | '30d' | '7d' | 'yesterday' | 'today' | 'custom'
+export type Period = 'all' | '30d' | '7d' | 'yesterday' | 'today' | 'this_month' | 'last_month' | 'custom'
 
 export const PERIOD_LABELS: Record<Period, string> = {
-  all: 'Todo período',
-  '30d': 'Últimos 30d',
-  '7d': 'Últimos 7d',
-  yesterday: 'Ontem',
+  this_month: 'Este mês',
+  last_month: 'Mês anterior',
   today: 'Hoje',
+  yesterday: 'Ontem',
+  '7d': 'Últimos 7d',
+  '30d': 'Últimos 30d',
+  all: 'Todo período',
   custom: 'Personalizado',
 }
 
-const PERIODS: Period[] = ['all', '30d', '7d', 'yesterday', 'today', 'custom']
+const PERIODS: Period[] = ['this_month', 'last_month', 'today', 'yesterday', '7d', '30d', 'all', 'custom']
 
 interface Props {
   value: Period
@@ -22,31 +24,50 @@ interface Props {
 }
 
 export default function PeriodSelector({ value, onChange, onCustomChange }: Props) {
+  const [open, setOpen] = useState(false)
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [])
 
   const updateFrom = (v: string) => { setFrom(v); if (v && to) onCustomChange?.(v, to) }
   const updateTo = (v: string) => { setTo(v); if (from && v) onCustomChange?.(from, v) }
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <Calendar className="w-3.5 h-3.5 mr-0.5" style={{ color: '#6a11cb' }} />
-      {PERIODS.map(p => (
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="relative" ref={ref}>
         <button
-          key={p}
-          onClick={() => onChange(p)}
-          className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-          style={
-            value === p
-              ? { background: '#6a11cb', color: '#fff', boxShadow: '0 2px 12px rgba(106,17,203,0.4)' }
-              : { background: 'rgba(15,11,30,0.7)', color: '#94a3b8', border: '1px solid #1e1635' }
-          }
+          onClick={() => setOpen(o => !o)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+          style={{ background: 'rgba(15,11,30,0.7)', color: '#fff', border: '1px solid #2d2550' }}
         >
-          {PERIOD_LABELS[p]}
+          <Calendar className="w-3.5 h-3.5" style={{ color: '#6a11cb' }} />
+          {PERIOD_LABELS[value]}
+          <ChevronDown className={`w-3.5 h-3.5 text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
-      ))}
+        {open && (
+          <div className="absolute left-0 top-10 z-50 w-44 bg-[#0f0b1e] border border-[#2d2550] rounded-xl shadow-2xl overflow-hidden py-1">
+            {PERIODS.map(p => (
+              <button
+                key={p}
+                onClick={() => { onChange(p); setOpen(false) }}
+                className={`w-full text-left px-3 py-2 text-xs transition-colors hover:bg-[#1e1635] ${value === p ? 'text-[#8b5cf6] font-semibold' : 'text-slate-300'}`}
+              >
+                {PERIOD_LABELS[p]}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       {value === 'custom' && (
-        <div className="flex items-center gap-2 ml-1">
+        <div className="flex items-center gap-2">
           <input
             type="date"
             value={from}

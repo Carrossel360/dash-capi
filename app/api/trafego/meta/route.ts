@@ -1,32 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthPayload } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { dateRange, previousRange, buildComparison } from '@/lib/trafego-period'
 
-function dateRange(period: string, from?: string | null, to?: string | null): { gte: Date; lte: Date } | undefined {
-  const now = new Date()
-
-  if (period === 'custom') {
-    if (!from || !to) return undefined
-    const gte = new Date(from); gte.setHours(0, 0, 0, 0)
-    const lte = new Date(to); lte.setHours(23, 59, 59, 999)
-    return { gte, lte }
-  }
-  if (period === 'today') {
-    const gte = new Date(now); gte.setHours(0, 0, 0, 0)
-    const lte = new Date(now); lte.setHours(23, 59, 59, 999)
-    return { gte, lte }
-  }
-  if (period === 'yesterday') {
-    const gte = new Date(now); gte.setDate(gte.getDate() - 1); gte.setHours(0, 0, 0, 0)
-    const lte = new Date(now); lte.setDate(lte.getDate() - 1); lte.setHours(23, 59, 59, 999)
-    return { gte, lte }
-  }
-  const days = period === '7d' ? 7 : period === '30d' ? 30 : null
-  if (!days) return undefined
-  const gte = new Date(now); gte.setDate(gte.getDate() - days); gte.setHours(0, 0, 0, 0)
-  const lte = new Date(now); lte.setHours(23, 59, 59, 999)
-  return { gte, lte }
-}
+const COMPARISON_KEYS = [
+  'spend', 'impressions', 'reach', 'link_clicks', 'results', 'ctr', 'cpc',
+  'cost_per_result', 'messaging_conversations_started', 'cost_per_conversation', 'cpm',
+]
 
 const emptyKpis = {
   spend: 0, impressions: 0, reach: 0, link_clicks: 0, results: 0,
@@ -52,12 +32,16 @@ export async function GET(req: NextRequest) {
     const to = req.nextUrl.searchParams.get('to')
     const range = dateRange(period, from, to)
     const isRangedQuery = period !== 'all'
+    const prevRange = isRangedQuery ? previousRange(period, range) : undefined
 
-    const [daily, monthly, ws] = await Promise.all([
+    const [daily, dailyPrev, monthly, ws] = await Promise.all([
       prisma.metaAdsDailyData.findMany({
         where: { workspaceId, ...(range ? { date: range } : {}) },
         orderBy: { date: 'asc' },
       }),
+      prevRange
+        ? prisma.metaAdsDailyData.findMany({ where: { workspaceId, date: prevRange } })
+        : Promise.resolve([]),
       prisma.metaAdsData.findFirst({
         where: { workspaceId },
         orderBy: { period: 'desc' },
@@ -70,35 +54,41 @@ export async function GET(req: NextRequest) {
 
     const curr = cs(ws?.currency)
 
-    const sum = (key: string) =>
-      daily.reduce((acc, r) => acc + (Number((r as Record<string, unknown>)[key]) || 0), 0)
+    const cpm = (spend: number, impressions: number) => impressions > 0 ? (spend / impressions) * 1000 : 0
+    const costPer = (spend: number, count: number) => count > 0 ? spend / count : 0
 
     // Campanhas de objetivo "Mensagens" reportam o resultado como conversa iniciada, não como
     // lead — `resultados` fica zerado nessas linhas mesmo a campanha estando ativa e performando.
     // Usa conversasIniciadas como fallback por linha (campanha/dia) pra não zerar indevidamente
     // quem mistura campanhas de lead com campanhas de mensagem no mesmo workspace.
     const resultOf = (r: (typeof daily)[number]) => (Number(r.resultados) || 0) || (Number(r.conversasIniciadas) || 0)
-    const totalResults = daily.reduce((acc, r) => acc + resultOf(r), 0)
 
-    const cpm = (spend: number, impressions: number) => impressions > 0 ? (spend / impressions) * 1000 : 0
-    const costPer = (spend: number, count: number) => count > 0 ? spend / count : 0
+    // Usado tanto pro período atual quanto pro anterior (comparação percentual) — mesma
+    // lógica de agregação, só troca as linhas de entrada.
+    function buildAggregate(rows: typeof daily) {
+      const sum = (key: string) => rows.reduce((acc, r) => acc + (Number((r as Record<string, unknown>)[key]) || 0), 0)
+      const totalResults = rows.reduce((acc, r) => acc + resultOf(r), 0)
+      return {
+        spend:           sum('valorGasto'),
+        impressions:     sum('impressoes'),
+        reach:           sum('alcance'),
+        link_clicks:     sum('cliques'),
+        results:         totalResults,
+        ctr:             rows.length ? sum('ctr') / rows.length : 0,
+        cpc:             rows.length ? sum('cpc') / rows.length : 0,
+        cost_per_result: costPer(sum('valorGasto'), totalResults),
+        messaging_conversations_started: sum('conversasIniciadas'),
+        cost_per_conversation: costPer(sum('valorGasto'), sum('conversasIniciadas')),
+        cpm:             cpm(sum('valorGasto'), sum('impressoes')),
+      }
+    }
 
     const kpis = daily.length > 0 ? {
-      spend:           sum('valorGasto'),
-      impressions:     sum('impressoes'),
-      reach:           sum('alcance'),
-      link_clicks:     sum('cliques'),
-      results:         totalResults,
-      ctr:             daily.length ? sum('ctr') / daily.length : 0,
-      cpc:             daily.length ? sum('cpc') / daily.length : 0,
-      cost_per_result: costPer(sum('valorGasto'), totalResults),
+      ...buildAggregate(daily),
       roas:            monthly?.roas ?? null,
       leads_bc: null,
-      messaging_conversations_started: sum('conversasIniciadas'),
-      cost_per_conversation: costPer(sum('valorGasto'), sum('conversasIniciadas')),
       post_engagement: null,
       followers: null, profile_visits: null, cost_per_link_click: null,
-      cpm:             cpm(sum('valorGasto'), sum('impressoes')),
       hasData: true,
     } : isRangedQuery ? emptyKpis : {
       // Sem dado diário e período = 'all': cai para o último mês importado do Supabase (histórico legado)
@@ -160,7 +150,11 @@ export async function GET(req: NextRequest) {
         roas:       '-',
       }))
 
-    return NextResponse.json({ kpis, chart, campaigns })
+    const comparison = daily.length > 0 && dailyPrev.length > 0
+      ? buildComparison(kpis, buildAggregate(dailyPrev), COMPARISON_KEYS)
+      : {}
+
+    return NextResponse.json({ kpis, chart, campaigns, comparison })
   } catch (err) {
     console.error('[/api/trafego/meta]', err)
     return NextResponse.json(

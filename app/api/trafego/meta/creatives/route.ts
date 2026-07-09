@@ -18,6 +18,15 @@ function resolveRange(period: string, from?: string | null, to?: string | null):
     const y = new Date(now); y.setDate(y.getDate() - 1)
     return { since: ymd(y), until: ymd(y) }
   }
+  if (period === 'this_month') {
+    const first = new Date(now.getFullYear(), now.getMonth(), 1)
+    return { since: ymd(first), until: ymd(now) }
+  }
+  if (period === 'last_month') {
+    const first = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const last = new Date(now.getFullYear(), now.getMonth(), 0)
+    return { since: ymd(first), until: ymd(last) }
+  }
   const days = period === '7d' ? 7 : period === '30d' ? 30 : 30 // 'all'/desconhecido cai pra 30d — Insights exige um range concreto
   const since = new Date(now); since.setDate(since.getDate() - days)
   return { since: ymd(since), until: ymd(now) }

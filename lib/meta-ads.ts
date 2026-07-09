@@ -163,3 +163,18 @@ export async function fetchMetaVideoSource(videoId: string, accessToken: string)
     permalinkUrl: data.permalink_url ? `https://www.facebook.com${data.permalink_url}` : null,
   }
 }
+
+// Preview oficial do anúncio (imagem, vídeo, carrossel — qualquer formato) via
+// `/{adId}/previews`: a Meta devolve um snippet HTML pronto (`body`) com um <iframe>
+// já configurado pra tocar o criativo — inclusive vídeos de Página/Reels que
+// `fetchMetaVideoSource` não consegue liberar por causa da permissão de conteúdo que o
+// token ads_read não tem. Aqui é a própria Meta renderizando, não a gente lendo o arquivo.
+export async function fetchMetaAdPreview(adId: string, accessToken: string): Promise<string | null> {
+  const { data } = await axios.get(`https://graph.facebook.com/v21.0/${adId}/previews`, {
+    params: { access_token: accessToken, ad_format: 'MOBILE_FEED_STANDARD' },
+  })
+  const body: string | undefined = data.data?.[0]?.body
+  if (!body) return null
+  const match = body.match(/src="([^"]+)"/)
+  return match ? match[1].replace(/&amp;/g, '&') : null
+}

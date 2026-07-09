@@ -68,6 +68,25 @@ const statusColor: Record<string, string> = {
   Pausado: 'text-amber-400 bg-amber-400/10',
 }
 
+// Métricas de custo: uma queda é melhora (verde), uma alta é piora (vermelho) — o inverso
+// das métricas de volume/performance. "spend" fica neutro (cinza): gastar mais não é bom
+// nem ruim por si só, sem contexto de meta/orçamento.
+const LOWER_IS_BETTER = new Set(['cpc', 'cpm', 'cost_per_result', 'cost_per_conversation', 'cost_per_link_click', 'cost_per_conversion'])
+const NEUTRAL_COMPARISON = new Set(['spend'])
+
+function ComparisonBadge({ metricKey, pct }: { metricKey: string; pct: number | null | undefined }) {
+  if (pct === null || pct === undefined || !isFinite(pct)) return null
+  const improved = LOWER_IS_BETTER.has(metricKey) ? pct < 0 : pct > 0
+  const color = NEUTRAL_COMPARISON.has(metricKey) ? '#94a3b8' : improved ? '#10b981' : '#ef4444'
+  const Arrow = pct >= 0 ? TrendingUp : TrendingDown
+  return (
+    <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold" style={{ color }}>
+      <Arrow className="w-2.5 h-2.5" />
+      {Math.abs(pct).toFixed(0)}%
+    </span>
+  )
+}
+
 const ChartTooltip = ({ active, payload, label }: { active?: boolean; payload?: { value: number; name: string; color: string }[]; label?: string }) => {
   if (!active || !payload?.length) return null
   return (
@@ -112,6 +131,7 @@ function CreativeModal({ creative, adAccountId, currency, token, onClose }: {
 }) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null)
   const [videoPermalink, setVideoPermalink] = useState<string | null>(null)
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null)
   const [loadingVideo, setLoadingVideo] = useState(false)
   const cs = currencySymbol(currency)
   const active = creative.effectiveStatus === 'ACTIVE'
@@ -121,7 +141,17 @@ function CreativeModal({ creative, adAccountId, currency, token, onClose }: {
     setLoadingVideo(true)
     fetch(`/api/trafego/meta/creatives/${creative.id}/video?videoId=${creative.videoId}`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
-      .then(d => { setVideoSrc(d.source ?? null); setVideoPermalink(d.permalinkUrl ?? null) })
+      .then(d => {
+        setVideoSrc(d.source ?? null)
+        setVideoPermalink(d.permalinkUrl ?? null)
+        if (d.source) return
+        // Arquivo direto indisponível (permissão de conteúdo que o token ads_read não tem,
+        // comum em vídeo/Reels publicado numa Página) — usa o preview oficial da Meta via
+        // iframe (/{adId}/previews), que toca o criativo inline sem precisar do arquivo bruto.
+        return fetch(`/api/trafego/meta/creatives/${creative.id}/preview`, { headers: { Authorization: `Bearer ${token}` } })
+          .then(r => r.json())
+          .then(pd => setPreviewSrc(pd.iframeSrc ?? null))
+      })
       .finally(() => setLoadingVideo(false))
   }, [creative.id, creative.videoId, token])
 
@@ -171,6 +201,14 @@ function CreativeModal({ creative, adAccountId, currency, token, onClose }: {
                 <Loader2 className="w-6 h-6 text-slate-500 animate-spin" />
               ) : videoSrc ? (
                 <video src={videoSrc} controls className="w-full h-full" poster={creative.thumbnailUrl ?? undefined} />
+              ) : previewSrc ? (
+                <iframe
+                  src={previewSrc}
+                  className="w-full h-full"
+                  style={{ border: 'none' }}
+                  scrolling="no"
+                  allow="autoplay; encrypted-media"
+                />
               ) : (
                 <div className="relative w-full h-full">
                   {creative.thumbnailUrl && (
@@ -422,7 +460,7 @@ export default function TrafegoPagoPage() {
 
   const [tab, setTab] = useState<'meta' | 'google'>(() => (metaLocked && !googleLocked) ? 'google' : 'meta')
   const [lockedTab, setLockedTab] = useState<'meta' | 'google' | null>(null)
-  const [period, setPeriod]   = useState<Period>('30d')
+  const [period, setPeriod]   = useState<Period>('this_month')
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [syncNonce, setSyncNonce] = useState(0)
@@ -430,12 +468,14 @@ export default function TrafegoPagoPage() {
   const [manualEdit, setManualEdit]       = useState<{ key: string; label: string; value: string } | null>(null)
   const [manualOverrides, setManualOverrides] = useState<Record<string, number>>({})
 
-  const [metaKpis,      setMetaKpis]      = useState<ApiKpis>({})
-  const [metaChart,     setMetaChart]     = useState<ChartRow[]>([])
-  const [metaCampaigns, setMetaCampaigns] = useState<Campaign[]>([])
-  const [googKpis,      setGoogKpis]      = useState<ApiKpis>({})
-  const [googChart,     setGoogChart]     = useState<ChartRow[]>([])
-  const [googCampaigns, setGoogCampaigns] = useState<Campaign[]>([])
+  const [metaKpis,       setMetaKpis]       = useState<ApiKpis>({})
+  const [metaChart,      setMetaChart]      = useState<ChartRow[]>([])
+  const [metaCampaigns,  setMetaCampaigns]  = useState<Campaign[]>([])
+  const [metaComparison, setMetaComparison] = useState<Record<string, number | null>>({})
+  const [googKpis,       setGoogKpis]       = useState<ApiKpis>({})
+  const [googChart,      setGoogChart]      = useState<ChartRow[]>([])
+  const [googCampaigns,  setGoogCampaigns]  = useState<Campaign[]>([])
+  const [googComparison, setGoogComparison] = useState<Record<string, number | null>>({})
   const [keywords,      setKeywords]      = useState<Keyword[]>([])
   const [loading,       setLoading]       = useState(true)
   const [metaHasData,   setMetaHasData]   = useState(true)
@@ -464,10 +504,12 @@ export default function TrafegoPagoPage() {
       setMetaKpis(meta.kpis ?? {})
       setMetaChart(meta.chart ?? [])
       setMetaCampaigns(meta.campaigns ?? [])
+      setMetaComparison(meta.comparison ?? {})
       setMetaHasData(meta.kpis?.hasData ?? true)
       setGoogKpis(goog.kpis ?? {})
       setGoogChart(goog.chart ?? [])
       setGoogCampaigns(goog.campaigns ?? [])
+      setGoogComparison(goog.comparison ?? {})
       setGoogHasData(goog.kpis?.hasData ?? true)
       setKeywords(goog.keywords ?? [])
     }).finally(() => setLoading(false))
@@ -511,6 +553,7 @@ export default function TrafegoPagoPage() {
   const chart       = isMeta ? metaChart : googChart
   const campaigns   = isMeta ? metaCampaigns : googCampaigns
   const apiKpis     = isMeta ? metaKpis : googKpis
+  const comparison  = isMeta ? metaComparison : googComparison
   const kpiDefs     = isMeta ? metaKpiDefs : googleKpiDefs
   const visibleKeys = isMeta
     ? (visibleMeta.length > 0 ? visibleMeta : kpiDefs.map(k => k.key))
@@ -594,6 +637,99 @@ export default function TrafegoPagoPage() {
             </button>
           </div>
 
+          {/* Análise de Criativos (Meta) — logo abaixo das abas, antes das métricas: sessão
+              própria da Meta (como um "subtítulo"), não escondida no fim da página. */}
+          {isMeta && (
+            <div className="glass rounded-xl overflow-hidden">
+              <button onClick={() => setShowCreatives(v => !v)}
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/[0.02] transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Film className="w-4 h-4" style={{ color: '#6a11cb' }} />
+                  <h3 className="text-sm font-semibold text-white">Análise de Criativos</h3>
+                </div>
+                <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${showCreatives ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showCreatives && (
+                <div className="border-t border-[#1e1635] p-4 space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {(['all', 'active', 'paused'] as const).map(s => (
+                      <button key={s} onClick={() => setCreativeStatusFilter(s)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                        style={creativeStatusFilter === s
+                          ? { background: '#6a11cb', color: '#fff' }
+                          : { background: 'rgba(15,11,30,0.7)', color: '#94a3b8', border: '1px solid #1e1635' }}
+                      >
+                        {s === 'all' ? 'Todos' : s === 'active' ? 'Ativos' : 'Pausados'}
+                      </button>
+                    ))}
+                    <div className="w-px h-5 bg-[#1e1635]" />
+                    <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                      <ArrowUpDown className="w-3.5 h-3.5" /> Ordenar:
+                    </div>
+                    {(['spend', 'ctr', 'leads'] as const).map(s => (
+                      <button key={s} onClick={() => setCreativeSort(s)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                        style={creativeSort === s
+                          ? { background: '#6a11cb', color: '#fff' }
+                          : { background: 'rgba(15,11,30,0.7)', color: '#94a3b8', border: '1px solid #1e1635' }}
+                      >
+                        {s === 'spend' ? 'Gasto' : s === 'ctr' ? 'CTR' : 'Leads'}
+                      </button>
+                    ))}
+                  </div>
+
+                  {creativesLoading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="w-5 h-5 text-[#6a11cb] animate-spin" />
+                    </div>
+                  ) : filteredCreatives.length === 0 ? (
+                    <p className="text-xs text-slate-500 text-center py-8">Nenhum criativo encontrado para o período selecionado.</p>
+                  ) : (
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                      {filteredCreatives.map(c => {
+                        const active = c.effectiveStatus === 'ACTIVE'
+                        return (
+                          <button key={c.id} onClick={() => setSelectedCreative(c)}
+                            className="glass rounded-xl overflow-hidden text-left hover:border-[#6a11cb]/50 transition-all group"
+                          >
+                            <div className="relative aspect-square bg-black flex items-center justify-center overflow-hidden">
+                              {c.thumbnailUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={c.thumbnailUrl} alt={c.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                              ) : (
+                                <ImageIcon className="w-8 h-8 text-slate-700" />
+                              )}
+                              {c.videoId && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                                  <PlayCircle className="w-8 h-8 text-white/90" />
+                                </div>
+                              )}
+                              <span className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[10px] font-medium ${active ? statusColor.Ativo : statusColor.Pausado}`}>
+                                {active ? 'Ativo' : 'Pausado'}
+                              </span>
+                              <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md text-[10px] font-semibold text-white bg-black/60">
+                                {currencySymbol(currency)} {c.spend.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                            <div className="p-2.5">
+                              <p className="text-xs font-medium text-white truncate">{c.name}</p>
+                              <div className="flex items-center justify-between mt-1.5 text-[10px] text-slate-500">
+                                <span>{c.impressions.toLocaleString('pt-BR')} impr.</span>
+                                <span className="text-emerald-400">{c.ctr.toFixed(2)}%</span>
+                              </div>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Loading */}
           {loading && (
             <div className="flex items-center justify-center py-12">
@@ -629,7 +765,10 @@ export default function TrafegoPagoPage() {
                     </div>
                   )}
                   <p className="text-xl font-bold text-white">{fmt(value, currency)}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{label}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <p className="text-xs text-slate-500">{label}</p>
+                    <ComparisonBadge metricKey={key} pct={comparison[key]} />
+                  </div>
                 </div>
               ))}
             </div>
@@ -748,98 +887,6 @@ export default function TrafegoPagoPage() {
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
-
-          {/* Análise de Criativos (Meta) */}
-          {isMeta && (
-            <div className="glass rounded-xl overflow-hidden">
-              <button onClick={() => setShowCreatives(v => !v)}
-                className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/[0.02] transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  <Film className="w-4 h-4" style={{ color: '#6a11cb' }} />
-                  <h3 className="text-sm font-semibold text-white">Análise de Criativos</h3>
-                </div>
-                <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${showCreatives ? 'rotate-180' : ''}`} />
-              </button>
-
-              {showCreatives && (
-                <div className="border-t border-[#1e1635] p-4 space-y-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {(['all', 'active', 'paused'] as const).map(s => (
-                      <button key={s} onClick={() => setCreativeStatusFilter(s)}
-                        className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                        style={creativeStatusFilter === s
-                          ? { background: '#6a11cb', color: '#fff' }
-                          : { background: 'rgba(15,11,30,0.7)', color: '#94a3b8', border: '1px solid #1e1635' }}
-                      >
-                        {s === 'all' ? 'Todos' : s === 'active' ? 'Ativos' : 'Pausados'}
-                      </button>
-                    ))}
-                    <div className="w-px h-5 bg-[#1e1635]" />
-                    <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                      <ArrowUpDown className="w-3.5 h-3.5" /> Ordenar:
-                    </div>
-                    {(['spend', 'ctr', 'leads'] as const).map(s => (
-                      <button key={s} onClick={() => setCreativeSort(s)}
-                        className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                        style={creativeSort === s
-                          ? { background: '#6a11cb', color: '#fff' }
-                          : { background: 'rgba(15,11,30,0.7)', color: '#94a3b8', border: '1px solid #1e1635' }}
-                      >
-                        {s === 'spend' ? 'Gasto' : s === 'ctr' ? 'CTR' : 'Leads'}
-                      </button>
-                    ))}
-                  </div>
-
-                  {creativesLoading ? (
-                    <div className="flex items-center justify-center py-12">
-                      <Loader2 className="w-5 h-5 text-[#6a11cb] animate-spin" />
-                    </div>
-                  ) : filteredCreatives.length === 0 ? (
-                    <p className="text-xs text-slate-500 text-center py-8">Nenhum criativo encontrado para o período selecionado.</p>
-                  ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                      {filteredCreatives.map(c => {
-                        const active = c.effectiveStatus === 'ACTIVE'
-                        return (
-                          <button key={c.id} onClick={() => setSelectedCreative(c)}
-                            className="glass rounded-xl overflow-hidden text-left hover:border-[#6a11cb]/50 transition-all group"
-                          >
-                            <div className="relative aspect-square bg-black flex items-center justify-center overflow-hidden">
-                              {c.thumbnailUrl ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={c.thumbnailUrl} alt={c.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                              ) : (
-                                <ImageIcon className="w-8 h-8 text-slate-700" />
-                              )}
-                              {c.videoId && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                                  <PlayCircle className="w-8 h-8 text-white/90" />
-                                </div>
-                              )}
-                              <span className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[10px] font-medium ${active ? statusColor.Ativo : statusColor.Pausado}`}>
-                                {active ? 'Ativo' : 'Pausado'}
-                              </span>
-                              <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md text-[10px] font-semibold text-white bg-black/60">
-                                {currencySymbol(currency)} {c.spend.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
-                              </span>
-                            </div>
-                            <div className="p-2.5">
-                              <p className="text-xs font-medium text-white truncate">{c.name}</p>
-                              <div className="flex items-center justify-between mt-1.5 text-[10px] text-slate-500">
-                                <span>{c.impressions.toLocaleString('pt-BR')} impr.</span>
-                                <span className="text-emerald-400">{c.ctr.toFixed(2)}%</span>
-                              </div>
-                            </div>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           )}
 
