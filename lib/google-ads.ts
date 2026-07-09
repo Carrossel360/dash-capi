@@ -66,12 +66,17 @@ export async function fetchGoogleAdsReport({ mcc, customerId, since, until }: Fe
   const creds = getMccCreds(mcc)
   const accessToken = await refreshGoogleAccessToken(creds)
 
+  // Local Services (campaign.advertising_channel_type = LOCAL_SERVICES) é outro produto —
+  // cobrado por lead (ligação/mensagem/agendamento), não por clique, e o "resultado" de
+  // verdade vem de um recurso totalmente diferente (local_services_lead), não de metrics
+  // daqui. Sem esse filtro, o gasto dessas campanhas entrava somado no Google Ads normal.
   const query = `
     SELECT segments.date, campaign.id, campaign.name,
            metrics.cost_micros, metrics.impressions, metrics.clicks,
            metrics.ctr, metrics.average_cpc
     FROM campaign
     WHERE segments.date BETWEEN '${since}' AND '${until}'
+      AND campaign.advertising_channel_type != 'LOCAL_SERVICES'
   `
 
   const { data } = await axios.post(
