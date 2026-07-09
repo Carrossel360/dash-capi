@@ -73,6 +73,13 @@ export async function GET(req: NextRequest) {
     const sum = (key: string) =>
       daily.reduce((acc, r) => acc + (Number((r as Record<string, unknown>)[key]) || 0), 0)
 
+    // Campanhas de objetivo "Mensagens" reportam o resultado como conversa iniciada, não como
+    // lead — `resultados` fica zerado nessas linhas mesmo a campanha estando ativa e performando.
+    // Usa conversasIniciadas como fallback por linha (campanha/dia) pra não zerar indevidamente
+    // quem mistura campanhas de lead com campanhas de mensagem no mesmo workspace.
+    const resultOf = (r: (typeof daily)[number]) => (Number(r.resultados) || 0) || (Number(r.conversasIniciadas) || 0)
+    const totalResults = daily.reduce((acc, r) => acc + resultOf(r), 0)
+
     const cpm = (spend: number, impressions: number) => impressions > 0 ? (spend / impressions) * 1000 : 0
     const costPer = (spend: number, count: number) => count > 0 ? spend / count : 0
 
@@ -81,10 +88,10 @@ export async function GET(req: NextRequest) {
       impressions:     sum('impressoes'),
       reach:           sum('alcance'),
       link_clicks:     sum('cliques'),
-      results:         sum('resultados'),
+      results:         totalResults,
       ctr:             daily.length ? sum('ctr') / daily.length : 0,
       cpc:             daily.length ? sum('cpc') / daily.length : 0,
-      cost_per_result: daily.length ? sum('custoResultado') / daily.length : 0,
+      cost_per_result: costPer(sum('valorGasto'), totalResults),
       roas:            monthly?.roas ?? null,
       leads_bc: null,
       messaging_conversations_started: sum('conversasIniciadas'),
@@ -119,7 +126,7 @@ export async function GET(req: NextRequest) {
       const ex = byDate.get(key) ?? { gasto: 0, leads: 0 }
       byDate.set(key, {
         gasto: ex.gasto + (Number(r.valorGasto) || 0),
-        leads: ex.leads + (Number(r.resultados) || 0),
+        leads: ex.leads + resultOf(r),
       })
     }
     const chart = Array.from(byDate.entries()).map(([dia, v]) => ({
@@ -135,7 +142,7 @@ export async function GET(req: NextRequest) {
         gasto:      ex.gasto      + (Number(r.valorGasto)  || 0),
         impressoes: ex.impressoes + (Number(r.impressoes)  || 0),
         cliques:    ex.cliques    + (Number(r.cliques)     || 0),
-        leads:      ex.leads      + (Number(r.resultados)  || 0),
+        leads:      ex.leads      + resultOf(r),
       })
     }
     const campaigns = Array.from(byCampaign.entries())
