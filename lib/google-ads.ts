@@ -75,7 +75,7 @@ export async function fetchGoogleAdsReport({ mcc, customerId, since, until }: Fe
   `
 
   const { data } = await axios.post(
-    `https://googleads.googleapis.com/v17/customers/${customerId}/googleAds:searchStream`,
+    `https://googleads.googleapis.com/v23/customers/${customerId}/googleAds:searchStream`,
     { query },
     {
       headers: {
