@@ -9,26 +9,28 @@ function ymd(d: Date): string {
 
 // Mesma semântica de período das outras rotas de tráfego, resolvida direto em since/until —
 // formato que a Graph/Google Ads API espera pra time_range/segments.date.
+// Em UTC (getUTCFullYear/Date.UTC), não fuso local — mesmo motivo do lib/trafego-period.ts:
+// evita o cálculo de "mês atual"/"mês anterior" mudar de dia dependendo do fuso do servidor.
 function resolveRange(period: string, from?: string | null, to?: string | null): { since: string; until: string } {
   const now = new Date()
 
   if (period === 'custom' && from && to) return { since: from, until: to }
   if (period === 'today') return { since: ymd(now), until: ymd(now) }
   if (period === 'yesterday') {
-    const y = new Date(now); y.setDate(y.getDate() - 1)
+    const y = new Date(now); y.setUTCDate(y.getUTCDate() - 1)
     return { since: ymd(y), until: ymd(y) }
   }
   if (period === 'this_month') {
-    const first = new Date(now.getFullYear(), now.getMonth(), 1)
+    const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
     return { since: ymd(first), until: ymd(now) }
   }
   if (period === 'last_month') {
-    const first = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    const last = new Date(now.getFullYear(), now.getMonth(), 0)
+    const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
+    const last = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0))
     return { since: ymd(first), until: ymd(last) }
   }
   const days = period === '7d' ? 7 : period === '30d' ? 30 : 30 // 'all'/desconhecido cai pra 30d
-  const since = new Date(now); since.setDate(since.getDate() - days)
+  const since = new Date(now); since.setUTCDate(since.getUTCDate() - days)
   return { since: ymd(since), until: ymd(now) }
 }
 

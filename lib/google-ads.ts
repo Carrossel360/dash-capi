@@ -188,3 +188,34 @@ export async function fetchGoogleAdsSearchTerms({ mcc, customerId, since, until 
     ctr: Number(r.metrics.ctr ?? 0),
   }))
 }
+
+export interface GoogleAdsConversionCategoryRow {
+  category: string
+  conversions: number
+}
+
+// Quebra o total de conversões por tipo (segments.conversion_action_category — enum
+// padronizado da própria Google: PHONE_CALL_LEAD, SUBMIT_LEAD_FORM, BOOK_APPOINTMENT etc.),
+// não por nome livre da ação de conversão (que varia por cliente e não agrupa bem).
+// A API devolve uma linha por campanha (mesmo sem segments.date no SELECT — o agrupamento
+// implícito continua incluindo a campanha), então soma-se por categoria aqui.
+export async function fetchGoogleAdsConversionBreakdown({ mcc, customerId, since, until }: FetchGoogleAdsReportOptions): Promise<GoogleAdsConversionCategoryRow[]> {
+  const query = `
+    SELECT segments.conversion_action_category, metrics.conversions
+    FROM campaign
+    WHERE segments.date BETWEEN '${since}' AND '${until}'
+      AND campaign.advertising_channel_type != 'LOCAL_SERVICES'
+  `
+
+  const results = await searchStream(mcc, customerId, query)
+  const totals = new Map<string, number>()
+  for (const r of results) {
+    const category = r.segments.conversionActionCategory as string
+    const conversions = Number(r.metrics.conversions ?? 0)
+    totals.set(category, (totals.get(category) ?? 0) + conversions)
+  }
+  return Array.from(totals.entries())
+    .map(([category, conversions]) => ({ category, conversions }))
+    .filter(r => r.conversions > 0)
+    .sort((a, b) => b.conversions - a.conversions)
+}

@@ -88,6 +88,14 @@ function ResultsBreakdown({ fromForm, fromConversas }: { fromForm: number | null
   return <p className="text-[10px] text-slate-600 mt-0.5">{parts.join(' + ')}</p>
 }
 
+// Mesma ideia do ResultsBreakdown, só que genérico — usado pelo breakdown de conversões do
+// Google Ads por categoria (chamada, formulário, agendamento...), que pode ter N itens em vez
+// de só duas fontes fixas.
+function MetricBreakdown({ items }: { items: { label: string; count: number }[] }) {
+  if (!items.length) return null
+  return <p className="text-[10px] text-slate-600 mt-0.5">{items.map(i => `${i.count} ${i.label}`).join(' + ')}</p>
+}
+
 function ComparisonBadge({ metricKey, pct }: { metricKey: string; pct: number | null | undefined }) {
   if (pct === null || pct === undefined || !isFinite(pct)) return null
   const improved = LOWER_IS_BETTER.has(metricKey) ? pct < 0 : pct > 0
@@ -544,6 +552,7 @@ export default function TrafegoPagoPage() {
   const [googChart,      setGoogChart]      = useState<ChartRow[]>([])
   const [googCampaigns,  setGoogCampaigns]  = useState<Campaign[]>([])
   const [googComparison, setGoogComparison] = useState<Record<string, number | null>>({})
+  const [googConversionsBreakdown, setGoogConversionsBreakdown] = useState<{ label: string; count: number }[]>([])
   const [googleKeywords,     setGoogleKeywords]     = useState<GoogleKeyword[]>([])
   const [googleSearchTerms,  setGoogleSearchTerms]  = useState<GoogleSearchTerm[]>([])
   const [keywordsLoading,    setKeywordsLoading]    = useState(false)
@@ -580,6 +589,7 @@ export default function TrafegoPagoPage() {
       setGoogChart(goog.chart ?? [])
       setGoogCampaigns(goog.campaigns ?? [])
       setGoogComparison(goog.comparison ?? {})
+      setGoogConversionsBreakdown(goog.conversionsBreakdown ?? [])
       setGoogHasData(goog.kpis?.hasData ?? true)
     }).finally(() => setLoading(false))
   }, [token, period, customRange, syncNonce])
@@ -855,6 +865,9 @@ export default function TrafegoPagoPage() {
                   </div>
                   {key === 'results' && isMeta && (
                     <ResultsBreakdown fromForm={apiKpis.resultsFromForm} fromConversas={apiKpis.resultsFromConversas} />
+                  )}
+                  {key === 'conversions' && !isMeta && (
+                    <MetricBreakdown items={googConversionsBreakdown} />
                   )}
                 </div>
               ))}

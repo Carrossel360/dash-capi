@@ -2,6 +2,43 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthPayload } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { dateRange, previousRange, buildComparison } from '@/lib/trafego-period'
+import { fetchGoogleAdsConversionBreakdown, isGoogleAdsConfigured, type GoogleAdsMcc } from '@/lib/google-ads'
+
+// Rótulo em PT-BR pras categorias padronizadas de conversão da Google Ads API — cobre as mais
+// comuns; categoria sem tradução cai pro nome bruto em minúsculas (melhor que sumir do card).
+const CONVERSION_CATEGORY_LABELS: Record<string, string> = {
+  PHONE_CALL_LEAD: 'chamada telefônica',
+  IMPORTED_LEAD: 'lead importado',
+  SUBMIT_LEAD_FORM: 'formulário',
+  BOOK_APPOINTMENT: 'agendamento',
+  REQUEST_QUOTE: 'orçamento',
+  GET_DIRECTIONS: 'rota',
+  DRIVING_DIRECTIONS: 'rota',
+  OUTBOUND_CLICK: 'clique externo',
+  CONTACT: 'contato',
+  ENGAGEMENT: 'engajamento',
+  STORE_VISIT: 'visita à loja',
+  STORE_SALE: 'venda na loja',
+  QUALIFIED_LEAD: 'lead qualificado',
+  CONVERTED_LEAD: 'lead convertido',
+  SIGNUP: 'cadastro',
+  PAGE_VIEW: 'visualização de página',
+  PURCHASE: 'compra',
+  ADD_TO_CART: 'carrinho',
+  BEGIN_CHECKOUT: 'checkout',
+  SUBSCRIBE_PAID: 'assinatura',
+  DOWNLOAD: 'download',
+  SEARCH: 'pesquisa',
+  DONATE: 'doação',
+}
+
+function mccForWorkspace(currency: string | null | undefined): GoogleAdsMcc {
+  return currency === 'USD' ? 'US' : 'BR'
+}
+
+function ymd(d: Date): string {
+  return d.toISOString().slice(0, 10)
+}
 
 const COMPARISON_KEYS = ['spend', 'impressions', 'clicks', 'conversions', 'ctr', 'cpc', 'cost_per_conversion']
 
@@ -43,11 +80,33 @@ export async function GET(req: NextRequest) {
       }),
       prisma.workspace.findUnique({
         where: { id: workspaceId },
-        select: { currency: true },
+        select: { currency: true, googleAdsCustomerId: true },
       }),
     ])
 
     const curr = cs(ws?.currency)
+
+    // Breakdown de conversões por tipo (chamada, formulário, agendamento...) — busca ao vivo
+    // na API, mesmo padrão de keywords/search terms: só faz sentido pro período selecionado
+    // atual, não persiste histórico. Pulado em 'Todo período' (sem range concreto) e quando
+    // o cliente não tem Google Ads configurado.
+    let conversionsBreakdown: { label: string; count: number }[] = []
+    if (range && ws?.googleAdsCustomerId) {
+      const mcc = mccForWorkspace(ws.currency)
+      if (isGoogleAdsConfigured(mcc)) {
+        try {
+          const rows = await fetchGoogleAdsConversionBreakdown({
+            mcc, customerId: ws.googleAdsCustomerId, since: ymd(range.gte), until: ymd(range.lte),
+          })
+          conversionsBreakdown = rows.map(r => ({
+            label: CONVERSION_CATEGORY_LABELS[r.category] ?? r.category.toLowerCase().replace(/_/g, ' '),
+            count: r.conversions,
+          }))
+        } catch (err) {
+          console.error('[/api/trafego/google] conversionsBreakdown', err)
+        }
+      }
+    }
 
     // Usado tanto pro período atual quanto pro anterior (comparação percentual) — mesma
     // lógica de agregação, só troca as linhas de entrada.
@@ -128,7 +187,7 @@ export async function GET(req: NextRequest) {
       ? buildComparison(kpis, buildAggregate(dailyPrev), COMPARISON_KEYS)
       : {}
 
-    return NextResponse.json({ kpis, chart, campaigns, comparison })
+    return NextResponse.json({ kpis, chart, campaigns, comparison, conversionsBreakdown })
   } catch (err) {
     console.error('[/api/trafego/google]', err)
     return NextResponse.json(

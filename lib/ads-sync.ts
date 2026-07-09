@@ -12,10 +12,13 @@ function ymd(d: Date): string {
   return d.toISOString().slice(0, 10)
 }
 
+// UTC (setUTCDate), não fuso local — mesmo motivo do lib/trafego-period.ts: garante que a
+// janela de dias bata com a data (UTC-midnight) gravada em MetaAdsDailyData/GoogleAdsDailyData
+// independente do fuso do processo rodando o cron.
 function syncWindow(): { since: string; until: string } {
   const until = new Date()
   const since = new Date()
-  since.setDate(since.getDate() - SYNC_WINDOW_DAYS)
+  since.setUTCDate(since.getUTCDate() - SYNC_WINDOW_DAYS)
   return { since: ymd(since), until: ymd(until) }
 }
 
