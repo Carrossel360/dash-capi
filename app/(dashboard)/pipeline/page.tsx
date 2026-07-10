@@ -540,7 +540,7 @@ export default function PipelinePage() {
   const [leads, setLeads]     = useState<Lead[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
-  const [period, setPeriod]   = useState<Period>('30d')
+  const [period, setPeriod]   = useState<Period>('all')
   const [activeId, setActiveId] = useState<string | null>(null)
 
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)

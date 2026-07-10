@@ -43,7 +43,7 @@ export default function TopBar({ title, hideWorkspaceSwitcher }: { title: string
   const { theme, toggle } = useTheme()
 
   useEffect(() => {
-    if (!token || accessibleWorkspaces.length > 0) return
+    if (!token) return
     fetch('/api/workspaces', { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
       .then(d => { if (d.workspaces) setAccessibleWorkspaces(d.workspaces) })
