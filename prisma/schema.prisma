@@ -51,6 +51,7 @@ model Workspace {
   uazapiAdminToken      String?
   uazapiInstanceName    String?
   uazapiToken           String?
+  whatsappNumber        String? // número do WhatsApp do cliente (com DDI), usado pra gerar o link wa.me na aba Rastreio
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
   members               WorkspaceMember[]

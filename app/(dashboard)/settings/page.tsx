@@ -30,6 +30,7 @@ interface WorkspaceData {
   uazapiAdminToken: string | null
   uazapiInstanceName: string | null
   uazapiToken: string | null
+  whatsappNumber: string | null
   stages: Stage[]
   members: Member[]
 }
@@ -131,6 +132,7 @@ export default function SettingsPage() {
   const [uazapiAdminToken,   setUazapiAdminToken]   = useState('')
   const [uazapiInstanceName, setUazapiInstanceName] = useState('')
   const [uazapiToken,        setUazapiToken]        = useState('')
+  const [whatsappNumber,     setWhatsappNumber]     = useState('')
   const [creatingInstance,   setCreatingInstance]   = useState(false)
 
   // WhatsApp — QR / status (shared)
@@ -180,6 +182,7 @@ export default function SettingsPage() {
       setUazapiAdminToken(data.uazapiAdminToken ?? '')
       setUazapiInstanceName(data.uazapiInstanceName ?? '')
       setUazapiToken(data.uazapiToken ?? '')
+      setWhatsappNumber(data.whatsappNumber ?? '')
 
       const prodRes = await fetch('/api/products', { headers: { Authorization: `Bearer ${token}` } })
       if (prodRes.ok) {
@@ -373,7 +376,7 @@ export default function SettingsPage() {
     try {
       await fetch('/api/workspace/whatsapp', {
         method: 'PATCH', headers: h,
-        body: JSON.stringify({ uazapiUrl, uazapiAdminToken, uazapiInstanceName, uazapiToken }),
+        body: JSON.stringify({ uazapiUrl, uazapiAdminToken, uazapiInstanceName, uazapiToken, whatsappNumber }),
       })
       toast.success('WhatsApp salvo!')
     } catch { toast.error('Erro ao salvar') } finally { setSaving(false) }
@@ -863,6 +866,9 @@ export default function SettingsPage() {
                     <Field label="Nome da instância">
                       <TextInput value={uazapiInstanceName} onChange={setUazapiInstanceName} placeholder="Ex: cliente-carlos" />
                     </Field>
+                    <Field label="Número do WhatsApp (com DDI, só números)">
+                      <TextInput value={whatsappNumber} onChange={setWhatsappNumber} placeholder="Ex: 5535999999999" />
+                    </Field>
                   </div>
 
                   <div className="flex gap-2">
@@ -967,11 +973,17 @@ export default function SettingsPage() {
                 <p className="text-xs text-slate-500 mt-1">
                   Quando um contato novo manda uma mensagem no WhatsApp, o sistema tenta identificar a origem em duas etapas:
                   primeiro pelo contexto real de anúncio da Meta (automático, quando existe), e se não tiver, casa o texto da
-                  mensagem contra as frases abaixo. Use isso para links diretos de Google Ads, site ou bio do Instagram —
-                  configure o link do WhatsApp com uma mensagem pré-preenchida (ex: <code className="text-slate-400">wa.me/55XXXXXXXXX?text=Vim+do+site</code>)
-                  igual à frase cadastrada aqui.
+                  mensagem contra as frases abaixo. Cadastre a frase aqui e cole o link gerado no botão de WhatsApp da página
+                  (Google Ads, site, bio do Instagram) — ou registre a mesma frase usada num anúncio de mensagem da Meta, como
+                  redundância caso o parâmetro de anúncio não chegue.
                 </p>
               </div>
+
+              {!whatsappNumber && (
+                <div className="glass rounded-xl px-4 py-3 text-xs text-amber-400 bg-amber-400/5 border border-amber-400/20">
+                  Configure o número do WhatsApp na aba <button onClick={() => setTab('whatsapp')} className="underline font-semibold">WhatsApp</button> pra gerar os links automaticamente.
+                </div>
+              )}
 
               {canManage && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
@@ -991,19 +1003,35 @@ export default function SettingsPage() {
                 <div className="flex justify-center py-6"><Loader2 className="w-4 h-4 text-slate-500 animate-spin" /></div>
               ) : (
                 <div className="space-y-2">
-                  {phrases.map(p => (
-                    <div key={p.id} className="flex items-center gap-3 p-3 bg-[#0f0b1e] rounded-xl border border-[#1e1635]">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-white truncate">&ldquo;{p.phrase}&rdquo;</p>
-                        <p className="text-[10px] text-slate-500 mt-0.5">{p.source}{p.campaign ? ` · ${p.campaign}` : ''}</p>
+                  {phrases.map(p => {
+                    const waLink = whatsappNumber
+                      ? `https://wa.me/${whatsappNumber.replace(/\D/g, '')}?text=${encodeURIComponent(p.phrase)}`
+                      : null
+                    return (
+                      <div key={p.id} className="p-3 bg-[#0f0b1e] rounded-xl border border-[#1e1635] space-y-2">
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-white truncate">&ldquo;{p.phrase}&rdquo;</p>
+                            <p className="text-[10px] text-slate-500 mt-0.5">{p.source}{p.campaign ? ` · ${p.campaign}` : ''}</p>
+                          </div>
+                          {canManage && (
+                            <button onClick={() => deletePhrase(p.id)} className="text-slate-600 hover:text-red-400 transition-colors flex-shrink-0">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                        {waLink && (
+                          <div className="flex items-center gap-2">
+                            <code className="flex-1 text-[11px] text-green-300 bg-[#0a0818] border border-[#1e1635] rounded-lg px-2.5 py-1.5 font-mono truncate">{waLink}</code>
+                            <button onClick={() => { navigator.clipboard.writeText(waLink); toast.success('Link copiado!') }}
+                              className="text-[11px] text-slate-500 hover:text-white border border-[#2d2550] px-2 py-1.5 rounded-lg hover:border-[#6a11cb]/50 transition-all flex-shrink-0">
+                              Copiar
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      {canManage && (
-                        <button onClick={() => deletePhrase(p.id)} className="text-slate-600 hover:text-red-400 transition-colors flex-shrink-0">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                    )
+                  })}
                   {phrases.length === 0 && (
                     <p className="text-xs text-slate-500 text-center py-6">Nenhuma frase cadastrada ainda.</p>
                   )}

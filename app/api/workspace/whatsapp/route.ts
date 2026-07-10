@@ -7,7 +7,7 @@ export async function PATCH(req: NextRequest) {
   const auth = await getAuthPayload(req)
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { uazapiUrl, uazapiAdminToken, uazapiInstanceName, uazapiToken } = await req.json()
+  const { uazapiUrl, uazapiAdminToken, uazapiInstanceName, uazapiToken, whatsappNumber } = await req.json()
 
   await prisma.workspace.update({
     where: { id: auth.workspaceId },
@@ -16,6 +16,7 @@ export async function PATCH(req: NextRequest) {
       ...(uazapiAdminToken    !== undefined && { uazapiAdminToken }),
       ...(uazapiInstanceName  !== undefined && { uazapiInstanceName }),
       ...(uazapiToken         !== undefined && { uazapiToken }),
+      ...(whatsappNumber      !== undefined && { whatsappNumber }),
     },
   })
 
