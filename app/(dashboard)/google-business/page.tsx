@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   MapPin, Star, Phone, Navigation, Globe, MessageSquare, Zap,
-  Eye, Search, Map, TrendingUp, FileText, Edit3, Check, X, Award, Loader2,
+  Eye, Search, Map, TrendingUp, TrendingDown, FileText, Edit3, Check, X, Award, Loader2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
@@ -55,9 +55,23 @@ function ManualEditModal({ metric, value, onSave, onClose }: {
   )
 }
 
-function MetricCard({ label, value, icon: Icon, color, onEdit }: {
+const LOWER_IS_BETTER = new Set(['likesNegativeReviews'])
+
+function ComparisonBadge({ metricKey, pct }: { metricKey: string; pct: number | null }) {
+  if (pct === null || !isFinite(pct)) return null
+  const improved = LOWER_IS_BETTER.has(metricKey) ? pct < 0 : pct > 0
+  const Arrow = pct >= 0 ? TrendingUp : TrendingDown
+  return (
+    <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold" style={{ color: improved ? '#10b981' : '#ef4444' }}>
+      <Arrow className="w-2.5 h-2.5" />
+      {Math.abs(pct).toFixed(0)}%
+    </span>
+  )
+}
+
+function MetricCard({ label, value, icon: Icon, color, onEdit, metricKey, pct }: {
   label: string; value: string | number; icon: React.ElementType
-  color: string; onEdit?: () => void
+  color: string; onEdit?: () => void; metricKey?: string; pct?: number | null
 }) {
   return (
     <div className="glass card-hover rounded-xl p-4 group relative">
@@ -72,7 +86,10 @@ function MetricCard({ label, value, icon: Icon, color, onEdit }: {
         <Icon className="w-4 h-4" style={{ color }} />
       </div>
       <p className="text-xl font-bold text-white">{value}</p>
-      <p className="text-xs text-slate-500 mt-0.5">{label}</p>
+      <div className="flex items-center gap-1.5 mt-0.5">
+        <p className="text-xs text-slate-500">{label}</p>
+        {metricKey && pct !== undefined && <ComparisonBadge metricKey={metricKey} pct={pct} />}
+      </div>
     </div>
   )
 }
@@ -112,9 +129,18 @@ export default function GoogleBusinessPage() {
   useEffect(() => { load() }, [load])
 
   const current = months.find(m => m.period === period) ?? null
+  const currentIdx = months.findIndex(m => m.period === period)
+  const previous = currentIdx > 0 ? months[currentIdx - 1] : null
   const val = (k: keyof GbpRow) => (current?.[k] as number | null) ?? 0
   const str = (k: keyof GbpRow, suffix?: string) => `${val(k).toLocaleString('pt-BR')}${suffix ?? ''}`
   const edit = (key: string, label: string) => setManualEdit({ key, label })
+
+  function pctVs(k: keyof GbpRow): number | null {
+    const prevVal = previous?.[k] as number | null
+    if (!previous || prevVal === null || prevVal === undefined || prevVal === 0) return null
+    const curVal = (current?.[k] as number | null) ?? 0
+    return ((curVal - prevVal) / prevVal) * 100
+  }
 
   async function saveMetric(key: string, v: string) {
     if (!period) { toast.error('Selecione um mês'); return }
@@ -126,6 +152,12 @@ export default function GoogleBusinessPage() {
   }
 
   const totalInteractions = val('phoneCalls') + val('routeRequests') + val('websiteVisits') + val('chatMessages') + val('whatsappClicks')
+  const previousTotalInteractions = previous
+    ? (previous.phoneCalls ?? 0) + (previous.routeRequests ?? 0) + (previous.websiteVisits ?? 0) + (previous.chatMessages ?? 0) + (previous.whatsappClicks ?? 0)
+    : null
+  const totalInteractionsPct = (previousTotalInteractions && previousTotalInteractions !== 0)
+    ? ((totalInteractions - previousTotalInteractions) / previousTotalInteractions) * 100
+    : null
 
   const keywords = current?.keywords ?? []
   const validKeywords = keywords.filter(k => k.keyword && k.keyword !== '-')
@@ -180,17 +212,17 @@ export default function GoogleBusinessPage() {
                   <MapPin className="w-4 h-4" style={{ color: '#6a11cb' }} /> Visão Geral — Google Meu Negócio
                 </h2>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                  <MetricCard label="Visualizações do Perfil" value={str('profileViews')} icon={Eye} color="#6a11cb" onEdit={() => edit('profileViews', 'Visualizações do Perfil')} />
-                  <MetricCard label="Total de Interações" value={totalInteractions.toLocaleString('pt-BR')} icon={TrendingUp} color="#8b5cf6" />
-                  <MetricCard label="Média de Avaliações" value={`${str('averageStars')} ⭐`} icon={Star} color="#F5A314" onEdit={() => edit('averageStars', 'Média de Estrelas')} />
-                  <MetricCard label="Nota do Perfil" value={str('profileRating')} icon={Award} color="#10b981" onEdit={() => edit('profileRating', 'Nota do Perfil')} />
+                  <MetricCard label="Visualizações do Perfil" value={str('profileViews')} icon={Eye} color="#6a11cb" onEdit={() => edit('profileViews', 'Visualizações do Perfil')} metricKey="profileViews" pct={pctVs('profileViews')} />
+                  <MetricCard label="Total de Interações" value={totalInteractions.toLocaleString('pt-BR')} icon={TrendingUp} color="#8b5cf6" metricKey="totalInteractions" pct={totalInteractionsPct} />
+                  <MetricCard label="Média de Avaliações" value={`${str('averageStars')} ⭐`} icon={Star} color="#F5A314" onEdit={() => edit('averageStars', 'Média de Estrelas')} metricKey="averageStars" pct={pctVs('averageStars')} />
+                  <MetricCard label="Nota do Perfil" value={str('profileRating')} icon={Award} color="#10b981" onEdit={() => edit('profileRating', 'Nota do Perfil')} metricKey="profileRating" pct={pctVs('profileRating')} />
                 </div>
                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mt-3">
-                  <MetricCard label="Chamadas" value={str('phoneCalls')} icon={Phone} color="#2575fc" onEdit={() => edit('phoneCalls', 'Chamadas')} />
-                  <MetricCard label="Pedidos de Rota" value={str('routeRequests')} icon={Navigation} color="#8b5cf6" onEdit={() => edit('routeRequests', 'Pedidos de Rota')} />
-                  <MetricCard label="Visitas ao Site" value={str('websiteVisits')} icon={Globe} color="#10b981" onEdit={() => edit('websiteVisits', 'Visitas ao Site')} />
-                  <MetricCard label="Mensagens Chat" value={str('chatMessages')} icon={MessageSquare} color="#6a11cb" onEdit={() => edit('chatMessages', 'Mensagens Chat')} />
-                  <MetricCard label="Cliques WhatsApp" value={str('whatsappClicks')} icon={Zap} color="#F5A314" onEdit={() => edit('whatsappClicks', 'Cliques WhatsApp')} />
+                  <MetricCard label="Chamadas" value={str('phoneCalls')} icon={Phone} color="#2575fc" onEdit={() => edit('phoneCalls', 'Chamadas')} metricKey="phoneCalls" pct={pctVs('phoneCalls')} />
+                  <MetricCard label="Pedidos de Rota" value={str('routeRequests')} icon={Navigation} color="#8b5cf6" onEdit={() => edit('routeRequests', 'Pedidos de Rota')} metricKey="routeRequests" pct={pctVs('routeRequests')} />
+                  <MetricCard label="Visitas ao Site" value={str('websiteVisits')} icon={Globe} color="#10b981" onEdit={() => edit('websiteVisits', 'Visitas ao Site')} metricKey="websiteVisits" pct={pctVs('websiteVisits')} />
+                  <MetricCard label="Mensagens Chat" value={str('chatMessages')} icon={MessageSquare} color="#6a11cb" onEdit={() => edit('chatMessages', 'Mensagens Chat')} metricKey="chatMessages" pct={pctVs('chatMessages')} />
+                  <MetricCard label="Cliques WhatsApp" value={str('whatsappClicks')} icon={Zap} color="#F5A314" onEdit={() => edit('whatsappClicks', 'Cliques WhatsApp')} metricKey="whatsappClicks" pct={pctVs('whatsappClicks')} />
                 </div>
               </div>
 
@@ -220,9 +252,9 @@ export default function GoogleBusinessPage() {
                   <Eye className="w-4 h-4" style={{ color: '#6a11cb' }} /> Visualizações
                 </h2>
                 <div className="grid grid-cols-3 gap-3">
-                  <MetricCard label="Visualizações do Perfil" value={str('profileViews')} icon={Eye} color="#6a11cb" onEdit={() => edit('profileViews', 'Visualizações do Perfil')} />
-                  <MetricCard label="Via Buscador Google" value={str('googleSearchViews')} icon={Search} color="#8b5cf6" onEdit={() => edit('googleSearchViews', 'Via Buscador Google')} />
-                  <MetricCard label="Via Google Maps" value={str('googleMapsViews')} icon={Map} color="#2575fc" onEdit={() => edit('googleMapsViews', 'Via Google Maps')} />
+                  <MetricCard label="Visualizações do Perfil" value={str('profileViews')} icon={Eye} color="#6a11cb" onEdit={() => edit('profileViews', 'Visualizações do Perfil')} metricKey="profileViews" pct={pctVs('profileViews')} />
+                  <MetricCard label="Via Buscador Google" value={str('googleSearchViews')} icon={Search} color="#8b5cf6" onEdit={() => edit('googleSearchViews', 'Via Buscador Google')} metricKey="googleSearchViews" pct={pctVs('googleSearchViews')} />
+                  <MetricCard label="Via Google Maps" value={str('googleMapsViews')} icon={Map} color="#2575fc" onEdit={() => edit('googleMapsViews', 'Via Google Maps')} metricKey="googleMapsViews" pct={pctVs('googleMapsViews')} />
                 </div>
               </div>
 
@@ -232,14 +264,14 @@ export default function GoogleBusinessPage() {
                   <Star className="w-4 h-4 text-amber-400" /> Avaliações e Reputação
                 </h2>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                  <MetricCard label="Total de Avaliações" value={str('totalReviews')} icon={Star} color="#F5A314" onEdit={() => edit('totalReviews', 'Total de Avaliações')} />
-                  <MetricCard label="Média de Estrelas" value={`${str('averageStars')} ⭐`} icon={Star} color="#F5A314" onEdit={() => edit('averageStars', 'Média de Estrelas')} />
-                  <MetricCard label="Novas Avaliações" value={str('newReviewsThisMonth')} icon={TrendingUp} color="#10b981" onEdit={() => edit('newReviewsThisMonth', 'Novas Avaliações')} />
-                  <MetricCard label="Sem Comentários" value={str('reviewsWithoutComments')} icon={MessageSquare} color="#64748b" onEdit={() => edit('reviewsWithoutComments', 'Sem Comentários')} />
+                  <MetricCard label="Total de Avaliações" value={str('totalReviews')} icon={Star} color="#F5A314" onEdit={() => edit('totalReviews', 'Total de Avaliações')} metricKey="totalReviews" pct={pctVs('totalReviews')} />
+                  <MetricCard label="Média de Estrelas" value={`${str('averageStars')} ⭐`} icon={Star} color="#F5A314" onEdit={() => edit('averageStars', 'Média de Estrelas')} metricKey="averageStars" pct={pctVs('averageStars')} />
+                  <MetricCard label="Novas Avaliações" value={str('newReviewsThisMonth')} icon={TrendingUp} color="#10b981" onEdit={() => edit('newReviewsThisMonth', 'Novas Avaliações')} metricKey="newReviewsThisMonth" pct={pctVs('newReviewsThisMonth')} />
+                  <MetricCard label="Sem Comentários" value={str('reviewsWithoutComments')} icon={MessageSquare} color="#64748b" onEdit={() => edit('reviewsWithoutComments', 'Sem Comentários')} metricKey="reviewsWithoutComments" pct={pctVs('reviewsWithoutComments')} />
                 </div>
                 <div className="grid grid-cols-2 gap-3 mt-3">
-                  <MetricCard label="Likes Positivos" value={str('likesPositiveReviews')} icon={Star} color="#10b981" onEdit={() => edit('likesPositiveReviews', 'Likes Positivos')} />
-                  <MetricCard label="Likes Negativos" value={str('likesNegativeReviews')} icon={Star} color="#ef4444" onEdit={() => edit('likesNegativeReviews', 'Likes Negativos')} />
+                  <MetricCard label="Likes Positivos" value={str('likesPositiveReviews')} icon={Star} color="#10b981" onEdit={() => edit('likesPositiveReviews', 'Likes Positivos')} metricKey="likesPositiveReviews" pct={pctVs('likesPositiveReviews')} />
+                  <MetricCard label="Likes Negativos" value={str('likesNegativeReviews')} icon={Star} color="#ef4444" onEdit={() => edit('likesNegativeReviews', 'Likes Negativos')} metricKey="likesNegativeReviews" pct={pctVs('likesNegativeReviews')} />
                 </div>
               </div>
 
@@ -283,9 +315,9 @@ export default function GoogleBusinessPage() {
                 </h2>
                 <p className="text-xs text-slate-500 mb-4">Métricas de citações e conteúdo publicado</p>
                 <div className="grid grid-cols-3 gap-3">
-                  <MetricCard label="Total de Citações" value={str('totalCitations')} icon={FileText} color="#6a11cb" onEdit={() => edit('totalCitations', 'Total de Citações')} />
-                  <MetricCard label="Simulações de Rota" value={str('routeSimulations')} icon={Navigation} color="#8b5cf6" onEdit={() => edit('routeSimulations', 'Simulações de Rota')} />
-                  <MetricCard label="Postagens no Mês" value={str('postsThisMonth')} icon={FileText} color="#10b981" onEdit={() => edit('postsThisMonth', 'Postagens no Mês')} />
+                  <MetricCard label="Total de Citações" value={str('totalCitations')} icon={FileText} color="#6a11cb" onEdit={() => edit('totalCitations', 'Total de Citações')} metricKey="totalCitations" pct={pctVs('totalCitations')} />
+                  <MetricCard label="Simulações de Rota" value={str('routeSimulations')} icon={Navigation} color="#8b5cf6" onEdit={() => edit('routeSimulations', 'Simulações de Rota')} metricKey="routeSimulations" pct={pctVs('routeSimulations')} />
+                  <MetricCard label="Postagens no Mês" value={str('postsThisMonth')} icon={FileText} color="#10b981" onEdit={() => edit('postsThisMonth', 'Postagens no Mês')} metricKey="postsThisMonth" pct={pctVs('postsThisMonth')} />
                 </div>
               </div>
 
