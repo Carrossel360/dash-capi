@@ -102,6 +102,7 @@ export default function SettingsPage() {
     { id: 'produtos',   label: 'Produtos',              agencyOnly: false },
     { id: 'equipe',     label: 'Equipe',               agencyOnly: false },
     { id: 'whatsapp',   label: 'WhatsApp',             agencyOnly: false },
+    { id: 'rastreio',   label: 'Rastreio',              agencyOnly: false },
   ]
   const tabs = ALL_TABS.filter(t => !t.agencyOnly || isAgency)
 
@@ -151,6 +152,14 @@ export default function SettingsPage() {
   const [newPw, setNewPw] = useState('')
   const [savingPw, setSavingPw] = useState(false)
 
+  // Rastreio (frases de atribuição pro webhook do WhatsApp)
+  const [phrases, setPhrases] = useState<{ id: string; phrase: string; source: string; campaign: string | null }[]>([])
+  const [loadingPhrases, setLoadingPhrases] = useState(false)
+  const [newPhrase, setNewPhrase] = useState('')
+  const [newSource, setNewSource] = useState('')
+  const [newCampaign, setNewCampaign] = useState('')
+  const [addingPhrase, setAddingPhrase] = useState(false)
+
   const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
 
   const load = useCallback(async () => {
@@ -182,6 +191,41 @@ export default function SettingsPage() {
   }, [token])
 
   useEffect(() => { load() }, [load])
+
+  const loadPhrases = useCallback(async () => {
+    if (!token) return
+    setLoadingPhrases(true)
+    try {
+      const res = await fetch('/api/workspace/tracking-phrases', { headers: { Authorization: `Bearer ${token}` } })
+      if (res.ok) { const d = await res.json(); setPhrases(d.phrases ?? []) }
+    } finally { setLoadingPhrases(false) }
+  }, [token])
+
+  useEffect(() => { if (tab === 'rastreio') loadPhrases() }, [tab, loadPhrases])
+
+  async function addPhrase() {
+    if (!newPhrase.trim() || !newSource.trim()) { toast.error('Frase e origem são obrigatórios'); return }
+    setAddingPhrase(true)
+    try {
+      const res = await fetch('/api/workspace/tracking-phrases', {
+        method: 'POST', headers: h,
+        body: JSON.stringify({ phrase: newPhrase.trim(), source: newSource.trim(), campaign: newCampaign.trim() || undefined }),
+      })
+      if (res.ok) {
+        toast.success('Frase cadastrada')
+        setNewPhrase(''); setNewSource(''); setNewCampaign('')
+        loadPhrases()
+      } else {
+        const d = await res.json().catch(() => ({}))
+        toast.error(d.error ?? 'Erro ao cadastrar')
+      }
+    } finally { setAddingPhrase(false) }
+  }
+
+  async function deletePhrase(id: string) {
+    const res = await fetch(`/api/workspace/tracking-phrases/${id}`, { method: 'DELETE', headers: h })
+    if (res.ok) { toast.success('Removida'); loadPhrases() } else toast.error('Erro ao remover')
+  }
 
   // Auto-check WhatsApp status once instance is loaded
   useEffect(() => {
@@ -910,6 +954,59 @@ export default function SettingsPage() {
                     </button>
                   </div>
                   <p className="text-[11px] text-slate-600">Events a ativar: <code className="text-slate-400">onmessage</code></p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Rastreio ── */}
+          {tab === 'rastreio' && (
+            <div className="glass rounded-2xl p-5 space-y-5">
+              <div>
+                <h2 className="text-sm font-semibold text-white">Frases de Rastreio</h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  Quando um contato novo manda uma mensagem no WhatsApp, o sistema tenta identificar a origem em duas etapas:
+                  primeiro pelo contexto real de anúncio da Meta (automático, quando existe), e se não tiver, casa o texto da
+                  mensagem contra as frases abaixo. Use isso para links diretos de Google Ads, site ou bio do Instagram —
+                  configure o link do WhatsApp com uma mensagem pré-preenchida (ex: <code className="text-slate-400">wa.me/55XXXXXXXXX?text=Vim+do+site</code>)
+                  igual à frase cadastrada aqui.
+                </p>
+              </div>
+
+              {canManage && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <TextInput value={newPhrase} onChange={setNewPhrase} placeholder="Frase (ex: Vim do site)" />
+                  <TextInput value={newSource} onChange={setNewSource} placeholder="Origem (ex: Google, Site)" />
+                  <div className="flex gap-2">
+                    <TextInput value={newCampaign} onChange={setNewCampaign} placeholder="Campanha (opcional)" />
+                    <button onClick={addPhrase} disabled={addingPhrase}
+                      className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2.5 rounded-lg gradient-brand text-white text-xs font-semibold hover:opacity-90 disabled:opacity-50">
+                      {addingPhrase ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {loadingPhrases ? (
+                <div className="flex justify-center py-6"><Loader2 className="w-4 h-4 text-slate-500 animate-spin" /></div>
+              ) : (
+                <div className="space-y-2">
+                  {phrases.map(p => (
+                    <div key={p.id} className="flex items-center gap-3 p-3 bg-[#0f0b1e] rounded-xl border border-[#1e1635]">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-white truncate">&ldquo;{p.phrase}&rdquo;</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">{p.source}{p.campaign ? ` · ${p.campaign}` : ''}</p>
+                      </div>
+                      {canManage && (
+                        <button onClick={() => deletePhrase(p.id)} className="text-slate-600 hover:text-red-400 transition-colors flex-shrink-0">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {phrases.length === 0 && (
+                    <p className="text-xs text-slate-500 text-center py-6">Nenhuma frase cadastrada ainda.</p>
+                  )}
                 </div>
               )}
             </div>

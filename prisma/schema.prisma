@@ -80,6 +80,7 @@ model Workspace {
   customFields          CustomField[]
   mediaFiles            MediaFile[]
   carousels             Carousel[]
+  trackingPhrases       TrackingPhrase[]
 }
 
 model ManualMetric {
@@ -110,6 +111,21 @@ model WorkspaceMember {
 }
 
 // ─── CRM / Pipeline ──────────────────────────────────────────────────────────
+
+// Frase pré-preenchida no link do WhatsApp (wa.me/...?text=...) usada como fallback
+// de atribuição quando a mensagem não carrega contexto de anúncio Meta (contextInfo) —
+// cobre Google Ads, Site, Instagram Bio, ou qualquer link direto pro WhatsApp.
+model TrackingPhrase {
+  id          String    @id @default(cuid())
+  workspaceId String
+  phrase      String
+  source      String
+  campaign    String?
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, phrase])
+}
 
 model PipelineStage {
   id               String      @id @default(cuid())

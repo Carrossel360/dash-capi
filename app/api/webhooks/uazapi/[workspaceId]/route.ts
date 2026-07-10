@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import type { Prisma } from '@prisma/client'
 
 function normalizePhone(raw: string): string {
   const digits = raw.replace(/\D/g, '')
@@ -25,9 +26,6 @@ export async function POST(
     select: { id: true, uazapiUrl: true, uazapiToken: true },
   })
   if (!workspace) return NextResponse.json({ ok: true })
-
-  // DEBUG: log full payload to inspect ctwa_clid location — remove after confirming field path
-  console.log('[uazapi-webhook] full payload:', JSON.stringify(body, null, 2))
 
   const msg = body['message'] as Record<string, unknown> | undefined
   if (!msg) return NextResponse.json({ ok: true })
@@ -57,16 +55,25 @@ export async function POST(
   let isAudio    = msgType === 'ptt' || msgType === 'audio' || mediaType.startsWith('audio')
   let detectedType = ''
   let encUrl: string | null = null
+  let contextInfo: Record<string, unknown> | undefined
 
   if (typeof rawContent === 'object' && rawContent !== null) {
     const mediaObj = rawContent as Record<string, unknown>
-    encUrl = (mediaObj['URL'] as string) || (mediaObj['url'] as string) || null
+    contextInfo = mediaObj['contextInfo'] as Record<string, unknown> | undefined
     const mime = ((mediaObj['mimetype'] as string) || '').toLowerCase()
-    if (mime.startsWith('audio') || (mediaObj['PTT'] as boolean)) {
-      isAudio = true
-    } else if (mime.startsWith('image'))       detectedType = 'image'
-    else if (mime.startsWith('video'))         detectedType = 'video'
-    else if (mime.startsWith('application'))   detectedType = 'document'
+    // ExtendedTextMessage: texto com contexto (resposta a anúncio, citação etc) — content
+    // vem como objeto {text, contextInfo}, não uma mídia. Sem isso, cai no fallback
+    // "[mídia]" mais abaixo mesmo sendo uma mensagem de texto normal.
+    if (typeof mediaObj['text'] === 'string' && !mime && !mediaObj['URL'] && !mediaObj['url']) {
+      content = mediaObj['text'] as string
+    } else {
+      encUrl = (mediaObj['URL'] as string) || (mediaObj['url'] as string) || null
+      if (mime.startsWith('audio') || (mediaObj['PTT'] as boolean)) {
+        isAudio = true
+      } else if (mime.startsWith('image'))       detectedType = 'image'
+      else if (mime.startsWith('video'))         detectedType = 'video'
+      else if (mime.startsWith('application'))   detectedType = 'document'
+    }
   } else {
     content = (rawContent as string) || (msg['text'] as string) || ''
   }
@@ -117,7 +124,7 @@ export async function POST(
   const direction    = fromMe ? 'outbound' : 'inbound'
 
   // Find existing lead by phone
-  const lead = await prisma.lead.findFirst({
+  let lead = await prisma.lead.findFirst({
     where: {
       workspaceId,
       OR: [
@@ -128,6 +135,72 @@ export async function POST(
     },
     select: { id: true },
   })
+
+  // Sem lead ainda + primeira mensagem do cliente: cria o Lead já com a origem identificada.
+  // Prioridade: (1) contexto real de anúncio Meta anexado pela própria mensagem (contextInfo),
+  // (2) frase cadastrada em Configurações (link do site/Instagram/Google com texto pré-preenchido),
+  // (3) sem identificação — ainda assim vira lead, só sem origem marcada.
+  if (!lead && direction === 'inbound') {
+    const adReply = contextInfo?.['externalAdReply'] as Record<string, unknown> | undefined
+    const isMetaAd = contextInfo?.['conversionSource'] === 'FB_Ads'
+      || contextInfo?.['entryPointConversionSource'] === 'ctwa_ad'
+      || adReply?.['sourceType'] === 'ad'
+
+    let source = 'whatsapp'
+    let utmSource: string | null = null
+    let utmMedium: string | null = null
+    let utmCampaign: string | null = null
+    let ctwaClid: string | null = null
+    let metadata: Record<string, unknown> | undefined
+
+    if (isMetaAd) {
+      source = 'meta'
+      utmSource = 'meta'
+      utmMedium = 'whatsapp'
+      ctwaClid = (adReply?.['ctwaClid'] as string) ?? null
+      utmCampaign = (adReply?.['title'] as string) ?? (adReply?.['sourceID'] as string) ?? null
+      metadata = {
+        adSourceId:  adReply?.['sourceID'] ?? undefined,
+        adSourceUrl: adReply?.['sourceURL'] ?? undefined,
+        adTitle:     adReply?.['title'] ?? undefined,
+        adBody:      adReply?.['body'] ?? undefined,
+        adSourceApp: adReply?.['sourceApp'] ?? undefined,
+      }
+    } else if (content) {
+      const phrases = await prisma.trackingPhrase.findMany({ where: { workspaceId } })
+      const lower = content.toLowerCase()
+      const matched = phrases.find(p => lower.includes(p.phrase.toLowerCase()))
+      if (matched) {
+        source = matched.source
+        utmMedium = 'whatsapp'
+        utmCampaign = matched.campaign ?? null
+      }
+    }
+
+    const firstStage = await prisma.pipelineStage.findFirst({
+      where: { workspaceId },
+      orderBy: { order: 'asc' },
+      select: { id: true },
+    })
+
+    if (firstStage) {
+      const newLead = await prisma.lead.create({
+        data: {
+          workspaceId,
+          name: customerName || phone,
+          phone: `+55${phone}`,
+          source,
+          utmSource, utmMedium, utmCampaign,
+          ctwaClid,
+          metadata: metadata as Prisma.InputJsonValue | undefined,
+          pipelineStageId: firstStage.id,
+          notes: content ? `Primeira mensagem: ${content}` : undefined,
+        },
+        select: { id: true },
+      })
+      lead = newLead
+    }
+  }
 
   const existing = await prisma.conversation.findUnique({
     where: { workspaceId_customerPhone: { workspaceId, customerPhone: phone } },
