@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   Save, Plus, Trash2, CheckCircle, Eye, EyeOff,
   Users, Loader2, Smartphone, RefreshCw,
-  Wifi, WifiOff, Zap, ChevronDown,
+  Wifi, WifiOff, Zap, ChevronDown, KeyRound, X,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
@@ -147,6 +147,9 @@ export default function SettingsPage() {
   const [accessMode, setAccessMode] = useState<'client' | 'agency'>('client')
   const [clientOptions, setClientOptions] = useState<{ id: string; name: string }[]>([])
   const [selectedClientId, setSelectedClientId] = useState('')
+  const [resetPwFor, setResetPwFor] = useState<{ id: string; name: string } | null>(null)
+  const [newPw, setNewPw] = useState('')
+  const [savingPw, setSavingPw] = useState(false)
 
   const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
 
@@ -753,6 +756,13 @@ export default function SettingsPage() {
                             <ChevronDown className="w-3 h-3 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none"
                               style={{ color: ROLE_COLORS[m.role] ?? '#64748b' }} />
                           </div>
+                          <button
+                            onClick={() => { setResetPwFor({ id: m.user.id, name: m.user.name }); setNewPw('') }}
+                            title="Resetar senha"
+                            className="w-7 h-7 flex items-center justify-center rounded-lg border border-[#2d2550] text-slate-500 hover:text-white hover:border-[#6a11cb]/50 transition-all"
+                          >
+                            <KeyRound className="w-3.5 h-3.5" />
+                          </button>
                           {!isSelf && (
                             <button
                               onClick={async () => {
@@ -907,6 +917,47 @@ export default function SettingsPage() {
 
         </div>
       </main>
+
+      {resetPwFor && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setResetPwFor(null)} />
+          <div className="relative rounded-2xl w-full max-w-sm shadow-2xl z-10 p-5 space-y-4"
+            style={{ background: '#0d0a1f', border: '1px solid rgba(106,17,203,0.3)' }}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white">Resetar senha de {resetPwFor.name}</h3>
+              <button onClick={() => setResetPwFor(null)} className="text-slate-500 hover:text-white transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <Field label="Nova senha">
+              <TextInput value={newPw} onChange={setNewPw} placeholder="Mínimo 6 caracteres" secret />
+            </Field>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  if (newPw.length < 6) { toast.error('Senha deve ter ao menos 6 caracteres'); return }
+                  setSavingPw(true)
+                  try {
+                    const res = await fetch(`/api/workspace/members/${resetPwFor.id}`, {
+                      method: 'PATCH', headers: h, body: JSON.stringify({ newPassword: newPw }),
+                    })
+                    if (res.ok) { toast.success('Senha atualizada'); setResetPwFor(null) }
+                    else toast.error('Erro ao atualizar senha')
+                  } finally { setSavingPw(false) }
+                }}
+                disabled={savingPw}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg gradient-brand text-white text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-all">
+                {savingPw ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
+                Salvar
+              </button>
+              <button onClick={() => setResetPwFor(null)}
+                className="px-4 py-2 rounded-lg text-xs font-medium text-slate-400 border border-[#2d2550] hover:text-white transition-all">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

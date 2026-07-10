@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthPayload } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import crypto from 'crypto'
+
+function hashPassword(p: string) {
+  return crypto.createHash('sha256').update(p).digest('hex')
+}
 
 export async function PATCH(req: NextRequest, { params }: { params: { userId: string } }) {
   const auth = await getAuthPayload(req)
@@ -13,14 +18,27 @@ export async function PATCH(req: NextRequest, { params }: { params: { userId: st
     return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
   }
 
-  const { role } = await req.json()
-  const validRoles = ['admin', 'manager', 'attendant', 'viewer']
-  if (!validRoles.includes(role)) return NextResponse.json({ error: 'Role inválida' }, { status: 400 })
+  const { role, newPassword } = await req.json()
 
-  await prisma.workspaceMember.update({
-    where: { workspaceId_userId: { workspaceId: auth.workspaceId, userId: params.userId } },
-    data: { role },
-  })
+  if (role !== undefined) {
+    const validRoles = ['admin', 'manager', 'attendant', 'viewer']
+    if (!validRoles.includes(role)) return NextResponse.json({ error: 'Role inválida' }, { status: 400 })
+    await prisma.workspaceMember.update({
+      where: { workspaceId_userId: { workspaceId: auth.workspaceId, userId: params.userId } },
+      data: { role },
+    })
+  }
+
+  if (newPassword !== undefined) {
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
+      return NextResponse.json({ error: 'Senha deve ter ao menos 6 caracteres' }, { status: 400 })
+    }
+    const target = await prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId: auth.workspaceId, userId: params.userId } },
+    })
+    if (!target) return NextResponse.json({ error: 'Membro não encontrado' }, { status: 404 })
+    await prisma.user.update({ where: { id: params.userId }, data: { passwordHash: hashPassword(newPassword) } })
+  }
 
   return NextResponse.json({ ok: true })
 }
