@@ -2,18 +2,14 @@
 import { useState } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { Eye, EyeOff, Loader2, Zap } from 'lucide-react'
+import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { useAuthStore } from '@/lib/store/auth'
-
-const DEMO_EMAIL = 'admin@dashcapi.com'
-const DEMO_PASSWORD = 'admin123'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [demoLoading, setDemoLoading] = useState(false)
   const [error, setError] = useState('')
   const { login } = useAuthStore()
   const router = useRouter()
@@ -35,13 +31,6 @@ export default function LoginPage() {
     try { await doLogin(email, password) }
     catch (err: unknown) { setError(err instanceof Error ? err.message : 'Erro ao entrar') }
     finally { setLoading(false) }
-  }
-
-  async function handleDemo() {
-    setError(''); setDemoLoading(true)
-    try { await doLogin(DEMO_EMAIL, DEMO_PASSWORD) }
-    catch (err: unknown) { setError(err instanceof Error ? err.message : 'Erro ao entrar') }
-    finally { setDemoLoading(false) }
   }
 
   return (
@@ -153,32 +142,6 @@ export default function LoginPage() {
               {loading ? 'Entrando...' : 'Entrar'}
             </button>
           </form>
-
-          <div className="flex items-center gap-3 my-4">
-            <div className="flex-1 h-px bg-[#1e1635]" />
-            <span className="text-[10px] text-slate-600 font-medium uppercase tracking-wider">ou</span>
-            <div className="flex-1 h-px bg-[#1e1635]" />
-          </div>
-
-          {/* Botão Demo — borda laranja, fundo transparente */}
-          <button onClick={handleDemo} disabled={demoLoading}
-            className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all border flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98]"
-            style={{
-              background: 'transparent',
-              borderColor: '#F5A314',
-              color: '#F5A314',
-              boxShadow: demoLoading ? 'none' : '0 0 16px rgba(245,163,20,0.15)',
-            }}
-            onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.background = 'rgba(245,163,20,0.1)'; }}
-            onMouseLeave={e => { const el = e.currentTarget as HTMLElement; el.style.background = 'transparent'; }}
-          >
-            {demoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-            {demoLoading ? 'Carregando...' : 'Acessar Demo'}
-          </button>
-
-          <p className="text-center text-[10px] text-slate-600 mt-3">
-            Demo com dados fictícios — sem necessidade de cadastro
-          </p>
         </div>
       </div>
     </div>
