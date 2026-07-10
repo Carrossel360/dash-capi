@@ -69,6 +69,7 @@ model Workspace {
   googleAdsKeywords     GoogleAdsKeyword[]
   googleBusinessData    GoogleBusinessData[]
   socialMediaData       SocialMediaData[]
+  socialMediaDailyData  SocialMediaDailyData[]
   socialPosts           SocialPost[]
   insights              Insight[]
   conversations         Conversation[]
@@ -420,6 +421,42 @@ model SocialMediaData {
   workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, period, platform])
+}
+
+// Sync diário real via Instagram Graph API (lib/instagram.ts) — SocialMediaData acima é o
+// legado mensal importado do Supabase, nunca usado por código nenhum. Segue o mesmo padrão
+// de MetaAdsDailyData/GoogleAdsDailyData: uma linha por workspace/dia, upsert a cada sync.
+model SocialMediaDailyData {
+  id                  String    @id @default(cuid())
+  workspaceId         String
+  date                DateTime
+  platform            String    // instagram (único suportado por enquanto)
+  followersTotal      Float?    // snapshot atual (followers_count), não histórico exato por dia
+  followersNet        Float?    // follows_and_unfollows do dia (só o líquido — a API não separa ganhos/perdas)
+  views               Float?
+  viewsPost           Float?
+  viewsStory          Float?
+  viewsReel           Float?
+  viewsCarousel       Float?
+  reach               Float?
+  totalInteractions   Float?
+  interactionsPost    Float?
+  interactionsStory   Float?
+  interactionsReel    Float?
+  interactionsCarousel Float?
+  likes               Float?
+  comments            Float?
+  shares              Float?
+  saves               Float?
+  replies             Float?
+  profileVisits       Float?
+  websiteClicks       Float?
+  accountsEngaged     Float?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  workspace           Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, date, platform])
 }
 
 model SocialPost {

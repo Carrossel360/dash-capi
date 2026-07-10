@@ -1,12 +1,46 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { TrendingUp, Heart, MessageCircle, Share2, Eye, Users, Zap, Edit3, Check } from 'lucide-react'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import {
+  TrendingUp, Heart, MessageCircle, Share2, Eye, Users, Zap, Edit3, Check, X,
+  Loader2, PlayCircle, ExternalLink, Image as ImageIcon, Bookmark, Reply,
+} from 'lucide-react'
+import toast from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
 import PeriodSelector, { type Period } from '@/components/PeriodSelector'
 import { useAuthStore } from '@/lib/store/auth'
 
-/* ── Manual Edit Modal ── */
+type ApiKpis = Record<string, number | null>
+type ChartRow = { dia: string; views: number; interactions: number; reach: number }
+type InstagramPost = {
+  id: string; mediaType: string; mediaProductType: string; timestamp: string
+  caption: string | null; thumbnailUrl: string | null; mediaUrl: string | null; permalink: string | null
+  views: number; reach: number; likes: number; comments: number; shares: number; saved: number
+  totalInteractions: number; avgWatchTimeMs: number | null
+}
+
+const kpiDefs = [
+  { key: 'views',             label: 'Visualizações',             icon: Eye,           color: '#ec4899' },
+  { key: 'reach',             label: 'Contas Alcançadas',         icon: Users,         color: '#8b5cf6' },
+  { key: 'followersTotal',    label: 'Seguidores (total)',        icon: Users,         color: '#6a11cb' },
+  { key: 'followersNet',      label: 'Seguidores Líquidos',       icon: TrendingUp,    color: '#10b981' },
+  { key: 'totalInteractions', label: 'Interações',                icon: Heart,         color: '#ec4899' },
+  { key: 'accountsEngaged',   label: 'Contas com Engajamento',    icon: Zap,           color: '#F5A314' },
+  { key: 'profileVisits',     label: 'Visitas ao Perfil',         icon: Eye,           color: '#2575fc' },
+  { key: 'websiteClicks',     label: 'Toques no Link da Bio',     icon: Zap,           color: '#F5A314' },
+]
+
+const contentTypeLabel: Record<string, string> = { Post: 'Posts', Story: 'Stories', Reel: 'Reels', Carousel: 'Carrossel' }
+const contentTypeKeys = ['Post', 'Story', 'Reel', 'Carousel']
+
+const interactionDefs = [
+  { key: 'likes',    label: 'Curtidas',        icon: Heart,        color: '#ef4444' },
+  { key: 'comments', label: 'Comentários',     icon: MessageCircle, color: '#3b82f6' },
+  { key: 'shares',   label: 'Compartilhamentos', icon: Share2,     color: '#8b5cf6' },
+  { key: 'saves',    label: 'Salvamentos',     icon: Bookmark,     color: '#F5A314' },
+  { key: 'replies',  label: 'Respostas',       icon: Reply,        color: '#10b981' },
+]
+
 function ManualEditModal({ metric, value, onSave, onClose }: {
   metric: string; value: string; onSave: (v: string) => void; onClose: () => void
 }) {
@@ -33,72 +67,77 @@ function ManualEditModal({ metric, value, onSave, onClose }: {
   )
 }
 
-/* ── Data ── */
-const DEFAULT_IG: Record<string, number> = {
-  followers: 24380, reach: 42600, impressions: 68400, engagements: 1567,
-  eng_rate: 6.5, new_followers: 840,
-  link_clicks: 2140, profile_visits: 4280, website_clicks: 980,
-  stories_views: 18400, reels_views: 38200,
-  conversations_started: 312, leads_bc: 89, profile_visits_bc: 1842,
+function PostModal({ post, onClose }: { post: InstagramPost; onClose: () => void }) {
+  const isVideo = post.mediaType === 'VIDEO' && !!post.mediaUrl
+  const metrics = [
+    { label: 'Visualizações', value: post.views.toLocaleString('pt-BR') },
+    { label: 'Alcance', value: post.reach.toLocaleString('pt-BR') },
+    { label: 'Curtidas', value: post.likes.toLocaleString('pt-BR') },
+    { label: 'Comentários', value: post.comments.toLocaleString('pt-BR') },
+    { label: 'Compartilhamentos', value: post.shares.toLocaleString('pt-BR') },
+    { label: 'Salvamentos', value: post.saved.toLocaleString('pt-BR') },
+    { label: 'Interações', value: post.totalInteractions.toLocaleString('pt-BR') },
+    ...(post.avgWatchTimeMs != null ? [{ label: 'Tempo médio de visualização', value: `${(post.avgWatchTimeMs / 1000).toFixed(1)}s` }] : []),
+  ]
+
+  return (
+    <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative rounded-2xl w-full max-w-3xl shadow-2xl z-10 overflow-y-auto max-h-[90vh]"
+        style={{ background: '#0d0a1f', border: '1px solid rgba(106,17,203,0.3)' }}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#1e1635]">
+          <div>
+            <h3 className="text-sm font-bold text-white">{contentTypeLabel[post.mediaProductType === 'REELS' ? 'Reel' : post.mediaProductType === 'STORY' ? 'Story' : post.mediaType === 'CAROUSEL_ALBUM' ? 'Carousel' : 'Post'] ?? post.mediaProductType}</h3>
+            <p className="text-[10px] text-slate-600 mt-1">{new Date(post.timestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {post.permalink && (
+              <a href={post.permalink} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-[#2d2550] text-slate-300 hover:text-white hover:border-[#6a11cb] transition-colors">
+                <ExternalLink className="w-3.5 h-3.5" /> Abrir no Instagram
+              </a>
+            )}
+            <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="rounded-xl overflow-hidden bg-black flex items-center justify-center" style={{ minHeight: 280 }}>
+            {isVideo ? (
+              <video src={post.mediaUrl!} controls className="w-full h-full object-contain" poster={post.thumbnailUrl ?? undefined} />
+            ) : (post.mediaUrl || post.thumbnailUrl) ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={post.mediaUrl ?? post.thumbnailUrl ?? ''} alt="" className="w-full h-full object-contain" />
+            ) : (
+              <ImageIcon className="w-10 h-10 text-slate-700" />
+            )}
+          </div>
+
+          <div className="space-y-4">
+            {post.caption && (
+              <p className="text-xs text-slate-400 whitespace-pre-wrap line-clamp-6">{post.caption}</p>
+            )}
+            <div>
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Performance</p>
+              <div className="grid grid-cols-2 gap-3">
+                {metrics.map(m => (
+                  <div key={m.label}>
+                    <p className="text-sm font-bold text-white">{m.value}</p>
+                    <p className="text-[10px] text-slate-500">{m.label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
-const DEFAULT_FB: Record<string, number> = {
-  followers: 8240, reach: 18400, impressions: 31000, engagements: 642,
-  eng_rate: 3.5, new_followers: 180,
-  link_clicks: 820, profile_visits: 1240, website_clicks: 480,
-}
 
-const IG_METRICS = [
-  { key: 'followers', label: 'Seguidores', icon: Users, color: '#ec4899' },
-  { key: 'new_followers', label: 'Novos Seguidores', icon: TrendingUp, color: '#6a11cb' },
-  { key: 'reach', label: 'Alcance (4 sem)', icon: Eye, color: '#8b5cf6' },
-  { key: 'impressions', label: 'Impressões (4 sem)', icon: Eye, color: '#2575fc' },
-  { key: 'engagements', label: 'Engajamentos', icon: Heart, color: '#ec4899' },
-  { key: 'eng_rate', label: 'Taxa de Engajamento', icon: TrendingUp, color: '#10b981', suffix: '%' },
-  { key: 'link_clicks', label: 'Cliques no Link', icon: Zap, color: '#F5A314' },
-  { key: 'profile_visits', label: 'Visitas ao Perfil', icon: Eye, color: '#6a11cb' },
-  { key: 'website_clicks', label: 'Cliques no Site', icon: Zap, color: '#2575fc' },
-  { key: 'stories_views', label: 'Visualizações Stories', icon: Eye, color: '#8b5cf6' },
-  { key: 'reels_views', label: 'Visualizações Reels', icon: Eye, color: '#ec4899' },
-  { key: 'conversations_started', label: 'Conversas Iniciadas', icon: MessageCircle, color: '#F5A314' },
-  { key: 'leads_bc', label: 'Leads BC', icon: Users, color: '#6a11cb' },
-  { key: 'profile_visits_bc', label: 'Visitas no Perfil BC', icon: Eye, color: '#8b5cf6' },
-]
-
-const FB_METRICS = [
-  { key: 'followers', label: 'Seguidores / Curtidas', icon: Users, color: '#1877f2' },
-  { key: 'new_followers', label: 'Novos Seguidores', icon: TrendingUp, color: '#6a11cb' },
-  { key: 'reach', label: 'Alcance (4 sem)', icon: Eye, color: '#8b5cf6' },
-  { key: 'impressions', label: 'Impressões (4 sem)', icon: Eye, color: '#2575fc' },
-  { key: 'engagements', label: 'Engajamentos', icon: Heart, color: '#1877f2' },
-  { key: 'eng_rate', label: 'Taxa de Engajamento', icon: TrendingUp, color: '#10b981', suffix: '%' },
-  { key: 'link_clicks', label: 'Cliques no Link', icon: Zap, color: '#F5A314' },
-  { key: 'profile_visits', label: 'Visitas ao Perfil', icon: Eye, color: '#6a11cb' },
-  { key: 'website_clicks', label: 'Cliques no Site', icon: Zap, color: '#2575fc' },
-]
-
-const followerData = [
-  { sem: 'Sem 1', seguidores: 22840, engajamentos: 1124 },
-  { sem: 'Sem 2', seguidores: 23210, engajamentos: 1280 },
-  { sem: 'Sem 3', seguidores: 23890, engajamentos: 1420 },
-  { sem: 'Sem 4', seguidores: 24380, engajamentos: 1567 },
-]
-
-const contentMix = [
-  { tipo: 'Reels', posts: 8, alcance: 38200, eng: 8.2 },
-  { tipo: 'Carrossel', posts: 12, alcance: 24600, eng: 7.4 },
-  { tipo: 'Foto', posts: 6, alcance: 9800, eng: 6.1 },
-  { tipo: 'Stories', posts: 28, alcance: 18400, eng: 4.8 },
-]
-
-const topPosts = [
-  { tipo: 'Reels', curtidas: 521, comentarios: 68, shares: 94, alcance: '12.400', eng: '5.5%' },
-  { tipo: 'Carrossel', curtidas: 284, comentarios: 42, shares: 31, alcance: '4.800', eng: '7.5%' },
-  { tipo: 'Stories', curtidas: 142, comentarios: 18, shares: 12, alcance: '2.200', eng: '7.8%' },
-  { tipo: 'Foto', curtidas: 198, comentarios: 27, shares: 8, alcance: '3.100', eng: '7.5%' },
-  { tipo: 'Reels', curtidas: 489, comentarios: 54, shares: 78, alcance: '10.800', eng: '5.7%' },
-]
-
-const Tt = ({ active, payload, label }: { active?: boolean; payload?: { value: number; name: string; color: string }[]; label?: string }) => {
+const ChartTooltip = ({ active, payload, label }: { active?: boolean; payload?: { value: number; name: string; color: string }[]; label?: string }) => {
   if (!active || !payload?.length) return null
   return (
     <div className="glass rounded-lg px-3 py-2 text-xs space-y-1">
@@ -109,179 +148,288 @@ const Tt = ({ active, payload, label }: { active?: boolean; payload?: { value: n
 }
 
 export default function SocialMediaPage() {
-  const { currentWorkspace } = useAuthStore()
-  const wsId = currentWorkspace?.id ?? 'default'
+  const { currentWorkspace, token } = useAuthStore()
 
-  const [tab, setTab] = useState<'instagram' | 'facebook'>('instagram')
-  const [period, setPeriod] = useState<Period>('30d')
-  const [manualEdit, setManualEdit] = useState<{ key: string; label: string } | null>(null)
-  const [igOverrides, setIgOverrides] = useState<Record<string, number>>({})
-  const [fbOverrides, setFbOverrides] = useState<Record<string, number>>({})
+  const [period, setPeriod] = useState<Period>('this_month')
+  const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [hasInstagram, setHasInstagram] = useState(true)
+  const [apiKpis, setApiKpis] = useState<ApiKpis>({})
+  const [comparison, setComparison] = useState<Record<string, number | null>>({})
+  const [chart, setChart] = useState<ChartRow[]>([])
+  const [manualEdit, setManualEdit] = useState<{ key: string; label: string; value: string } | null>(null)
+  const [manualOverrides, setManualOverrides] = useState<Record<string, number>>({})
 
-  // Load per-workspace overrides from localStorage
+  const [posts, setPosts] = useState<InstagramPost[]>([])
+  const [postsLoading, setPostsLoading] = useState(false)
+  const [selectedPost, setSelectedPost] = useState<InstagramPost | null>(null)
+  const [postSort, setPostSort] = useState<'views' | 'totalInteractions' | 'likes'>('views')
+
   useEffect(() => {
-    try {
-      const ig = JSON.parse(localStorage.getItem(`sm-ig-${wsId}`) ?? '{}')
-      const fb = JSON.parse(localStorage.getItem(`sm-fb-${wsId}`) ?? '{}')
-      setIgOverrides(ig)
-      setFbOverrides(fb)
-    } catch { setIgOverrides({}); setFbOverrides({}) }
-  }, [wsId])
-
-  const isIG = tab === 'instagram'
-  const accent = isIG ? '#ec4899' : '#6a11cb'
-  const metrics = isIG ? IG_METRICS : FB_METRICS
-  const defaults = isIG ? DEFAULT_IG : DEFAULT_FB
-  const overrides = isIG ? igOverrides : fbOverrides
-
-  function setOverrides(updater: (prev: Record<string, number>) => Record<string, number>) {
-    if (isIG) {
-      setIgOverrides(prev => {
-        const next = updater(prev)
-        localStorage.setItem(`sm-ig-${wsId}`, JSON.stringify(next))
-        return next
+    if (!token) return
+    if (period === 'custom' && !customRange) return
+    setLoading(true)
+    const headers = { Authorization: `Bearer ${token}` }
+    const q = period === 'custom' && customRange
+      ? `?period=custom&from=${customRange.from}&to=${customRange.to}`
+      : `?period=${period}`
+    fetch(`/api/social-media${q}`, { headers })
+      .then(r => r.ok ? r.json() : r.json().then(d => { throw new Error(d.error ?? `social ${r.status}`) }))
+      .then(d => {
+        setApiKpis(d.kpis ?? {})
+        setComparison(d.comparison ?? {})
+        setChart(d.chart ?? [])
+        setHasInstagram(d.hasInstagram ?? true)
       })
-    } else {
-      setFbOverrides(prev => {
-        const next = updater(prev)
-        localStorage.setItem(`sm-fb-${wsId}`, JSON.stringify(next))
-        return next
-      })
-    }
-  }
+      .catch(err => toast.error(err instanceof Error ? err.message : 'Erro ao buscar dados de Social Media'))
+      .finally(() => setLoading(false))
+  }, [token, period, customRange])
 
-  const val = (k: string) => overrides[k] ?? defaults[k] ?? 0
-  const fmt = (k: string, suffix?: string) => `${val(k).toLocaleString('pt-BR')}${suffix ?? ''}`
+  useEffect(() => {
+    if (!token) return
+    setPostsLoading(true)
+    fetch('/api/social-media/posts', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : r.json().then(d => { throw new Error(d.error ?? 'Erro ao buscar posts') }))
+      .then(d => setPosts(d.posts ?? []))
+      .catch(err => toast.error(err instanceof Error ? err.message : 'Erro ao buscar posts'))
+      .finally(() => setPostsLoading(false))
+  }, [token])
+
+  const value = (key: string) => manualOverrides[key] ?? (apiKpis[key] ?? 0)
+  const sortedPosts = [...posts].sort((a, b) => b[postSort] - a[postSort])
+
+  const viewsByType = contentTypeKeys.map(k => ({
+    key: k,
+    label: contentTypeLabel[k],
+    value: Number(apiKpis[`views${k}`] ?? 0),
+  }))
+  const maxViewsByType = Math.max(1, ...viewsByType.map(v => v.value))
+
+  const interactionsByType = contentTypeKeys.map(k => ({
+    key: k,
+    label: contentTypeLabel[k],
+    value: Number(apiKpis[`interactions${k}`] ?? 0),
+  }))
+  const maxInteractionsByType = Math.max(1, ...interactionsByType.map(v => v.value))
 
   return (
     <>
       {manualEdit && (
         <ManualEditModal
           metric={manualEdit.label}
-          value={String(val(manualEdit.key))}
-          onSave={(v) => setOverrides((p: Record<string, number>) => ({ ...p, [manualEdit.key]: parseFloat(v) || 0 }))}
+          value={manualEdit.value}
+          onSave={(v) => setManualOverrides(prev => ({ ...prev, [manualEdit!.key]: parseFloat(v) || 0 }))}
           onClose={() => setManualEdit(null)}
         />
       )}
+      {selectedPost && <PostModal post={selectedPost} onClose={() => setSelectedPost(null)} />}
 
       <div className="flex flex-col h-full overflow-hidden">
         <TopBar title="Social Media" />
         <main className="flex-1 overflow-y-auto p-5 space-y-5">
 
-          {/* Platform tabs + Period */}
+          {/* Header: plataforma + período */}
           <div className="flex flex-wrap items-center gap-3">
-          <div className="flex gap-2">
-            {(['instagram', 'facebook'] as const).map(p => (
-              <button key={p} onClick={() => setTab(p)}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all border ${tab === p ? 'text-white border-transparent' : 'bg-transparent text-slate-400 border-[#1e1635] hover:text-white'}`}
-                style={tab === p ? {
-                  background: p === 'instagram'
-                    ? 'linear-gradient(135deg,#6a11cb,#ec4899)'
-                    : '#6a11cb',
-                  boxShadow: '0 4px 16px rgba(106,17,203,0.3)'
-                } : {}}
-              >
-                {p === 'instagram' ? '📸 Instagram' : '👥 Facebook'}
-              </button>
-            ))}
-          </div>
-          <div className="w-px h-5 bg-[#1e1635]" />
-          <PeriodSelector value={period} onChange={setPeriod} />
-          </div>
-
-          {/* All metrics grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {metrics.map(({ key, label, icon: Icon, color, suffix }) => (
-              <div key={key} className="glass card-hover rounded-xl p-4 group relative">
-                <button
-                  onClick={() => setManualEdit({ key, label })}
-                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-slate-600 hover:text-[#6a11cb]"
-                  title="Editar manualmente"
-                >
-                  <Edit3 className="w-3 h-3" />
-                </button>
-                <div className="w-8 h-8 rounded-lg mb-3 flex items-center justify-center" style={{ background: `${color}15` }}>
-                  <Icon className="w-4 h-4" style={{ color }} />
-                </div>
-                {overrides[key] !== undefined && (
-                  <span className="text-[9px] text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded mb-1 inline-block">manual</span>
-                )}
-                <p className="text-xl font-bold text-white">{fmt(key, suffix)}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{label}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Charts */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="glass rounded-xl p-4 lg:col-span-2">
-              <h3 className="text-sm font-semibold text-white mb-4">Crescimento — 4 semanas</h3>
-              <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={followerData} margin={{ top: 5, right: 5, left: -15, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="gsm" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={accent} stopOpacity={0.3} /><stop offset="95%" stopColor={accent} stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e1635" />
-                  <XAxis dataKey="sem" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<Tt />} />
-                  <Area type="monotone" dataKey="seguidores" name="Seguidores" stroke={accent} strokeWidth={2} fill="url(#gsm)" />
-                  <Area type="monotone" dataKey="engajamentos" name="Engajamentos" stroke="#6a11cb" strokeWidth={2} fill="none" strokeDasharray="4 2" />
-                </AreaChart>
-              </ResponsiveContainer>
+            <div className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white"
+              style={{ background: 'linear-gradient(135deg,#6a11cb,#ec4899)', boxShadow: '0 4px 16px rgba(106,17,203,0.3)' }}>
+              📸 Instagram
             </div>
+            <div className="w-px h-5 bg-[#1e1635]" />
+            <PeriodSelector
+              value={period}
+              onChange={p => { setPeriod(p); if (p !== 'custom') setCustomRange(null) }}
+              onCustomChange={(from, to) => setCustomRange({ from, to })}
+            />
+          </div>
 
-            <div className="glass rounded-xl p-4">
-              <h3 className="text-sm font-semibold text-white mb-4">Mix de Conteúdo</h3>
-              <div className="space-y-3">
-                {contentMix.map((c) => (
-                  <div key={c.tipo}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-slate-300">{c.tipo}</span>
-                      <span className="text-xs text-slate-500">{c.posts} posts · {c.eng}% eng</span>
+          {loading && (
+            <div className="flex items-center justify-center py-12">
+              <div className="w-6 h-6 rounded-full border-2 border-[#6a11cb] border-t-transparent animate-spin" />
+            </div>
+          )}
+
+          {!loading && !hasInstagram && (
+            <div className="glass rounded-xl px-4 py-3 text-xs text-amber-400 bg-amber-400/5 border border-amber-400/20">
+              Esse cliente ainda não tem uma conta do Instagram configurada. Fale com a agência pra vincular.
+            </div>
+          )}
+
+          {!loading && hasInstagram && !apiKpis.hasData && (
+            <div className="glass rounded-xl px-4 py-3 text-xs text-amber-400 bg-amber-400/5 border border-amber-400/20">
+              Nenhum dado sincronizado para este período ainda. Aguarde a próxima sincronização automática (a cada hora).
+            </div>
+          )}
+
+          {/* Visão Geral */}
+          {!loading && apiKpis.hasData && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {kpiDefs.map(({ key, label, icon: Icon, color }) => {
+                const pct = comparison[key]
+                const improved = pct != null && pct > 0
+                return (
+                  <div key={key} className="glass card-hover rounded-xl p-4 group relative">
+                    <button onClick={() => setManualEdit({ key, label, value: value(key).toString() })}
+                      className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-slate-600 hover:text-[#6a11cb]">
+                      <Edit3 className="w-3 h-3" />
+                    </button>
+                    <div className="w-8 h-8 rounded-lg mb-3 flex items-center justify-center" style={{ background: `${color}15` }}>
+                      <Icon className="w-4 h-4" style={{ color }} />
                     </div>
-                    <div className="w-full h-1.5 bg-[#1e1635] rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${(c.alcance / 40000) * 100}%`, background: 'linear-gradient(90deg, #6a11cb, #8b5cf6)' }} />
+                    {manualOverrides[key] !== undefined && (
+                      <div className="flex items-center gap-1 mb-1">
+                        <span className="text-[9px] text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded">manual</span>
+                        <button onClick={() => setManualOverrides(p => { const n = { ...p }; delete n[key]; return n })}
+                          className="text-slate-600 hover:text-red-400"><X className="w-3 h-3" /></button>
+                      </div>
+                    )}
+                    <p className="text-xl font-bold text-white">{value(key).toLocaleString('pt-BR')}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <p className="text-xs text-slate-500">{label}</p>
+                      {pct != null && isFinite(pct) && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold" style={{ color: improved ? '#10b981' : '#ef4444' }}>
+                          {improved ? '↗' : '↘'} {Math.abs(pct).toFixed(0)}%
+                        </span>
+                      )}
                     </div>
-                    <p className="text-[10px] text-slate-600 mt-0.5">{c.alcance.toLocaleString('pt-BR')} alcance</p>
                   </div>
-                ))}
+                )
+              })}
+            </div>
+          )}
+
+          {/* Gráfico + breakdowns por tipo de conteúdo */}
+          {!loading && apiKpis.hasData && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="glass rounded-xl p-4 lg:col-span-2">
+                <h3 className="text-sm font-semibold text-white mb-4">Visualizações & Interações por Dia</h3>
+                <ResponsiveContainer width="100%" height={220}>
+                  <AreaChart data={chart} margin={{ top: 5, right: 5, left: -15, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gsm" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#ec4899" stopOpacity={0.3} /><stop offset="95%" stopColor="#ec4899" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e1635" />
+                    <XAxis dataKey="dia" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Area type="monotone" dataKey="views" name="Visualizações" stroke="#ec4899" strokeWidth={2} fill="url(#gsm)" />
+                    <Area type="monotone" dataKey="interactions" name="Interações" stroke="#6a11cb" strokeWidth={2} fill="none" strokeDasharray="4 2" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="glass rounded-xl p-4">
+                <h3 className="text-sm font-semibold text-white mb-4">Visualizações por Tipo</h3>
+                <div className="space-y-3">
+                  {viewsByType.map(v => (
+                    <div key={v.key}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-slate-300">{v.label}</span>
+                        <span className="text-xs text-slate-500">{v.value.toLocaleString('pt-BR')}</span>
+                      </div>
+                      <div className="w-full h-1.5 bg-[#1e1635] rounded-full overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${(v.value / maxViewsByType) * 100}%`, background: 'linear-gradient(90deg, #6a11cb, #ec4899)' }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
+          )}
+
+          {/* Interações por tipo + interações por conteúdo */}
+          {!loading && apiKpis.hasData && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="glass rounded-xl p-4">
+                <h3 className="text-sm font-semibold text-white mb-4">Interações por Tipo</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {interactionDefs.map(({ key, label, icon: Icon, color }) => (
+                    <div key={key} className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${color}15` }}>
+                        <Icon className="w-3.5 h-3.5" style={{ color }} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-white">{Number(apiKpis[key] ?? 0).toLocaleString('pt-BR')}</p>
+                        <p className="text-[10px] text-slate-500 truncate">{label}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="glass rounded-xl p-4">
+                <h3 className="text-sm font-semibold text-white mb-4">Interações por Tipo de Conteúdo</h3>
+                <div className="space-y-3">
+                  {interactionsByType.map(v => (
+                    <div key={v.key}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-slate-300">{v.label}</span>
+                        <span className="text-xs text-slate-500">{v.value.toLocaleString('pt-BR')}</span>
+                      </div>
+                      <div className="w-full h-1.5 bg-[#1e1635] rounded-full overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${(v.value / maxInteractionsByType) * 100}%`, background: 'linear-gradient(90deg, #ec4899, #F5A314)' }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Top Posts */}
           <div className="glass rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-[#1e1635]">
+            <div className="px-4 py-3 border-b border-[#1e1635] flex items-center justify-between">
               <h3 className="text-sm font-semibold text-white">Top Posts</h3>
+              <div className="flex items-center gap-2">
+                {(['views', 'totalInteractions', 'likes'] as const).map(s => (
+                  <button key={s} onClick={() => setPostSort(s)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                    style={postSort === s ? { background: '#6a11cb', color: '#fff' } : { background: 'rgba(15,11,30,0.7)', color: '#94a3b8', border: '1px solid #1e1635' }}>
+                    {s === 'views' ? 'Visualizações' : s === 'totalInteractions' ? 'Interações' : 'Curtidas'}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-[#1e1635]">
-                    {['Tipo', 'Curtidas', 'Comentários', 'Compartilhamentos', 'Alcance', 'Eng. Rate'].map(h => (
-                      <th key={h} className="px-4 py-3 text-left font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {topPosts.map((p, i) => (
-                    <tr key={i} className="border-b border-[#1e1635]/50 hover:bg-white/[0.02] transition-colors">
-                      <td className="px-4 py-3">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-medium" style={{ color: accent, background: `${accent}15` }}>{p.tipo}</span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-300"><span className="flex items-center gap-1"><Heart className="w-3 h-3 text-red-400" />{p.curtidas}</span></td>
-                      <td className="px-4 py-3 text-slate-300"><span className="flex items-center gap-1"><MessageCircle className="w-3 h-3 text-blue-400" />{p.comentarios}</span></td>
-                      <td className="px-4 py-3 text-slate-300"><span className="flex items-center gap-1"><Share2 className="w-3 h-3 text-purple-400" />{p.shares}</span></td>
-                      <td className="px-4 py-3 text-slate-300"><span className="flex items-center gap-1"><Eye className="w-3 h-3 text-slate-500" />{p.alcance}</span></td>
-                      <td className="px-4 py-3 font-bold text-emerald-400">{p.eng}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {postsLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-5 h-5 text-[#6a11cb] animate-spin" />
+              </div>
+            ) : sortedPosts.length === 0 ? (
+              <p className="text-xs text-slate-500 text-center py-8">
+                {hasInstagram ? 'Nenhum post encontrado.' : 'Configure a conta do Instagram pra ver os posts.'}
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 p-4">
+                {sortedPosts.map(p => (
+                  <button key={p.id} onClick={() => setSelectedPost(p)}
+                    className="glass rounded-xl overflow-hidden text-left hover:border-[#6a11cb]/50 transition-all group">
+                    <div className="relative aspect-square bg-black flex items-center justify-center overflow-hidden">
+                      {p.thumbnailUrl || p.mediaUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={p.thumbnailUrl ?? p.mediaUrl ?? ''} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                      ) : (
+                        <ImageIcon className="w-8 h-8 text-slate-700" />
+                      )}
+                      {p.mediaType === 'VIDEO' && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                          <PlayCircle className="w-8 h-8 text-white/90" />
+                        </div>
+                      )}
+                      <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full text-[10px] font-medium text-white bg-black/60">
+                        {p.mediaProductType === 'REELS' ? 'Reel' : p.mediaProductType === 'STORY' ? 'Story' : p.mediaType === 'CAROUSEL_ALBUM' ? 'Carrossel' : 'Post'}
+                      </span>
+                    </div>
+                    <div className="p-2.5">
+                      <div className="flex items-center justify-between text-[10px] text-slate-500">
+                        <span>{p.views.toLocaleString('pt-BR')} views</span>
+                        <span className="text-emerald-400">{p.totalInteractions} interações</span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
         </main>
