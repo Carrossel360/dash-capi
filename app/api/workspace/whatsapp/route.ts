@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthPayload } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { fetchUazapiConnectionState } from '@/lib/uazapi'
 
 // PATCH — save UazAPI credentials (admin only)
 export async function PATCH(req: NextRequest) {
@@ -46,43 +47,19 @@ export async function GET(req: NextRequest) {
   const instanceToken = ws.uazapiToken ?? ws.uazapiInstanceName
   const adminToken    = agency?.uazapiAdminToken ?? ''
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    token:          instanceToken,
-    AdminToken:     adminToken,
-  }
-
   try {
-    // First try to get connection status
-    const statusRes = await fetch(`${ws.uazapiUrl}/instance/connectionState`, {
-      headers,
-    }).catch(() => null)
-
-    if (statusRes?.ok) {
-      const statusData = await statusRes.json()
-      const state = statusData?.state ?? statusData?.status ?? statusData?.connectionStatus ?? ''
-      if (state === 'open' || state === 'connected') {
-        return NextResponse.json({ status: 'connected', state })
-      }
+    const result = await fetchUazapiConnectionState(ws.uazapiUrl, instanceToken, adminToken)
+    if (result.kind === 'connected') {
+      return NextResponse.json({
+        status: 'connected',
+        ...(result.state !== undefined && { state: result.state }),
+        ...(result.instance !== undefined && { instance: result.instance }),
+      })
     }
-
-    // Get QR code / connection status
-    const qrRes = await fetch(`${ws.uazapiUrl}/instance/connect`, {
-      method:  'POST',
-      headers,
-    })
-    const data = await qrRes.json()
-
-    if (!qrRes.ok) {
-      return NextResponse.json({ error: `UazAPI: ${data?.error ?? data?.message ?? qrRes.status}` }, { status: 502 })
+    if (result.kind === 'error') {
+      return NextResponse.json({ error: result.message }, { status: 502 })
     }
-
-    // Normalize response: check if connected
-    if (data.connected || data.loggedIn || data.instance?.status === 'connected') {
-      return NextResponse.json({ status: 'connected', instance: data.instance })
-    }
-
-    return NextResponse.json(data)
+    return NextResponse.json(result.data)
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Não foi possível conectar à UazAPI' }, { status: 502 })
   }
