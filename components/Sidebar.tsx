@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, TrendingUp, Share2, MapPin, Star,
   Users, Megaphone, MessageSquare, Zap, Settings, Building2,
-  ChevronLeft, ChevronRight, LogOut, Lock, CheckSquare, Sparkles,
+  ChevronLeft, ChevronRight, LogOut, Lock, CheckSquare, Sparkles, Bot,
 } from 'lucide-react'
 import { useAuthStore } from '@/lib/store/auth'
 import LockedServiceModal from '@/components/LockedServiceModal'
@@ -22,6 +22,7 @@ const navGroups = [
       { label: 'Social Media', href: '/social-media', icon: Share2, service: 'socialMedia' as ServiceKey, adminOnly: false },
       { label: 'Google Business', href: '/google-business', icon: MapPin, service: 'googleBusiness' as ServiceKey, adminOnly: false },
       { label: 'Google Local', href: '/google-local', icon: Star, service: 'googleLocal' as ServiceKey, adminOnly: false },
+      { label: 'Relatórios com IA', href: '/relatorios-ia', icon: Bot, service: 'trafeqoPago' as ServiceKey, adminOnly: false },
     ],
   },
   {
