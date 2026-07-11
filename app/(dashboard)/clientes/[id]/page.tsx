@@ -63,6 +63,14 @@ const FUNNEL_METRICS = [
   { key: 'results', label: 'Resultados/Vendas' },
 ]
 
+const GOOGLE_FUNNEL_METRICS = [
+  { key: 'impressions', label: 'Impressões' },
+  { key: 'clicks', label: 'Cliques' },
+  { key: 'conversions', label: 'Conversões' },
+  { key: 'leads_bc', label: 'Leads BC' },
+  { key: 'spend', label: 'Valor Gasto' },
+]
+
 const GOOGLE_METRICS = [
   { key: 'spend', label: 'Valor Gasto' },
   { key: 'impressions', label: 'Impressões' },
@@ -84,7 +92,7 @@ interface ClientDetail {
   currency: string
   svcMetaAds: boolean; svcGoogleAds: boolean; svcSocialMedia: boolean
   svcGoogleBusiness: boolean; svcGoogleLocal: boolean; svcContentStudio: boolean
-  metaVisibleMetrics: string[]; googleVisibleMetrics: string[]; funnelMetrics: string[]
+  metaVisibleMetrics: string[]; googleVisibleMetrics: string[]; funnelMetrics: string[]; googleFunnelMetrics: string[]
   members: { id: string; role: string; user: { id: string; name: string; email: string } }[]
   stages: { id: string; name: string; color: string; order: number; triggerCapiEvent: string }[]
   _count: { leads: number; capiEvents: number; campaigns: number }
@@ -143,6 +151,7 @@ export default function ClienteDetailPage() {
   const [metaVisible, setMetaVisible] = useState<string[]>([])
   const [googleVisible, setGoogleVisible] = useState<string[]>([])
   const [funnelSel, setFunnelSel] = useState<string[]>([])
+  const [googleFunnelSel, setGoogleFunnelSel] = useState<string[]>([])
 
   useEffect(() => {
     fetch(`/api/clients/${clientId}`, { headers: { Authorization: `Bearer ${token}` } })
@@ -168,6 +177,7 @@ export default function ClienteDetailPage() {
         setMetaVisible(w.metaVisibleMetrics ?? [])
         setGoogleVisible(w.googleVisibleMetrics ?? [])
         setFunnelSel(w.funnelMetrics ?? [])
+        setGoogleFunnelSel(w.googleFunnelMetrics ?? [])
       })
       .finally(() => setLoading(false))
   }, [clientId, token])
@@ -621,7 +631,35 @@ export default function ClienteDetailPage() {
                   </div>
                 </div>
 
-                <SaveBtn extra={{ metaVisibleMetrics: metaVisible, googleVisibleMetrics: googleVisible, funnelMetrics: funnelSel }} />
+                {/* Funil Google Ads */}
+                <div className="glass rounded-2xl p-5 space-y-4">
+                  <div>
+                    <h2 className="text-sm font-semibold text-white">Etapas do funil de conversão (Google Ads)</h2>
+                    <p className="text-xs text-slate-500 mt-1">Escolha as métricas que formam o funil do Google Ads (em ordem).</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {GOOGLE_FUNNEL_METRICS.map(m => {
+                      const on = googleFunnelSel.includes(m.key)
+                      const idx = googleFunnelSel.indexOf(m.key)
+                      return (
+                        <button key={m.key} onClick={() => toggleMetric(m.key, googleFunnelSel, setGoogleFunnelSel)}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs text-left transition-all ${
+                            on ? 'border-[#F5A314]/50 bg-[#F5A314]/8 text-white' : 'border-[#1e1635] text-slate-500 hover:border-[#2d2550]'
+                          }`}
+                        >
+                          <span className={`w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center flex-shrink-0 ${
+                            on ? 'bg-[#F5A314] text-[#06040f]' : 'bg-[#1e1635] text-slate-600'
+                          }`}>
+                            {on ? idx + 1 : ''}
+                          </span>
+                          {m.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <SaveBtn extra={{ metaVisibleMetrics: metaVisible, googleVisibleMetrics: googleVisible, funnelMetrics: funnelSel, googleFunnelMetrics: googleFunnelSel }} />
               </div>
             )}
 

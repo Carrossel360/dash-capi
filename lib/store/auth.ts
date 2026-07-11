@@ -22,6 +22,7 @@ export interface WorkspaceInfo {
   metaVisibleMetrics?: string[]
   googleVisibleMetrics?: string[]
   funnelMetrics?: string[]
+  googleFunnelMetrics?: string[]
 }
 
 interface AuthState {

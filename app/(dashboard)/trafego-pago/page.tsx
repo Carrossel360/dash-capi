@@ -522,7 +522,8 @@ function VisualFunnel({ keys, kpiMap, currency, palette = FC }: {
 export default function TrafegoPagoPage() {
   const { currentWorkspace, token } = useAuthStore()
   const currency    = currentWorkspace?.currency ?? 'BRL'
-  const funnelKeys  = currentWorkspace?.funnelMetrics        ?? defaultFunnelMeta
+  const funnelKeys       = currentWorkspace?.funnelMetrics       ?? defaultFunnelMeta
+  const googleFunnelKeys = currentWorkspace?.googleFunnelMetrics ?? defaultFunnelGoogle
   const visibleMeta = currentWorkspace?.metaVisibleMetrics   ?? []
   const visibleGoog = currentWorkspace?.googleVisibleMetrics ?? []
 
@@ -662,7 +663,7 @@ export default function TrafegoPagoPage() {
   )
   const activeFunnel = isMeta
     ? (funnelKeys.length > 0 ? funnelKeys : defaultFunnelMeta)
-    : defaultFunnelGoogle
+    : (googleFunnelKeys.length > 0 ? googleFunnelKeys : defaultFunnelGoogle)
 
   const filteredCreatives = creatives
     .filter(c => creativeStatusFilter === 'all' || (creativeStatusFilter === 'active') === (c.effectiveStatus === 'ACTIVE'))

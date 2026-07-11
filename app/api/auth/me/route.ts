@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
     currency: ws.currency,
     services: buildWorkspaceServices(ws),
     funnelMetrics: ws.funnelMetrics,
+    googleFunnelMetrics: ws.googleFunnelMetrics,
     metaVisibleMetrics: ws.metaVisibleMetrics,
     googleVisibleMetrics: ws.googleVisibleMetrics,
   }

@@ -45,7 +45,8 @@ model Workspace {
   svcContentStudio      Boolean              @default(false)
   metaVisibleMetrics    String[]             @default([])
   googleVisibleMetrics  String[]             @default([])
-  funnelMetrics         String[]             @default([])
+  funnelMetrics         String[]             @default([]) // funil do Meta Ads
+  googleFunnelMetrics   String[]             @default([]) // funil do Google Ads — campo próprio, não reaproveita funnelMetrics
   pipelineColumns       Json?
   uazapiUrl             String?
   uazapiAdminToken      String?

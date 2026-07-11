@@ -94,24 +94,28 @@ function SaveBtn({ onClick, loading }: { onClick: () => void; loading: boolean }
 }
 
 export default function SettingsPage() {
-  const { token, currentWorkspace } = useAuthStore()
+  const { token, currentWorkspace, accessibleWorkspaces } = useAuthStore()
   const role = currentWorkspace?.role ?? 'viewer'
   const isAgency = currentWorkspace?.isAgency === true
   const canManage = ['admin', 'manager'].includes(role)
+  // Diferente de isAgency (workspace atual): identifica se quem está logado é da
+  // equipe da agência, independente de qual workspace está vendo no momento — um
+  // cliente final nunca tem membership no workspace isAgency:true.
+  const isAgencyStaff = accessibleWorkspaces.some(w => w.isAgency)
 
   // Meta CAPI and Contas only visible inside agency's own workspace
   const ALL_TABS = [
-    { id: 'meta',       label: 'Meta CAPI',          agencyOnly: true },
-    { id: 'contas',     label: 'Contas de Anúncios',  agencyOnly: true },
-    { id: 'pipeline',   label: 'Pipeline',             agencyOnly: false },
-    { id: 'produtos',   label: 'Produtos',              agencyOnly: false },
-    { id: 'equipe',     label: 'Equipe',               agencyOnly: false },
-    { id: 'whatsapp',   label: 'WhatsApp',             agencyOnly: false },
-    { id: 'rastreio',   label: 'Rastreio',              agencyOnly: false },
-    { id: 'alertas',    label: 'Alertas',               agencyOnly: true },
-    { id: 'relatorios-ia', label: 'Relatórios com IA',  agencyOnly: false },
+    { id: 'meta',       label: 'Meta CAPI',          agencyOnly: true,  staffOnly: false },
+    { id: 'contas',     label: 'Contas de Anúncios',  agencyOnly: true,  staffOnly: false },
+    { id: 'pipeline',   label: 'Pipeline',             agencyOnly: false, staffOnly: false },
+    { id: 'produtos',   label: 'Produtos',              agencyOnly: false, staffOnly: false },
+    { id: 'equipe',     label: 'Equipe',               agencyOnly: false, staffOnly: false },
+    { id: 'whatsapp',   label: 'WhatsApp',             agencyOnly: false, staffOnly: false },
+    { id: 'rastreio',   label: 'Rastreio',              agencyOnly: false, staffOnly: false },
+    { id: 'alertas',    label: 'Alertas',               agencyOnly: true,  staffOnly: false },
+    { id: 'relatorios-ia', label: 'Relatórios com IA',  agencyOnly: false, staffOnly: true },
   ]
-  const tabs = ALL_TABS.filter(t => !t.agencyOnly || isAgency)
+  const tabs = ALL_TABS.filter(t => (!t.agencyOnly || isAgency) && (!t.staffOnly || isAgencyStaff))
 
   const [tab, setTab] = useState(() => isAgency ? 'meta' : 'pipeline')
   const [ws, setWs] = useState<WorkspaceData | null>(null)

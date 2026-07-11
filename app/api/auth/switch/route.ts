@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
       currency: ws.currency,
       services: buildWorkspaceServices(ws),
       funnelMetrics: ws.funnelMetrics,
+      googleFunnelMetrics: ws.googleFunnelMetrics,
       metaVisibleMetrics: ws.metaVisibleMetrics,
       googleVisibleMetrics: ws.googleVisibleMetrics,
     },

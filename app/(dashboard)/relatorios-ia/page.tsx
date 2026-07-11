@@ -26,8 +26,11 @@ interface InsightRow {
 }
 
 export default function RelatoriosIAPage() {
-  const { token, currentWorkspace } = useAuthStore()
+  const { token, currentWorkspace, accessibleWorkspaces } = useAuthStore()
   const canManage = ['admin', 'manager'].includes(currentWorkspace?.role ?? '')
+  // Agendamento e "Gerar agora" são operação da agência — o cliente final (sem
+  // membership no workspace isAgency:true) só enxerga o histórico de relatórios.
+  const isAgencyStaff = accessibleWorkspaces.some(w => w.isAgency)
 
   const [config, setConfig] = useState<ReportConfig | null>(null)
   const [insights, setInsights] = useState<InsightRow[]>([])
@@ -106,7 +109,7 @@ export default function RelatoriosIAPage() {
               Resumo, insights e recomendações gerados automaticamente a partir dos dados de Meta Ads e Google Ads.
             </p>
           </div>
-          {canManage && (
+          {canManage && isAgencyStaff && (
             <button
               onClick={generateNow}
               disabled={generating}
@@ -125,7 +128,7 @@ export default function RelatoriosIAPage() {
           </div>
         ) : (
           <>
-            {config && (
+            {config && isAgencyStaff && (
               <div className="rounded-2xl p-4" style={{ background: '#0f0b1e', border: '1px solid #1e1635' }}>
                 <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
                   <CalendarClock className="w-4 h-4" style={{ color: '#6a11cb' }} />
