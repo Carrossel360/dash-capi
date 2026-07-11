@@ -31,6 +31,8 @@ interface WorkspaceData {
   uazapiInstanceName: string | null
   uazapiToken: string | null
   whatsappNumber: string | null
+  telegramBotToken: string | null
+  telegramChatId: string | null
   stages: Stage[]
   members: Member[]
 }
@@ -104,6 +106,7 @@ export default function SettingsPage() {
     { id: 'equipe',     label: 'Equipe',               agencyOnly: false },
     { id: 'whatsapp',   label: 'WhatsApp',             agencyOnly: false },
     { id: 'rastreio',   label: 'Rastreio',              agencyOnly: false },
+    { id: 'alertas',    label: 'Alertas',               agencyOnly: true },
   ]
   const tabs = ALL_TABS.filter(t => !t.agencyOnly || isAgency)
 
@@ -134,6 +137,10 @@ export default function SettingsPage() {
   const [uazapiToken,        setUazapiToken]        = useState('')
   const [whatsappNumber,     setWhatsappNumber]     = useState('')
   const [creatingInstance,   setCreatingInstance]   = useState(false)
+
+  // Alertas — Telegram
+  const [telegramBotToken, setTelegramBotToken] = useState('')
+  const [telegramChatId,   setTelegramChatId]   = useState('')
 
   // WhatsApp — QR / status (shared)
   const [qrCode,    setQrCode]    = useState<string | null>(null)
@@ -183,6 +190,8 @@ export default function SettingsPage() {
       setUazapiInstanceName(data.uazapiInstanceName ?? '')
       setUazapiToken(data.uazapiToken ?? '')
       setWhatsappNumber(data.whatsappNumber ?? '')
+      setTelegramBotToken(data.telegramBotToken ?? '')
+      setTelegramChatId(data.telegramChatId ?? '')
 
       const prodRes = await fetch('/api/products', { headers: { Authorization: `Bearer ${token}` } })
       if (prodRes.ok) {
@@ -258,6 +267,18 @@ export default function SettingsPage() {
       })
       if (!res.ok) throw new Error()
       toast.success('Contas salvas!')
+    } catch { toast.error('Erro ao salvar') } finally { setSaving(false) }
+  }
+
+  async function saveAlertas() {
+    setSaving(true)
+    try {
+      const res = await fetch('/api/workspace', {
+        method: 'PATCH', headers: h,
+        body: JSON.stringify({ telegramBotToken, telegramChatId }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success('Alertas salvo!')
     } catch { toast.error('Erro ao salvar') } finally { setSaving(false) }
   }
 
@@ -526,6 +547,27 @@ export default function SettingsPage() {
                   </Field>
                 </div>
                 <SaveBtn onClick={saveContas} loading={saving} />
+              </div>
+            </div>
+          )}
+
+          {/* ── Alertas ── */}
+          {tab === 'alertas' && (
+            <div className="glass rounded-2xl p-5 space-y-5">
+              <div>
+                <h2 className="text-sm font-semibold text-white">Alertas via Telegram</h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  Bot e grupo do Telegram que recebem os avisos de bloqueio de conta, campanha pausada e WhatsApp desconectado.
+                </p>
+              </div>
+              <div className="space-y-4">
+                <Field label="Bot Token">
+                  <TextInput value={telegramBotToken} onChange={setTelegramBotToken} placeholder="123456:ABC-DEF..." secret />
+                </Field>
+                <Field label="Chat ID (grupo)">
+                  <TextInput value={telegramChatId} onChange={setTelegramChatId} placeholder="-1001234567890" />
+                </Field>
+                <SaveBtn onClick={saveAlertas} loading={saving} />
               </div>
             </div>
           )}

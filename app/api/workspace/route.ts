@@ -28,7 +28,7 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json()
   const {
     name, metaPixelId, metaAccessToken, metaAdAccountId, instagramAccountId,
-    googleAdsCustomerId, googleAdsRefreshToken,
+    googleAdsCustomerId, googleAdsRefreshToken, telegramBotToken, telegramChatId,
   } = body
 
   const workspace = await prisma.workspace.update({
@@ -41,6 +41,8 @@ export async function PATCH(req: NextRequest) {
       ...(instagramAccountId !== undefined && { instagramAccountId }),
       ...(googleAdsCustomerId !== undefined && { googleAdsCustomerId }),
       ...(googleAdsRefreshToken !== undefined && { googleAdsRefreshToken }),
+      ...(telegramBotToken !== undefined && { telegramBotToken }),
+      ...(telegramChatId !== undefined && { telegramChatId }),
     },
   })
 
