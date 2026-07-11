@@ -1,10 +1,20 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, Search, ChevronDown, Check, Building2, Sun, Moon } from 'lucide-react'
+import { Bell, Search, ChevronDown, Check, Building2, Sun, Moon, AlertTriangle, AlertCircle } from 'lucide-react'
 import { useAuthStore } from '@/lib/store/auth'
 import { useTheme } from '@/lib/hooks/useTheme'
 import type { WorkspaceInfo } from '@/lib/store/auth'
+
+interface NotificationRow {
+  id: string
+  severity: string
+  title: string
+  message: string
+  status: string
+  createdAt: string
+  workspace: { name: string }
+}
 
 function getInitials(name: string) {
   return name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
@@ -42,6 +52,10 @@ export default function TopBar({ title, hideWorkspaceSwitcher }: { title: string
   const router = useRouter()
   const { theme, toggle } = useTheme()
 
+  const [notifications, setNotifications] = useState<NotificationRow[]>([])
+  const [notifOpen, setNotifOpen] = useState(false)
+  const notifRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     if (!token) return
     fetch('/api/workspaces', { headers: { Authorization: `Bearer ${token}` } })
@@ -51,8 +65,29 @@ export default function TopBar({ title, hideWorkspaceSwitcher }: { title: string
   }, [token]) // eslint-disable-line
 
   useEffect(() => {
+    if (!token) return
+    function loadNotifications() {
+      fetch('/api/notifications?unreadOnly=true', { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json())
+        .then(d => { if (Array.isArray(d.notifications)) setNotifications(d.notifications) })
+        .catch(() => {})
+    }
+    loadNotifications()
+    const interval = setInterval(loadNotifications, 60_000)
+    return () => clearInterval(interval)
+  }, [token])
+
+  async function markNotificationRead(id: string) {
+    setNotifications(prev => prev.filter(n => n.id !== id))
+    try {
+      await fetch(`/api/notifications/${id}`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}` } })
+    } catch {}
+  }
+
+  useEffect(() => {
     function handler(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setSearch('') }
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) { setNotifOpen(false) }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -193,10 +228,57 @@ export default function TopBar({ title, hideWorkspaceSwitcher }: { title: string
         >
           {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </button>
-        <button className="w-8 h-8 rounded-lg bg-[#1e1635] border border-[#2d2550] flex items-center justify-center text-slate-400 hover:text-[#F5A314] hover:border-[#F5A314]/50 transition-all relative">
-          <Bell className="w-4 h-4" />
-          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full" style={{ background: '#F5A314' }} />
-        </button>
+        <div ref={notifRef} className="relative">
+          <button
+            onClick={() => setNotifOpen(o => !o)}
+            className="w-8 h-8 rounded-lg bg-[#1e1635] border border-[#2d2550] flex items-center justify-center text-slate-400 hover:text-[#F5A314] hover:border-[#F5A314]/50 transition-all relative"
+          >
+            <Bell className="w-4 h-4" />
+            {notifications.length > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center text-[9px] font-bold text-white"
+                style={{ background: '#ef4444' }}>
+                {notifications.length > 9 ? '9+' : notifications.length}
+              </span>
+            )}
+          </button>
+
+          {notifOpen && (
+            <div className="absolute top-full right-0 mt-1.5 w-80 rounded-xl border border-[#2d2550] shadow-2xl z-[200] overflow-hidden"
+              style={{ background: '#0d0a1f' }}
+            >
+              <div className="px-3.5 py-2.5 border-b border-[#1e1635]">
+                <p className="text-xs font-semibold text-white">Notificações</p>
+              </div>
+              <div className="overflow-y-auto" style={{ maxHeight: 360 }}>
+                {notifications.length === 0 ? (
+                  <p className="text-xs text-slate-500 text-center py-8">Nenhuma notificação nova</p>
+                ) : (
+                  notifications.map(n => (
+                    <button
+                      key={n.id}
+                      onClick={() => markNotificationRead(n.id)}
+                      className="w-full flex items-start gap-2.5 px-3.5 py-3 text-left border-b border-[#1e1635] hover:bg-white/[0.03] transition-all"
+                    >
+                      {n.severity === 'critical' ? (
+                        <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-red-400" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-400" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-white">{n.title}</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">{n.workspace.name}</p>
+                        <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">{n.message}</p>
+                        {n.status === 'resolved' && (
+                          <p className="text-[10px] text-emerald-400 mt-1">Resolvido</p>
+                        )}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
         <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold cursor-pointer"
           style={{ background: 'linear-gradient(135deg, #6a11cb, #F5A314)' }} title={user?.name}
         >
