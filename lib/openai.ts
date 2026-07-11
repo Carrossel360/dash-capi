@@ -1,4 +1,5 @@
 import OpenAI from 'openai'
+import { REPORT_SYSTEM_PROMPT, buildReportUserPrompt, type GeneratedReport } from '@/lib/ai-reports'
 
 let client: OpenAI | null = null
 
@@ -52,6 +53,29 @@ export async function generateCarouselSlides(input: {
   if (!Array.isArray(parsed.slides)) throw new Error('Formato inesperado na resposta da OpenAI')
 
   return parsed.slides
+}
+
+export async function generateTrafficReportOpenAI(input: {
+  snapshot: unknown
+  customPrompt?: string
+}): Promise<GeneratedReport> {
+  const completion = await getClient().chat.completions.create({
+    model: 'gpt-4o',
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: REPORT_SYSTEM_PROMPT },
+      { role: 'user', content: buildReportUserPrompt(input.snapshot, input.customPrompt) },
+    ],
+  })
+
+  const raw = completion.choices[0]?.message?.content
+  if (!raw) throw new Error('Resposta vazia da OpenAI')
+
+  const parsed = JSON.parse(raw) as GeneratedReport
+  if (!parsed.summary || !Array.isArray(parsed.insights) || !Array.isArray(parsed.recommendations)) {
+    throw new Error('Formato inesperado na resposta da OpenAI')
+  }
+  return parsed
 }
 
 export async function generateSlideImage(prompt: string, size: '1024x1024' | '1024x1792'): Promise<string> {

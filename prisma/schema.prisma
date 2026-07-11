@@ -52,6 +52,8 @@ model Workspace {
   uazapiInstanceName    String?
   uazapiToken           String?
   whatsappNumber        String? // número do WhatsApp do cliente (com DDI), usado pra gerar o link wa.me na aba Rastreio
+  telegramBotToken      String? // config global de alerta — só preenchido na linha isAgency:true, mesmo padrão de uazapiAdminToken
+  telegramChatId        String?
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
   members               WorkspaceMember[]
@@ -82,6 +84,9 @@ model Workspace {
   mediaFiles            MediaFile[]
   carousels             Carousel[]
   trackingPhrases       TrackingPhrase[]
+  reportConfigs         ReportConfig[]
+  notifications         Notification[]
+  monitorStatuses       MonitorStatus[]
 }
 
 model ManualMetric {
@@ -674,6 +679,64 @@ model Insight {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+// Config por cliente de como/quando gerar relatório de IA (os relatórios em si
+// ficam salvos como Insight — este model só guarda a preferência de geração).
+model ReportConfig {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  service         String    // 'trafego_pago' por enquanto
+  aiProvider      String    @default("openai") // 'openai' | 'anthropic'
+  customPrompt    String?
+  frequencyDays   Int       @default(30)
+  enabled         Boolean   @default(true)
+  lastGeneratedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, service])
+}
+
+// ─── Monitoramento e Alertas ───────────────────────────────────────────────────
+
+model Notification {
+  id             String    @id @default(cuid())
+  workspaceId    String    // cliente afetado
+  type           String    // meta_account_status | google_account_status | campaign_paused | whatsapp_disconnected
+  severity       String    @default("warning") // info | warning | critical
+  title          String
+  message        String
+  metadata       Json?
+  dedupeKey      String
+  status         String    @default("open") // open | resolved
+  resolvedAt     DateTime?
+  readAt         DateTime?
+  telegramSentAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
+  @@index([dedupeKey])
+}
+
+// Último valor observado por checagem (conta Meta/Google, WhatsApp, cada campanha) —
+// um model genérico só com {key, status} em vez de uma tabela por tipo de checagem,
+// já que a semântica ("guardar o último valor e detectar mudança") é idêntica pra todas.
+model MonitorStatus {
+  id          String    @id @default(cuid())
+  workspaceId String
+  key         String    // meta_account | google_account | whatsapp | campaign:meta:<id> | campaign:google:<id>
+  label       String?
+  status      String
+  changedAt   DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, key])
 }
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
