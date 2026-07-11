@@ -220,6 +220,43 @@ export async function fetchGoogleAdsConversionBreakdown({ mcc, customerId, since
     .sort((a, b) => b.conversions - a.conversions)
 }
 
+export interface GoogleAdsCampaignStatus {
+  id: string
+  name: string
+  status: string
+}
+
+export interface GoogleAdsStatusSummary {
+  customerStatus: string
+  campaigns: GoogleAdsCampaignStatus[]
+}
+
+interface FetchGoogleAdsStatusesOptions {
+  mcc: GoogleAdsMcc
+  customerId: string
+}
+
+// Usado pelo monitoramento automático (lib/monitor.ts) — customer.status cobre suspensão/
+// cancelamento da conta, campaign.status cobre pausa manual. REMOVED é excluído porque é
+// definitivo (campanha excluída pra sempre), não faz sentido monitorar transição de estado nela.
+export async function fetchGoogleAdsStatuses({ mcc, customerId }: FetchGoogleAdsStatusesOptions): Promise<GoogleAdsStatusSummary> {
+  const query = `
+    SELECT customer.status, campaign.id, campaign.name, campaign.status
+    FROM campaign
+    WHERE campaign.status != 'REMOVED'
+  `
+
+  const results = await searchStream(mcc, customerId, query)
+  return {
+    customerStatus: results[0]?.customer?.status ?? 'UNKNOWN',
+    campaigns: results.map(r => ({
+      id: r.campaign.id,
+      name: r.campaign.name,
+      status: r.campaign.status,
+    })),
+  }
+}
+
 export interface GoogleAdsQualitySummary {
   avgSearchImpressionShare: number | null // 0–100 (já em %, pronto pro fmt do frontend)
   avgQualityScore: number | null // 1–10

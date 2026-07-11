@@ -154,6 +154,39 @@ export async function fetchMetaAdCreatives({ adAccountId, accessToken, since, un
   return data.data ?? []
 }
 
+export interface MetaAccountStatus {
+  accountStatus: number // 1=ACTIVE, 2=DISABLED, 3=UNSETTLED, 7=PENDING_RISK_REVIEW, 8=PENDING_SETTLEMENT, 9=IN_GRACE_PERIOD, 100=PENDING_CLOSURE, 101=CLOSED
+  disableReason: number | null
+}
+
+// Usado pelo monitoramento automático (lib/monitor.ts) pra detectar bloqueio de pagamento —
+// account_status != 1 (ACTIVE) cobre tanto desabilitada quanto em revisão/graça.
+export async function fetchMetaAccountStatus(adAccountId: string, accessToken: string): Promise<MetaAccountStatus> {
+  const { data } = await axios.get(`https://graph.facebook.com/v21.0/act_${adAccountId}`, {
+    params: { access_token: accessToken, fields: 'account_status,disable_reason' },
+  })
+  return { accountStatus: data.account_status, disableReason: data.disable_reason ?? null }
+}
+
+export interface MetaCampaignStatus {
+  id: string
+  name: string
+  effectiveStatus: string
+}
+
+// effective_status inclui estados que status (config do usuário) não cobre — ex.: PAUSED
+// por falta de budget/conta desabilitada, não só pausa manual.
+export async function fetchMetaCampaignStatuses(adAccountId: string, accessToken: string): Promise<MetaCampaignStatus[]> {
+  const { data } = await axios.get(`https://graph.facebook.com/v21.0/act_${adAccountId}/campaigns`, {
+    params: { access_token: accessToken, fields: 'id,name,effective_status', limit: 500 },
+  })
+  return (data.data ?? []).map((c: { id: string; name: string; effective_status: string }) => ({
+    id: c.id,
+    name: c.name,
+    effectiveStatus: c.effective_status,
+  }))
+}
+
 export interface MetaVideoInfo {
   source: string | null
   permalinkUrl: string | null
