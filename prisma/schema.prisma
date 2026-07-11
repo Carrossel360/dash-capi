@@ -54,6 +54,8 @@ model Workspace {
   whatsappNumber        String? // número do WhatsApp do cliente (com DDI), usado pra gerar o link wa.me na aba Rastreio
   telegramBotToken      String? // config global de alerta — só preenchido na linha isAgency:true, mesmo padrão de uazapiAdminToken
   telegramChatId        String?
+  openaiApiKey          String? // chave global dos provedores de IA (Relatórios com IA + Content Studio) — só preenchido na linha isAgency:true
+  anthropicApiKey       String?
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
   members               WorkspaceMember[]

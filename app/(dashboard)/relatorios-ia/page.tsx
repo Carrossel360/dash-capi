@@ -1,13 +1,12 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
-import { Sparkles, Loader2, Bot, Lightbulb, ListChecks, Save, Wand2 } from 'lucide-react'
+import { Sparkles, Loader2, CalendarClock, Lightbulb, ListChecks, Save, Wand2 } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
+import Link from 'next/link'
 import TopBar from '@/components/TopBar'
 import { useAuthStore } from '@/lib/store/auth'
 
 interface ReportConfig {
-  aiProvider: string
-  customPrompt: string | null
   frequencyDays: number
   enabled: boolean
   lastGeneratedAt: string | null
@@ -25,8 +24,6 @@ interface InsightRow {
   createdAt: string
   report: GeneratedReport | null
 }
-
-const PROVIDER_LABELS: Record<string, string> = { openai: 'OpenAI (GPT-4o)', anthropic: 'Claude (Anthropic)' }
 
 export default function RelatoriosIAPage() {
   const { token, currentWorkspace } = useAuthStore()
@@ -54,26 +51,21 @@ export default function RelatoriosIAPage() {
 
   useEffect(load, [load])
 
-  async function saveConfig() {
+  async function saveSchedule() {
     if (!config || !token) return
     setSaving(true)
     try {
       const res = await fetch('/api/reports/config', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          aiProvider: config.aiProvider,
-          customPrompt: config.customPrompt,
-          frequencyDays: config.frequencyDays,
-          enabled: config.enabled,
-        }),
+        body: JSON.stringify({ frequencyDays: config.frequencyDays, enabled: config.enabled }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro ao salvar')
       setConfig(data.config)
-      toast.success('Configuração salva')
+      toast.success('Agendamento salvo')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao salvar configuração')
+      toast.error(err instanceof Error ? err.message : 'Erro ao salvar agendamento')
     } finally {
       setSaving(false)
     }
@@ -136,22 +128,10 @@ export default function RelatoriosIAPage() {
             {config && (
               <div className="rounded-2xl p-4" style={{ background: '#0f0b1e', border: '1px solid #1e1635' }}>
                 <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                  <Bot className="w-4 h-4" style={{ color: '#6a11cb' }} />
-                  Configuração
+                  <CalendarClock className="w-4 h-4" style={{ color: '#6a11cb' }} />
+                  Agendamento
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div>
-                    <label className="text-xs text-slate-400 mb-1 block">Provedor de IA</label>
-                    <select
-                      value={config.aiProvider}
-                      disabled={!canManage}
-                      onChange={e => setConfig({ ...config, aiProvider: e.target.value })}
-                      className="w-full px-3 py-2 text-xs bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb] transition-colors disabled:opacity-60"
-                    >
-                      <option value="openai">{PROVIDER_LABELS.openai}</option>
-                      <option value="anthropic">{PROVIDER_LABELS.anthropic}</option>
-                    </select>
-                  </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-slate-400 mb-1 block">Frequência automática (dias)</label>
                     <input
@@ -175,26 +155,19 @@ export default function RelatoriosIAPage() {
                     </label>
                   </div>
                 </div>
-                <div className="mt-3">
-                  <label className="text-xs text-slate-400 mb-1 block">Prompt customizado (opcional)</label>
-                  <textarea
-                    value={config.customPrompt ?? ''}
-                    disabled={!canManage}
-                    onChange={e => setConfig({ ...config, customPrompt: e.target.value })}
-                    placeholder="Ex: Foque em custo por lead e compare com o mês anterior"
-                    rows={2}
-                    className="w-full px-3 py-2 text-xs bg-[#1a1230] border border-[#2d2550] rounded-lg text-white placeholder-slate-600 focus:outline-none focus:border-[#6a11cb] transition-colors resize-none disabled:opacity-60"
-                  />
-                </div>
+                <p className="text-[10px] text-slate-600 mt-3">
+                  Provedor de IA e prompt customizado ficam em{' '}
+                  <Link href="/settings" className="text-[#F5A314] hover:underline">Configurações → Relatórios com IA</Link>.
+                </p>
                 {config.lastGeneratedAt && (
-                  <p className="text-[10px] text-slate-600 mt-2">
+                  <p className="text-[10px] text-slate-600 mt-1">
                     Último relatório gerado em {new Date(config.lastGeneratedAt).toLocaleString('pt-BR')}
                   </p>
                 )}
                 {canManage && (
                   <div className="mt-3 flex justify-end">
                     <button
-                      onClick={saveConfig}
+                      onClick={saveSchedule}
                       disabled={saving}
                       className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-60"
                       style={{ background: '#6a11cb' }}

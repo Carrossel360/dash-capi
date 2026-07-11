@@ -33,6 +33,8 @@ interface WorkspaceData {
   whatsappNumber: string | null
   telegramBotToken: string | null
   telegramChatId: string | null
+  openaiApiKey: string | null
+  anthropicApiKey: string | null
   stages: Stage[]
   members: Member[]
 }
@@ -107,6 +109,7 @@ export default function SettingsPage() {
     { id: 'whatsapp',   label: 'WhatsApp',             agencyOnly: false },
     { id: 'rastreio',   label: 'Rastreio',              agencyOnly: false },
     { id: 'alertas',    label: 'Alertas',               agencyOnly: true },
+    { id: 'relatorios-ia', label: 'Relatórios com IA',  agencyOnly: false },
   ]
   const tabs = ALL_TABS.filter(t => !t.agencyOnly || isAgency)
 
@@ -141,6 +144,13 @@ export default function SettingsPage() {
   // Alertas — Telegram
   const [telegramBotToken, setTelegramBotToken] = useState('')
   const [telegramChatId,   setTelegramChatId]   = useState('')
+
+  // Relatórios com IA — chaves globais (só isAgency) + config por cliente
+  const [openaiApiKey,    setOpenaiApiKey]    = useState('')
+  const [anthropicApiKey, setAnthropicApiKey] = useState('')
+  const [reportProvider,     setReportProvider]     = useState('openai')
+  const [reportCustomPrompt, setReportCustomPrompt] = useState('')
+  const [loadingReportConfig, setLoadingReportConfig] = useState(false)
 
   // WhatsApp — QR / status (shared)
   const [qrCode,    setQrCode]    = useState<string | null>(null)
@@ -192,6 +202,8 @@ export default function SettingsPage() {
       setWhatsappNumber(data.whatsappNumber ?? '')
       setTelegramBotToken(data.telegramBotToken ?? '')
       setTelegramChatId(data.telegramChatId ?? '')
+      setOpenaiApiKey(data.openaiApiKey ?? '')
+      setAnthropicApiKey(data.anthropicApiKey ?? '')
 
       const prodRes = await fetch('/api/products', { headers: { Authorization: `Bearer ${token}` } })
       if (prodRes.ok) {
@@ -214,6 +226,21 @@ export default function SettingsPage() {
   }, [token])
 
   useEffect(() => { if (tab === 'rastreio') loadPhrases() }, [tab, loadPhrases])
+
+  const loadReportConfig = useCallback(async () => {
+    if (!token) return
+    setLoadingReportConfig(true)
+    try {
+      const res = await fetch('/api/reports/config', { headers: { Authorization: `Bearer ${token}` } })
+      if (res.ok) {
+        const d = await res.json()
+        setReportProvider(d.config?.aiProvider ?? 'openai')
+        setReportCustomPrompt(d.config?.customPrompt ?? '')
+      }
+    } finally { setLoadingReportConfig(false) }
+  }, [token])
+
+  useEffect(() => { if (tab === 'relatorios-ia') loadReportConfig() }, [tab, loadReportConfig])
 
   async function addPhrase() {
     if (!newPhrase.trim() || !newSource.trim()) { toast.error('Frase e origem são obrigatórios'); return }
@@ -279,6 +306,30 @@ export default function SettingsPage() {
       })
       if (!res.ok) throw new Error()
       toast.success('Alertas salvo!')
+    } catch { toast.error('Erro ao salvar') } finally { setSaving(false) }
+  }
+
+  async function saveAiKeys() {
+    setSaving(true)
+    try {
+      const res = await fetch('/api/workspace', {
+        method: 'PATCH', headers: h,
+        body: JSON.stringify({ openaiApiKey, anthropicApiKey }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success('Chaves de API salvas!')
+    } catch { toast.error('Erro ao salvar') } finally { setSaving(false) }
+  }
+
+  async function saveReportConfig() {
+    setSaving(true)
+    try {
+      const res = await fetch('/api/reports/config', {
+        method: 'PATCH', headers: h,
+        body: JSON.stringify({ aiProvider: reportProvider, customPrompt: reportCustomPrompt || null }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success('Configuração salva!')
     } catch { toast.error('Erro ao salvar') } finally { setSaving(false) }
   }
 
@@ -568,6 +619,68 @@ export default function SettingsPage() {
                   <TextInput value={telegramChatId} onChange={setTelegramChatId} placeholder="-1001234567890" />
                 </Field>
                 <SaveBtn onClick={saveAlertas} loading={saving} />
+              </div>
+            </div>
+          )}
+
+          {/* ── Relatórios com IA ── */}
+          {tab === 'relatorios-ia' && (
+            <div className="space-y-5">
+              {isAgency && (
+                <div className="glass rounded-2xl p-5 space-y-5">
+                  <div>
+                    <h2 className="text-sm font-semibold text-white">Chaves de API — Provedores de IA</h2>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Usadas por todos os clientes para gerar Relatórios com IA (a chave da OpenAI também alimenta o Content Studio).
+                    </p>
+                  </div>
+                  <div className="space-y-4">
+                    <Field label="OpenAI API Key">
+                      <TextInput value={openaiApiKey} onChange={setOpenaiApiKey} placeholder="sk-..." secret />
+                    </Field>
+                    <Field label="Anthropic API Key">
+                      <TextInput value={anthropicApiKey} onChange={setAnthropicApiKey} placeholder="sk-ant-..." secret />
+                    </Field>
+                    <SaveBtn onClick={saveAiKeys} loading={saving} />
+                  </div>
+                </div>
+              )}
+
+              <div className="glass rounded-2xl p-5 space-y-5">
+                <div>
+                  <h2 className="text-sm font-semibold text-white">Configuração da Análise</h2>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Provedor de IA e instrução customizada para a análise de Tráfego Pago deste cliente.
+                  </p>
+                </div>
+                {loadingReportConfig ? (
+                  <div className="flex items-center justify-center py-6 text-slate-500">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <Field label="Provedor de IA">
+                      <select
+                        value={reportProvider}
+                        onChange={e => setReportProvider(e.target.value)}
+                        className="w-full px-3 py-2.5 text-sm bg-[#1e1635] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb] transition-colors"
+                      >
+                        <option value="openai">OpenAI (GPT-4o)</option>
+                        <option value="anthropic">Claude (Anthropic)</option>
+                      </select>
+                    </Field>
+                    <Field label="Prompt customizado (opcional)">
+                      <textarea
+                        value={reportCustomPrompt}
+                        onChange={e => setReportCustomPrompt(e.target.value)}
+                        placeholder="Ex: Foque em custo por lead e compare com o mês anterior"
+                        rows={3}
+                        className="w-full px-3 py-2.5 text-sm bg-[#1e1635] border border-[#2d2550] rounded-lg text-white placeholder-slate-600 focus:outline-none focus:border-[#6a11cb] transition-colors resize-none"
+                      />
+                    </Field>
+                    <SaveBtn onClick={saveReportConfig} loading={saving} />
+                  </div>
+                )}
               </div>
             </div>
           )}

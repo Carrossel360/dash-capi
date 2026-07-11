@@ -1,11 +1,9 @@
 import OpenAI from 'openai'
 import { REPORT_SYSTEM_PROMPT, buildReportUserPrompt, type GeneratedReport } from '@/lib/ai-reports'
+import { getAiApiKey } from '@/lib/ai-keys'
 
-let client: OpenAI | null = null
-
-function getClient(): OpenAI {
-  if (!client) client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  return client
+async function getClient(): Promise<OpenAI> {
+  return new OpenAI({ apiKey: await getAiApiKey('openai') })
 }
 
 export interface GeneratedSlide {
@@ -22,7 +20,7 @@ export async function generateCarouselSlides(input: {
 }): Promise<GeneratedSlide[]> {
   const { topic, slideCount, tone } = input
 
-  const completion = await getClient().chat.completions.create({
+  const completion = await (await getClient()).chat.completions.create({
     model: 'gpt-4o',
     response_format: { type: 'json_object' },
     messages: [
@@ -59,7 +57,7 @@ export async function generateTrafficReportOpenAI(input: {
   snapshot: unknown
   customPrompt?: string
 }): Promise<GeneratedReport> {
-  const completion = await getClient().chat.completions.create({
+  const completion = await (await getClient()).chat.completions.create({
     model: 'gpt-4o',
     response_format: { type: 'json_object' },
     messages: [
@@ -79,7 +77,7 @@ export async function generateTrafficReportOpenAI(input: {
 }
 
 export async function generateSlideImage(prompt: string, size: '1024x1024' | '1024x1792'): Promise<string> {
-  const response = await getClient().images.generate({
+  const response = await (await getClient()).images.generate({
     model: 'dall-e-3',
     prompt,
     size,

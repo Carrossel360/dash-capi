@@ -1,11 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { REPORT_JSON_SCHEMA, REPORT_SYSTEM_PROMPT, buildReportUserPrompt, type GeneratedReport } from '@/lib/ai-reports'
+import { getAiApiKey } from '@/lib/ai-keys'
 
-let client: Anthropic | null = null
-
-function getClient(): Anthropic {
-  if (!client) client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-  return client
+async function getClient(): Promise<Anthropic> {
+  return new Anthropic({ apiKey: await getAiApiKey('anthropic') })
 }
 
 export async function generateTrafficReportClaude(input: {
@@ -14,7 +12,7 @@ export async function generateTrafficReportClaude(input: {
 }): Promise<GeneratedReport> {
   // output_config (Structured Outputs) ainda não está tipado no SDK instalado —
   // funciona na API real (confirmado contra a doc atual), só falta o type definition.
-  const response = await getClient().messages.create({
+  const response = await (await getClient()).messages.create({
     model: 'claude-sonnet-5',
     max_tokens: 2048,
     system: REPORT_SYSTEM_PROMPT,
