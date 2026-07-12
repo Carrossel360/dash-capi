@@ -1,6 +1,6 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
-import { Sparkles, Loader2, CalendarClock, Lightbulb, ListChecks, Save, Wand2, ChevronDown } from 'lucide-react'
+import { Sparkles, Loader2, CalendarClock, Lightbulb, ListChecks, Save, Wand2, ChevronDown, Trash2 } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import Link from 'next/link'
 import TopBar from '@/components/TopBar'
@@ -115,6 +115,22 @@ export default function RelatoriosIAPage() {
       toast.error(err instanceof Error ? err.message : 'Erro ao salvar agendamento')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function deleteInsight(id: string) {
+    if (!token) return
+    if (!confirm('Excluir este relatório? Essa ação não pode ser desfeita.')) return
+    try {
+      const res = await fetch(`/api/reports/insights/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error()
+      setInsights(prev => prev.filter(i => i.id !== id))
+      toast.success('Relatório excluído')
+    } catch {
+      toast.error('Erro ao excluir relatório')
     }
   }
 
@@ -261,9 +277,9 @@ export default function RelatoriosIAPage() {
                   const isOpen = expandedIds.has(i.id)
                   return (
                     <div key={i.id} className="rounded-2xl overflow-hidden" style={{ background: '#0f0b1e', border: '1px solid #1e1635' }}>
-                      <button
+                      <div
                         onClick={() => toggleExpanded(i.id)}
-                        className="w-full flex items-center justify-between gap-3 p-4 text-left hover:bg-white/[0.02] transition-colors"
+                        className="w-full flex items-center justify-between gap-3 p-4 text-left hover:bg-white/[0.02] transition-colors cursor-pointer"
                       >
                         <div>
                           <p className="text-xs font-semibold text-white">
@@ -271,8 +287,19 @@ export default function RelatoriosIAPage() {
                           </p>
                           <p className="text-[10px] text-slate-600 mt-0.5">Gerado em {new Date(i.createdAt).toLocaleString('pt-BR')}</p>
                         </div>
-                        <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
-                      </button>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {canManage && isAgencyStaff && (
+                            <button
+                              onClick={e => { e.stopPropagation(); deleteInsight(i.id) }}
+                              className="p-1.5 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                              title="Excluir relatório"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                        </div>
+                      </div>
                       {isOpen && (
                         <div className="px-4 pb-4">
                           <p className="text-xs text-slate-200 leading-relaxed mb-3">{i.report!.summary}</p>
