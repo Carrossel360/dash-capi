@@ -5,6 +5,7 @@ import {
   ArrowLeft, Save, Eye, EyeOff, Loader2, CheckCircle, Copy, Users, Zap, BarChart2,
   TrendingUp, Share2, MapPin, Star, DollarSign, MessageCircle, Sparkles, Globe,
   UserPlus, Trash2, ChevronDown, Key, Smartphone, Wifi, WifiOff, RefreshCw, Link2, Search,
+  Webhook, AlertTriangle,
 } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
@@ -121,6 +122,12 @@ export default function ClienteDetailPage() {
   const [newInstanceName, setNewInstanceName] = useState('')
   const [waSaving, setWaSaving] = useState(false)
   const [linkedInstance, setLinkedInstance] = useState<string | null>(null)
+
+  // webhook da instância — ver/ativar
+  interface WebhookStatus { configured: boolean; currentUrl: string | null; isPointingHere: boolean; expectedUrl: string }
+  const [webhookStatus, setWebhookStatus] = useState<WebhookStatus | null>(null)
+  const [webhookLoading, setWebhookLoading] = useState(false)
+  const [webhookActivating, setWebhookActivating] = useState(false)
 
   // member management
   interface Member { memberId: string; userId: string; role: string; name: string; email: string }
@@ -309,6 +316,40 @@ export default function ClienteDetailPage() {
       toast.error(err instanceof Error ? err.message : 'Erro ao criar instância')
     } finally { setWaSaving(false) }
   }
+
+  function loadWebhookStatus() {
+    setWebhookLoading(true)
+    fetch(`/api/clients/${clientId}/whatsapp/webhook`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => { if (!d.error) setWebhookStatus(d) })
+      .finally(() => setWebhookLoading(false))
+  }
+
+  // Ação explícita e manual — nunca dispara sozinha ao vincular a instância. Troca o webhook
+  // dessa instância na UazAPI pra apontar pra este sistema, o que redireciona o que estiver
+  // configurado ali hoje (ex: uma automação externa alimentando o CRM antigo).
+  async function handleActivateWebhook() {
+    if (!confirm('Isso vai trocar o webhook dessa instância na UazAPI pra apontar pra este sistema, substituindo o que estiver configurado hoje. Continuar?')) return
+    setWebhookActivating(true)
+    try {
+      const res = await fetch(`/api/clients/${clientId}/whatsapp/webhook`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      toast.success('Webhook ativado!')
+      loadWebhookStatus()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao ativar webhook')
+    } finally { setWebhookActivating(false) }
+  }
+
+  useEffect(() => {
+    if (tab === 'whatsapp' && linkedInstance && !webhookStatus && !webhookLoading) {
+      loadWebhookStatus()
+    }
+  }, [tab, linkedInstance])
 
   useEffect(() => {
     if (tab === 'acesso' && !membersLoaded) {
@@ -859,6 +900,56 @@ export default function ClienteDetailPage() {
                   <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-4 py-3 rounded-xl">
                     <Wifi className="w-4 h-4 flex-shrink-0" />
                     Instância vinculada: <span className="font-semibold ml-1">{linkedInstance}</span>
+                  </div>
+                )}
+
+                {/* Webhook — ver/ativar */}
+                {linkedInstance && (
+                  <div className="glass rounded-2xl p-5 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                        <Webhook className="w-4 h-4 text-[#8b5cf6]" /> Webhook (recebimento de mensagens)
+                      </h2>
+                      <button onClick={loadWebhookStatus} disabled={webhookLoading}
+                        className="text-slate-500 hover:text-white disabled:opacity-40 transition-colors flex-shrink-0" title="Verificar novamente">
+                        <RefreshCw className={`w-3.5 h-3.5 ${webhookLoading ? 'animate-spin' : ''}`} />
+                      </button>
+                    </div>
+
+                    {webhookLoading && !webhookStatus ? (
+                      <div className="flex items-center gap-2 text-xs text-slate-500 py-2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Verificando...
+                      </div>
+                    ) : webhookStatus?.isPointingHere ? (
+                      <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-3 py-2 rounded-lg">
+                        <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" /> Apontado para este sistema — mensagens devem chegar em Conversas.
+                      </div>
+                    ) : webhookStatus?.configured ? (
+                      <div className="space-y-2">
+                        <div className="flex items-start gap-2 text-xs text-amber-400 bg-amber-400/10 border border-amber-400/20 px-3 py-2 rounded-lg">
+                          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                          <span>Apontado para outro destino ainda: <code className="text-[11px] break-all">{webhookStatus.currentUrl}</code></span>
+                        </div>
+                        <button onClick={handleActivateWebhook} disabled={webhookActivating}
+                          className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-40 transition-all"
+                          style={{ background: '#6a11cb', boxShadow: '0 4px 16px rgba(106,17,203,0.3)' }}>
+                          {webhookActivating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Webhook className="w-4 h-4" />}
+                          Ativar Webhook (redireciona pra cá)
+                        </button>
+                      </div>
+                    ) : webhookStatus ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-xs text-slate-400 bg-[#0f0b1e] border border-[#1e1635] px-3 py-2 rounded-lg">
+                          Nenhum webhook configurado ainda nessa instância.
+                        </div>
+                        <button onClick={handleActivateWebhook} disabled={webhookActivating}
+                          className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-40 transition-all"
+                          style={{ background: '#6a11cb', boxShadow: '0 4px 16px rgba(106,17,203,0.3)' }}>
+                          {webhookActivating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Webhook className="w-4 h-4" />}
+                          Ativar Webhook
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 )}
 
