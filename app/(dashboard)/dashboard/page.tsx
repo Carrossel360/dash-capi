@@ -96,7 +96,7 @@ export default function DashboardPage() {
       const [metaRes, googRes, leadsRes, monthlyRes] = await Promise.all([
         fetch(`/api/trafego/meta?${periodQs}`, { headers: h }),
         fetch(`/api/trafego/google?${periodQs}`, { headers: h }),
-        fetch('/api/leads', { headers: h }),
+        fetch(`/api/leads?${periodQs}`, { headers: h }),
         fetch('/api/dashboard/leads-by-month', { headers: h }),
       ])
 

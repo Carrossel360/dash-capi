@@ -483,6 +483,11 @@ function LeadCard({ lead, onClick, isDragging }: { lead: Lead; onClick: () => vo
         </div>
       )}
 
+      <div className="flex items-center gap-1.5 text-xs text-slate-600">
+        <Calendar className="w-3 h-3 flex-shrink-0" />
+        <span>{new Date(lead.createdAt).toLocaleDateString('pt-BR')}</span>
+      </div>
+
       <div className="flex items-center justify-between">
         {lead.dealValue ? (
           <div className="flex items-center gap-1 text-xs text-emerald-400 font-medium">

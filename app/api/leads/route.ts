@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthPayload } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { dateRange } from '@/lib/trafego-period'
 
 export async function GET(req: NextRequest) {
   const auth = await getAuthPayload(req)
@@ -8,13 +9,22 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const stageId = searchParams.get('stageId')
+  const period  = searchParams.get('period')
   const from    = searchParams.get('from')
+  const to      = searchParams.get('to')
+
+  // `period` (this_month/last_month/7d/30d/custom/...) monta um range fechado {gte,lte} via
+  // dateRange — mesmo helper usado por Tráfego Pago/Social Media, pra "Visão Geral" respeitar
+  // o período selecionado. Sem `period`, mantém o comportamento legado só com `from` (gte aberto),
+  // usado pelo Pipeline (que só filtra "a partir de", sem período fechado).
+  const range = period ? dateRange(period, from, to) : undefined
+  const dateFilter = range ? { createdAt: range } : from ? { createdAt: { gte: new Date(from) } } : {}
 
   const leads = await prisma.lead.findMany({
     where: {
       workspaceId: auth.workspaceId,
       ...(stageId ? { pipelineStageId: stageId } : {}),
-      ...(from ? { createdAt: { gte: new Date(from) } } : {}),
+      ...dateFilter,
     },
     include: { stage: true },
     orderBy: { createdAt: 'desc' },
