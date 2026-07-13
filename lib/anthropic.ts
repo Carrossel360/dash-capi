@@ -1,5 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { REPORT_JSON_SCHEMA, REPORT_SYSTEM_PROMPT, buildReportUserPrompt, type GeneratedReport } from '@/lib/ai-reports'
+import { SITE_JSON_SCHEMA, parseGeneratedSite } from '@/lib/site-generator/prompts'
+import type { GeneratedSite } from '@/lib/site-generator/types'
 import { getAiApiKey } from '@/lib/ai-keys'
 
 async function getClient(): Promise<Anthropic> {
@@ -29,4 +31,24 @@ export async function generateTrafficReportClaude(input: {
     throw new Error('Formato inesperado na resposta da Anthropic')
   }
   return parsed
+}
+
+// Gerar um site completo (múltiplos arquivos) é bem mais verboso que texto de análise
+// — max_tokens bem acima dos 2048 usados nos relatórios.
+export async function generateSiteClaude(input: {
+  systemPrompt: string
+  userPrompt: string
+  model?: string
+}): Promise<GeneratedSite> {
+  const response = await (await getClient()).messages.create({
+    model: input.model || 'claude-sonnet-5',
+    max_tokens: 16000,
+    system: input.systemPrompt,
+    messages: [{ role: 'user', content: input.userPrompt }],
+    ...({ output_config: { format: { type: 'json_schema', schema: SITE_JSON_SCHEMA } } } as object),
+  })
+
+  const block = response.content.find((b): b is Anthropic.TextBlock => b.type === 'text')
+  if (!block?.text) throw new Error('Resposta vazia da Anthropic')
+  return parseGeneratedSite(block.text)
 }

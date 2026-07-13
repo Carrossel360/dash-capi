@@ -43,6 +43,7 @@ model Workspace {
   svcGoogleBusiness     Boolean              @default(false)
   svcGoogleLocal        Boolean              @default(false)
   svcContentStudio      Boolean              @default(false)
+  svcSiteGenerator      Boolean              @default(false)
   metaVisibleMetrics    String[]             @default([])
   googleVisibleMetrics  String[]             @default([])
   funnelMetrics         String[]             @default([]) // funil do Meta Ads
@@ -86,6 +87,7 @@ model Workspace {
   customFields          CustomField[]
   mediaFiles            MediaFile[]
   carousels             Carousel[]
+  siteProjects          SiteProject[]
   trackingPhrases       TrackingPhrase[]
   reportConfigs         ReportConfig[]
   notifications         Notification[]
@@ -810,4 +812,47 @@ model Carousel {
   updatedAt   DateTime       @updatedAt
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+enum SiteProjectStatus {
+  draft
+  generating
+  ready
+  error
+}
+
+// Gerador de sites com IA — código real (HTML/CSS/JS estático, sem build step),
+// gerado a partir de um briefing (descrição + características + imagens) e refinado
+// por chat iterativo. `files` é sempre reescrito por completo a cada geração/iteração
+// (sem diff — não há infra de patch parcial no projeto).
+model SiteProject {
+  id                 String            @id @default(cuid())
+  workspaceId        String
+  title              String
+  status             SiteProjectStatus @default(draft)
+  description        String // etapa 1: briefing detalhado
+  characteristics    String? // etapa 2: estilo/seções/cores/tom em texto livre
+  referenceImageUrls Json? // string[] de URLs /api/media/[id]
+  aiProvider         String            @default("openai") // 'openai' | 'anthropic'
+  aiModel            String?
+  files              Json? // { path, content }[] — ver lib/site-generator/types.ts
+  errorMessage       String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  messages  SiteMessage[]
+}
+
+// Histórico do chat de refinamento — guarda só o texto (prompt do usuário ou resumo
+// do que a IA mudou), nunca o código: o estado atual dos arquivos já vive em
+// SiteProject.files, então o histórico não duplica HTML por mensagem.
+model SiteMessage {
+  id            String   @id @default(cuid())
+  siteProjectId String
+  role          String // 'user' | 'assistant'
+  content       String
+  createdAt     DateTime @default(now())
+
+  siteProject SiteProject @relation(fields: [siteProjectId], references: [id], onDelete: Cascade)
 }

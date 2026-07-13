@@ -1,5 +1,7 @@
 import OpenAI from 'openai'
 import { REPORT_SYSTEM_PROMPT, buildReportUserPrompt, type GeneratedReport } from '@/lib/ai-reports'
+import { parseGeneratedSite } from '@/lib/site-generator/prompts'
+import type { GeneratedSite } from '@/lib/site-generator/types'
 import { getAiApiKey } from '@/lib/ai-keys'
 
 async function getClient(): Promise<OpenAI> {
@@ -75,6 +77,28 @@ export async function generateTrafficReportOpenAI(input: {
     throw new Error('Formato inesperado na resposta da OpenAI')
   }
   return parsed
+}
+
+// Gerar um site completo (múltiplos arquivos) é bem mais verboso que texto de análise
+// — max_completion_tokens bem acima dos 2048 usados nos relatórios.
+export async function generateSiteOpenAI(input: {
+  systemPrompt: string
+  userPrompt: string
+  model?: string
+}): Promise<GeneratedSite> {
+  const completion = await (await getClient()).chat.completions.create({
+    model: input.model || 'gpt-4o',
+    response_format: { type: 'json_object' },
+    max_completion_tokens: 16000,
+    messages: [
+      { role: 'system', content: input.systemPrompt },
+      { role: 'user', content: input.userPrompt },
+    ],
+  })
+
+  const raw = completion.choices[0]?.message?.content
+  if (!raw) throw new Error('Resposta vazia da OpenAI')
+  return parseGeneratedSite(raw)
 }
 
 export async function generateSlideImage(prompt: string, size: '1024x1024' | '1024x1792'): Promise<string> {
