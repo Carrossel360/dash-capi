@@ -12,6 +12,7 @@ export interface WorkspaceServices {
   googleBusiness: boolean
   googleLocal: boolean
   contentStudio: boolean
+  siteGenerator: boolean
 }
 
 export interface WorkspaceInfo {

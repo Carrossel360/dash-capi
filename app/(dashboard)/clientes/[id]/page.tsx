@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import {
   ArrowLeft, Save, Eye, EyeOff, Loader2, CheckCircle, Copy, Users, Zap, BarChart2,
-  TrendingUp, Share2, MapPin, Star, DollarSign, MessageCircle, Sparkles,
+  TrendingUp, Share2, MapPin, Star, DollarSign, MessageCircle, Sparkles, Globe,
   UserPlus, Trash2, ChevronDown, Key, Smartphone, Wifi, WifiOff, RefreshCw, Link2, Search,
 } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
@@ -33,6 +33,7 @@ const SERVICES = [
   { key: 'svcGoogleBusiness', label: 'Google Business Profile', icon: MapPin, desc: 'Perfil no Maps + Avaliações' },
   { key: 'svcGoogleLocal', label: 'Google Local Service', icon: Star, desc: 'Anúncios locais do Google' },
   { key: 'svcContentStudio', label: 'Content Studio (IA)', icon: Sparkles, desc: 'Carrosséis gerados com IA' },
+  { key: 'svcSiteGenerator', label: 'Gerador de Sites (IA)', icon: Globe, desc: 'Sites gerados com IA, código real' },
 ]
 
 const META_METRICS = [
@@ -91,7 +92,7 @@ interface ClientDetail {
   googleAdsCustomerId: string | null; createdAt: string
   currency: string
   svcMetaAds: boolean; svcGoogleAds: boolean; svcSocialMedia: boolean
-  svcGoogleBusiness: boolean; svcGoogleLocal: boolean; svcContentStudio: boolean
+  svcGoogleBusiness: boolean; svcGoogleLocal: boolean; svcContentStudio: boolean; svcSiteGenerator: boolean
   metaVisibleMetrics: string[]; googleVisibleMetrics: string[]; funnelMetrics: string[]; googleFunnelMetrics: string[]
   members: { id: string; role: string; user: { id: string; name: string; email: string } }[]
   stages: { id: string; name: string; color: string; order: number; triggerCapiEvent: string }[]
@@ -146,7 +147,7 @@ export default function ClienteDetailPage() {
   const [googleAdsCustomerId, setGoogleAdsCustomerId] = useState('')
   const [services, setServices] = useState({
     svcMetaAds: false, svcGoogleAds: false, svcSocialMedia: false,
-    svcGoogleBusiness: false, svcGoogleLocal: false, svcContentStudio: false,
+    svcGoogleBusiness: false, svcGoogleLocal: false, svcContentStudio: false, svcSiteGenerator: false,
   })
   const [metaVisible, setMetaVisible] = useState<string[]>([])
   const [googleVisible, setGoogleVisible] = useState<string[]>([])
@@ -173,6 +174,7 @@ export default function ClienteDetailPage() {
           svcGoogleBusiness: w.svcGoogleBusiness ?? false,
           svcGoogleLocal: w.svcGoogleLocal ?? false,
           svcContentStudio: w.svcContentStudio ?? false,
+          svcSiteGenerator: w.svcSiteGenerator ?? false,
         })
         setMetaVisible(w.metaVisibleMetrics ?? [])
         setGoogleVisible(w.googleVisibleMetrics ?? [])

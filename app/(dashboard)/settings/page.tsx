@@ -8,6 +8,7 @@ import {
 import toast from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
 import { useAuthStore } from '@/lib/store/auth'
+import { OPENAI_TEXT_MODELS, ANTHROPIC_TEXT_MODELS } from '@/lib/ai-models'
 
 interface Stage {
   id: string; name: string; color: string; order: number; triggerCapiEvent: string
@@ -48,20 +49,6 @@ const ROLE_COLORS: Record<string, string> = {
   admin: '#F5A314', manager: '#8b5cf6', attendant: '#2575fc', viewer: '#64748b',
 }
 
-// Curadoria de modelos por provedor pros Relatórios com IA — não é uma lista fechada,
-// por isso sempre tem a opção "Outro" com campo livre (a lista de modelos muda com
-// frequência e o valor salvo é só uma string repassada direto pra API do provedor).
-const OPENAI_REPORT_MODELS = [
-  { value: 'gpt-4o', label: 'GPT-4o (legado)' },
-  { value: 'gpt-5.4-mini', label: 'GPT-5.4 mini (mais barato)' },
-  { value: 'gpt-5.4', label: 'GPT-5.4' },
-  { value: 'gpt-5.5', label: 'GPT-5.5' },
-]
-const ANTHROPIC_REPORT_MODELS = [
-  { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (mais barato)' },
-  { value: 'claude-sonnet-5', label: 'Claude Sonnet 5 (padrão)' },
-  { value: 'claude-opus-4-8', label: 'Claude Opus 4.8 (mais avançado)' },
-]
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -257,7 +244,7 @@ export default function SettingsPage() {
         const d = await res.json()
         const provider = d.config?.aiProvider ?? 'openai'
         const model = d.config?.aiModel ?? ''
-        const knownModels = provider === 'openai' ? OPENAI_REPORT_MODELS : ANTHROPIC_REPORT_MODELS
+        const knownModels = provider === 'openai' ? OPENAI_TEXT_MODELS : ANTHROPIC_TEXT_MODELS
         setReportProvider(provider)
         setReportModel(model)
         setReportModelCustom(model !== '' && !knownModels.some(m => m.value === model))
@@ -705,7 +692,7 @@ export default function SettingsPage() {
                         className="w-full px-3 py-2.5 text-sm bg-[#1e1635] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb] transition-colors"
                       >
                         <option value="">Padrão do provedor</option>
-                        {(reportProvider === 'openai' ? OPENAI_REPORT_MODELS : ANTHROPIC_REPORT_MODELS).map(m => (
+                        {(reportProvider === 'openai' ? OPENAI_TEXT_MODELS : ANTHROPIC_TEXT_MODELS).map(m => (
                           <option key={m.value} value={m.value}>{m.label}</option>
                         ))}
                         <option value="custom">Outro (digitar manualmente)</option>

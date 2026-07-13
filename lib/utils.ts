@@ -12,6 +12,7 @@ export function buildWorkspaceServices(ws: Workspace) {
     googleBusiness: ws.svcGoogleBusiness,
     googleLocal: ws.svcGoogleLocal,
     contentStudio: ws.svcContentStudio,
+    siteGenerator: ws.svcSiteGenerator,
   }
 }
 
