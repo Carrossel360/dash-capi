@@ -61,7 +61,12 @@ export default function ContentStudioPage() {
 
   function handleOpenSiteWizard() {
     setTypeModalOpen(false)
-    if (!currentWorkspace?.services?.siteGenerator) {
+    // Mesma regra de gate do Sidebar (isServiceLocked): agência nunca é bloqueada, e só
+    // "viewer" de cliente é de fato restrito por serviço contratado.
+    const isAgency = currentWorkspace?.isAgency ?? true
+    const isViewer = currentWorkspace?.role === 'viewer'
+    const locked = !isAgency && isViewer && !(currentWorkspace?.services?.siteGenerator ?? false)
+    if (locked) {
       setLockedLabel('Gerador de Sites (IA)')
       return
     }

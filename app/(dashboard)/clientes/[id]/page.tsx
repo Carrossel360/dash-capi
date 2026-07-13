@@ -207,6 +207,13 @@ export default function ClienteDetailPage() {
         if (body.googleVisibleMetrics !== undefined) updates.googleVisibleMetrics = body.googleVisibleMetrics as string[]
         if (body.funnelMetrics !== undefined) updates.funnelMetrics = body.funnelMetrics as string[]
         if (Object.keys(updates).length > 0) updateCurrentWorkspace(updates)
+        // `services` (toggles de serviço contratado) não tem um mapeamento 1:1 simples com o
+        // body do PATCH — busca de /api/auth/me pra pegar o shape já resolvido (mesma fonte
+        // usada no refresh automático de app/(dashboard)/layout.tsx) em vez de duplicar aqui.
+        fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+          .then(r => r.ok ? r.json() : null)
+          .then(d => { if (d?.workspace) updateCurrentWorkspace(d.workspace) })
+          .catch(() => {})
       }
       toast.success('Configurações salvas!')
     } catch {
