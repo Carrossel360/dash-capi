@@ -19,7 +19,10 @@ export async function GET(req: NextRequest) {
   let googleOk = 0, googleSkip = 0, googleErr = 0
   let socialOk = 0, socialSkip = 0, socialErr = 0
 
-  for (const workspace of workspaces) {
+  // Workspaces em paralelo (eram sequenciais) — com 20+ clientes, um por vez estourava
+  // o timeout de 30s do cron-job.org (chegava a ~37s). Cada syncWorkspace/syncWorkspaceInstagram
+  // já é uma função pura por workspace, sem estado compartilhado, então roda em paralelo com segurança.
+  await Promise.all(workspaces.map(async workspace => {
     const { meta, google } = await syncWorkspace(workspace)
     if (meta === 'ok') metaOk++
     else if (meta === 'skip') metaSkip++
@@ -33,7 +36,7 @@ export async function GET(req: NextRequest) {
     if (social === 'ok') socialOk++
     else if (social === 'skip') socialSkip++
     else { socialErr++; console.error('[cron/ads-sync] social', workspace.id, social.error) }
-  }
+  }))
 
   return NextResponse.json({
     workspaces: workspaces.length,
