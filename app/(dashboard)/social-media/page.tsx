@@ -164,8 +164,9 @@ export default function SocialMediaPage() {
   const [postsLoading, setPostsLoading] = useState(false)
   const [selectedPost, setSelectedPost] = useState<InstagramPost | null>(null)
   const [postSort, setPostSort] = useState<'views' | 'totalInteractions' | 'likes'>('views')
+  const [backfilling, setBackfilling] = useState(false)
 
-  useEffect(() => {
+  function loadSocialData() {
     if (!token) return
     if (period === 'custom' && !customRange) return
     setLoading(true)
@@ -173,7 +174,7 @@ export default function SocialMediaPage() {
     const q = period === 'custom' && customRange
       ? `?period=custom&from=${customRange.from}&to=${customRange.to}`
       : `?period=${period}`
-    fetch(`/api/social-media${q}`, { headers })
+    return fetch(`/api/social-media${q}`, { headers })
       .then(r => r.ok ? r.json() : r.json().then(d => { throw new Error(d.error ?? `social ${r.status}`) }))
       .then(d => {
         setApiKpis(d.kpis ?? {})
@@ -183,7 +184,33 @@ export default function SocialMediaPage() {
       })
       .catch(err => toast.error(err instanceof Error ? err.message : 'Erro ao buscar dados de Social Media'))
       .finally(() => setLoading(false))
-  }, [token, period, customRange])
+  }
+
+  useEffect(() => { loadSocialData() }, [token, period, customRange])
+
+  async function handleBackfill() {
+    if (!token) return
+    setBackfilling(true)
+    try {
+      const body = period === 'custom' && customRange
+        ? { period: 'custom', from: customRange.from, to: customRange.to }
+        : { period }
+      const res = await fetch('/api/social-media/backfill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao buscar histórico')
+      if (data.result?.error) throw new Error(data.result.error)
+      toast.success('Histórico sincronizado')
+      await loadSocialData()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao buscar histórico')
+    } finally {
+      setBackfilling(false)
+    }
+  }
 
   useEffect(() => {
     if (!token) return
@@ -255,8 +282,19 @@ export default function SocialMediaPage() {
           )}
 
           {!loading && hasInstagram && !apiKpis.hasData && (
-            <div className="glass rounded-xl px-4 py-3 text-xs text-amber-400 bg-amber-400/5 border border-amber-400/20">
-              Nenhum dado sincronizado para este período ainda. Aguarde a próxima sincronização automática (a cada hora).
+            <div className="glass rounded-xl px-4 py-3 text-xs text-amber-400 bg-amber-400/5 border border-amber-400/20 flex flex-wrap items-center justify-between gap-3">
+              <span>Nenhum dado sincronizado para este período ainda. O sync automático só cobre os últimos dias — para períodos mais antigos, busque o histórico manualmente.</span>
+              {period !== 'all' && (
+                <button
+                  onClick={handleBackfill}
+                  disabled={backfilling}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-60 shrink-0"
+                  style={{ background: 'linear-gradient(135deg, #6a11cb, #F5A314)' }}
+                >
+                  {backfilling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                  {backfilling ? 'Buscando...' : 'Buscar dados históricos'}
+                </button>
+              )}
             </div>
           )}
 
