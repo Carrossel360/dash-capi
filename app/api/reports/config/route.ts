@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
       workspaceId: auth.workspaceId,
       service: REPORT_SERVICE,
       aiProvider: 'openai',
+      aiModel: null,
       customPrompt: null,
       frequencyDays: 30,
       enabled: true,
@@ -29,7 +30,7 @@ export async function PATCH(req: NextRequest) {
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (!['admin', 'manager'].includes(auth.role)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
-  const { aiProvider, customPrompt, frequencyDays, enabled } = await req.json()
+  const { aiProvider, aiModel, customPrompt, frequencyDays, enabled } = await req.json()
   if (aiProvider && !['openai', 'anthropic'].includes(aiProvider)) {
     return NextResponse.json({ error: 'aiProvider inválido' }, { status: 400 })
   }
@@ -40,12 +41,14 @@ export async function PATCH(req: NextRequest) {
       workspaceId: auth.workspaceId,
       service: REPORT_SERVICE,
       aiProvider: aiProvider ?? 'openai',
+      aiModel: aiModel ?? null,
       customPrompt: customPrompt ?? null,
       frequencyDays: frequencyDays ?? 30,
       enabled: enabled ?? true,
     },
     update: {
       ...(aiProvider !== undefined ? { aiProvider } : {}),
+      ...(aiModel !== undefined ? { aiModel } : {}),
       ...(customPrompt !== undefined ? { customPrompt } : {}),
       ...(frequencyDays !== undefined ? { frequencyDays } : {}),
       ...(enabled !== undefined ? { enabled } : {}),

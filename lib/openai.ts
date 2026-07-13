@@ -56,9 +56,10 @@ export async function generateCarouselSlides(input: {
 export async function generateTrafficReportOpenAI(input: {
   snapshot: unknown
   customPrompt?: string
+  model?: string
 }): Promise<GeneratedReport> {
   const completion = await (await getClient()).chat.completions.create({
-    model: 'gpt-4o',
+    model: input.model || 'gpt-4o',
     response_format: { type: 'json_object' },
     messages: [
       { role: 'system', content: REPORT_SYSTEM_PROMPT },

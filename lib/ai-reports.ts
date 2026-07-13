@@ -83,7 +83,7 @@ async function fetchClosedDealsSummary(workspaceId: string, days: number) {
 // Insight, além de atualizar lastGeneratedAt na config.
 export async function generateAndSaveReport(
   workspace: { id: string; svcMetaAds: boolean; svcGoogleAds: boolean },
-  config: { aiProvider: string; customPrompt?: string | null }
+  config: { aiProvider: string; aiModel?: string | null; customPrompt?: string | null }
 ) {
   const [meta, google, vendasCRM] = await Promise.all([
     workspace.svcMetaAds ? buildMetaTrafficSnapshot(workspace.id, REPORT_PERIOD) : Promise.resolve(null),
@@ -97,7 +97,7 @@ export async function generateAndSaveReport(
 
   const snapshot = { periodo: 'últimos 30 dias', meta, google, vendasCRM }
   const generate = config.aiProvider === 'anthropic' ? generateTrafficReportClaude : generateTrafficReportOpenAI
-  const report = await generate({ snapshot, customPrompt: config.customPrompt ?? undefined })
+  const report = await generate({ snapshot, customPrompt: config.customPrompt ?? undefined, model: config.aiModel ?? undefined })
 
   const [insight] = await Promise.all([
     prisma.insight.create({

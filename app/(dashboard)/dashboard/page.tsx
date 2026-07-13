@@ -7,6 +7,8 @@ import PeriodSelector, { type Period } from '@/components/PeriodSelector'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/store/auth'
 
+const currencySymbol = (c?: string) => c === 'USD' ? 'US$' : 'R$'
+
 interface DashData {
   metaSpend: number
   metaLeads: number
@@ -42,11 +44,11 @@ function fmt(n: number, prefix = '') {
   return `${prefix}${n.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`
 }
 
-// Últimos 12 meses calendário (mais recente por último) — usado pro seletor "mês a mês".
+// Últimos 12 meses calendário (mais recente primeiro) — usado pro seletor "mês a mês".
 function lastMonths(n: number): { key: string; label: string }[] {
   const now = new Date()
   const out: { key: string; label: string }[] = []
-  for (let i = n - 1; i >= 0; i--) {
+  for (let i = 0; i < n; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     const label = d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
@@ -56,7 +58,8 @@ function lastMonths(n: number): { key: string; label: string }[] {
 }
 
 export default function DashboardPage() {
-  const { token } = useAuthStore()
+  const { token, currentWorkspace } = useAuthStore()
+  const curr = currencySymbol(currentWorkspace?.currency)
   const [data, setData] = useState<DashData>(empty)
   const [monthlyChart, setMonthlyChart] = useState<MonthlyChartRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -126,17 +129,17 @@ export default function DashboardPage() {
   const totalLeads = data.metaLeads + data.googLeads
 
   const kpis = [
-    { label: 'Investimento Total', href: '/trafego-pago', value: `R$ ${fmt(totalSpend)}`, icon: DollarSign, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)', border: 'rgba(139,92,246,0.25)', sub: `Meta: R$${fmt(data.metaSpend)} · Google: R$${fmt(data.googSpend)}` },
+    { label: 'Investimento Total', href: '/trafego-pago', value: `${curr} ${fmt(totalSpend)}`, icon: DollarSign, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)', border: 'rgba(139,92,246,0.25)', sub: `Meta: ${curr}${fmt(data.metaSpend)} · Google: ${curr}${fmt(data.googSpend)}` },
     { label: 'Leads Gerados', href: '/trafego-pago', value: fmt(totalLeads), icon: Users, color: '#10b981', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.25)', sub: `Meta: ${data.metaLeads} · Google: ${data.googLeads}` },
-    { label: 'Leads CRM', href: '/pipeline', value: String(data.crmLeads), icon: Share2, color: '#2575fc', bg: 'rgba(37,117,252,0.1)', border: 'rgba(37,117,252,0.25)', sub: `R$ ${fmt(data.crmDeals)} em vendas` },
-    { label: 'Faturamento', href: '/pipeline', value: `R$ ${fmt(data.crmDeals)}`, icon: DollarSign, color: '#F5A314', bg: 'rgba(245,163,20,0.1)', border: 'rgba(245,163,20,0.25)', sub: 'Vendas marcadas no CRM' },
+    { label: 'Leads CRM', href: '/pipeline', value: String(data.crmLeads), icon: Share2, color: '#2575fc', bg: 'rgba(37,117,252,0.1)', border: 'rgba(37,117,252,0.25)', sub: `${curr} ${fmt(data.crmDeals)} em vendas` },
+    { label: 'Faturamento', href: '/pipeline', value: `${curr} ${fmt(data.crmDeals)}`, icon: DollarSign, color: '#F5A314', bg: 'rgba(245,163,20,0.1)', border: 'rgba(245,163,20,0.25)', sub: 'Vendas marcadas no CRM' },
   ]
 
   const channels = [
     { label: 'Tráfego Pago', href: '/trafego-pago', icon: TrendingUp, color: '#8b5cf6', badge: 'Meta + Google',
-      stats: [{ label: 'Gasto', value: `R$${fmt(totalSpend)}` }, { label: 'Leads', value: fmt(totalLeads) }, { label: 'ROAS', value: `${(data.metaRoas).toFixed(1)}x` }] },
+      stats: [{ label: 'Gasto', value: `${curr}${fmt(totalSpend)}` }, { label: 'Leads', value: fmt(totalLeads) }, { label: 'ROAS', value: `${(data.metaRoas).toFixed(1)}x` }] },
     { label: 'CRM Pipeline', href: '/pipeline', icon: Users, color: '#10b981', badge: 'Leads e Vendas',
-      stats: [{ label: 'Leads', value: String(data.crmLeads) }, { label: 'Vendas', value: `R$${fmt(data.crmDeals)}` }, { label: 'CAPI', value: '—' }] },
+      stats: [{ label: 'Leads', value: String(data.crmLeads) }, { label: 'Vendas', value: `${curr}${fmt(data.crmDeals)}` }, { label: 'CAPI', value: '—' }] },
     { label: 'Social Media', href: '/social-media', icon: Share2, color: '#ec4899', badge: 'Instagram · Facebook',
       stats: [{ label: 'Seguidores', value: '—' }, { label: 'Alcance', value: '—' }, { label: 'Eng.', value: '—' }] },
     { label: 'Google Business', href: '/google-business', icon: MapPin, color: '#10b981', badge: 'Meu Negócio',

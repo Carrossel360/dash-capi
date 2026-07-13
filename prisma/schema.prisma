@@ -691,6 +691,7 @@ model ReportConfig {
   workspaceId     String
   service         String    // 'trafego_pago' por enquanto
   aiProvider      String    @default("openai") // 'openai' | 'anthropic'
+  aiModel         String?   // modelo específico do provedor (ex.: gpt-5.4, claude-sonnet-5) — null usa o default de lib/openai.ts / lib/anthropic.ts
   customPrompt    String?
   frequencyDays   Int       @default(30)
   enabled         Boolean   @default(true)
