@@ -40,6 +40,7 @@ const META_METRICS = [
   { key: 'spend', label: 'Valor Gasto' },
   { key: 'impressions', label: 'Impressões' },
   { key: 'reach', label: 'Alcance' },
+  { key: 'frequency', label: 'Frequência' },
   { key: 'cpc', label: 'CPC' },
   { key: 'cpm', label: 'CPM' },
   { key: 'ctr', label: 'CTR' },

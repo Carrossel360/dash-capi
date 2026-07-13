@@ -7,7 +7,7 @@ import { fetchGoogleAdsConversionBreakdown, fetchGoogleAdsQualitySummary, isGoog
 // Reutilizado também por lib/ai-reports.ts pra montar o snapshot que alimenta a IA.
 
 const META_COMPARISON_KEYS = [
-  'spend', 'impressions', 'reach', 'link_clicks', 'results', 'ctr', 'cpc',
+  'spend', 'impressions', 'reach', 'frequency', 'link_clicks', 'results', 'ctr', 'cpc',
   'cost_per_result', 'messaging_conversations_started', 'cost_per_conversation', 'cpm',
 ]
 
@@ -57,7 +57,7 @@ export async function buildMetaTrafficSnapshot(workspaceId: string, period: stri
   const prevRange = isRangedQuery ? previousRange(period, range) : undefined
 
   const emptyKpis = {
-    spend: 0, impressions: 0, reach: 0, link_clicks: 0, results: 0,
+    spend: 0, impressions: 0, reach: 0, frequency: 0, link_clicks: 0, results: 0,
     resultsFromForm: 0, resultsFromConversas: 0,
     ctr: 0, cpc: 0, cost_per_result: 0, roas: null as number | null,
     leads_bc: null, messaging_conversations_started: null,
@@ -97,10 +97,15 @@ export async function buildMetaTrafficSnapshot(workspaceId: string, period: stri
       if (leads > 0) resultsFromForm += leads
       else resultsFromConversas += Number(r.conversasIniciadas) || 0
     }
+    const impressions = sum('impressoes')
+    const reach = sum('alcance')
     return {
       spend: sum('valorGasto'),
-      impressions: sum('impressoes'),
-      reach: sum('alcance'),
+      impressions,
+      reach,
+      // impressões/alcance sobre os totais somados do período, não a média das linhas diárias
+      // (média de razões diárias distorceria o resultado ao agregar múltiplos dias/campanhas).
+      frequency: reach > 0 ? impressions / reach : 0,
       link_clicks: sum('cliques'),
       results: totalResults,
       resultsFromForm,
@@ -125,6 +130,7 @@ export async function buildMetaTrafficSnapshot(workspaceId: string, period: stri
     spend: monthly?.valorGasto ?? 0,
     impressions: monthly?.impressoes ?? 0,
     reach: monthly?.alcance ?? 0,
+    frequency: monthly?.frequencia ?? 0,
     link_clicks: monthly?.cliques ?? 0,
     results: monthly?.resultados ?? 0,
     ctr: monthly?.ctr ?? 0,

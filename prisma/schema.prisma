@@ -307,6 +307,7 @@ model MetaAdsDailyData {
   valorGasto     Float?
   impressoes     Float?
   alcance        Float?
+  frequencia     Float?
   cliques        Float?
   ctr            Float?
   cpc            Float?

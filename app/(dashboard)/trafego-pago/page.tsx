@@ -4,7 +4,7 @@ import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 import {
   TrendingUp, TrendingDown, DollarSign, Users, ShoppingCart, Zap,
   Edit3, Check, X, Eye, MessageCircle, MousePointer, Target, Lock,
-  Loader2, PlayCircle, ExternalLink, Image as ImageIcon, ArrowUpDown, Film, ChevronDown,
+  Loader2, PlayCircle, ExternalLink, Image as ImageIcon, ArrowUpDown, Film, ChevronDown, Repeat,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { RefreshCw } from 'lucide-react'
@@ -20,6 +20,7 @@ const metaKpiDefs = [
   { key: 'spend',                           label: 'Valor Gasto',         fmt: (v: number, c: string) => `${currencySymbol(c)} ${v.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`, icon: DollarSign,    color: '#8b5cf6' },
   { key: 'impressions',                     label: 'Impressões',          fmt: (v: number) => v.toLocaleString('pt-BR'),                                                                     icon: Zap,           color: '#6a11cb' },
   { key: 'reach',                           label: 'Alcance',             fmt: (v: number) => v.toLocaleString('pt-BR'),                                                                     icon: Eye,           color: '#2575fc' },
+  { key: 'frequency',                       label: 'Frequência',          fmt: (v: number) => v.toFixed(2),                                                                                  icon: Repeat,        color: '#2575fc' },
   { key: 'link_clicks',                     label: 'Cliques no Link',     fmt: (v: number) => v.toLocaleString('pt-BR'),                                                                     icon: MousePointer,  color: '#10b981' },
   { key: 'cpc',                             label: 'CPC',                 fmt: (v: number, c: string) => `${currencySymbol(c)} ${v.toFixed(2)}`,                                             icon: DollarSign,    color: '#F5A314' },
   { key: 'cpm',                             label: 'CPM',                 fmt: (v: number, c: string) => `${currencySymbol(c)} ${v.toFixed(2)}`,                                             icon: DollarSign,    color: '#F5A314' },
