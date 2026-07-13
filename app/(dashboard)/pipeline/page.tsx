@@ -1,14 +1,15 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import {
-  DndContext, DragEndEvent, DragOverEvent, DragStartEvent,
-  PointerSensor, useSensor, useSensors, closestCorners, DragOverlay,
+  DndContext, DragEndEvent, DragOverEvent, DragStartEvent, CollisionDetection, DropAnimation,
+  PointerSensor, useSensor, useSensors, pointerWithin, rectIntersection, DragOverlay, useDroppable,
+  defaultDropAnimationSideEffects,
 } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
   Plus, Phone, Mail, GripVertical, Loader2, X, Check,
-  Clock, Globe, Trash2, ShoppingBag, DollarSign, Calendar, MessageCircle,
+  Clock, Globe, Trash2, ShoppingBag, DollarSign, Calendar, MessageCircle, MessageSquare,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
@@ -417,11 +418,16 @@ function LeadCard({ lead, onClick, isDragging }: { lead: Lead; onClick: () => vo
   const router = useRouter()
   const { attributes, listeners, setNodeRef, transform, transition, isDragging: isSortableDragging } = useSortable({ id: lead.id })
 
-  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isSortableDragging ? 0.4 : 1 }
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition: transition ?? 'transform 200ms cubic-bezier(0.25, 1, 0.5, 1)',
+    opacity: isSortableDragging ? 0.35 : 1,
+    scale: isSortableDragging ? 0.97 : 1,
+  }
 
   return (
-    <div ref={setNodeRef} style={style}
-      className={`glass rounded-lg p-3 space-y-2 cursor-pointer ${isDragging ? 'shadow-2xl rotate-1 scale-105' : 'card-hover'}`}
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}
+      className={`glass rounded-lg p-3 space-y-2 cursor-grab active:cursor-grabbing transition-shadow duration-150 ${isDragging ? 'shadow-2xl shadow-[#6a11cb]/30 rotate-2 scale-105 ring-1 ring-[#6a11cb]/50' : 'card-hover'}`}
       onClick={onClick}
     >
       <div className="flex items-start justify-between gap-2">
@@ -431,18 +437,32 @@ function LeadCard({ lead, onClick, isDragging }: { lead: Lead; onClick: () => vo
             <button
               onClick={e => { e.stopPropagation(); router.push(`/conversas?phone=${lead.phone!.replace(/\D/g, '')}`) }}
               className="text-slate-600 hover:text-green-400 transition-colors"
-              title="Abrir conversa"
+              title="Abrir conversa no WhatsApp"
             >
               <MessageCircle className="w-3.5 h-3.5" />
             </button>
           )}
-          <button
-            {...attributes} {...listeners}
-            onClick={e => e.stopPropagation()}
-            className="text-slate-600 hover:text-slate-400 cursor-grab active:cursor-grabbing"
-          >
-            <GripVertical className="w-3.5 h-3.5" />
-          </button>
+          {lead.phone && (
+            <a
+              href={`sms:${lead.phone}`}
+              onClick={e => e.stopPropagation()}
+              className="text-slate-600 hover:text-blue-400 transition-colors"
+              title="Enviar SMS"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+            </a>
+          )}
+          {lead.email && (
+            <a
+              href={`mailto:${lead.email}`}
+              onClick={e => e.stopPropagation()}
+              className="text-slate-600 hover:text-amber-400 transition-colors"
+              title="Enviar email"
+            >
+              <Mail className="w-3.5 h-3.5" />
+            </a>
+          )}
+          <GripVertical className="w-3.5 h-3.5 text-slate-700" />
         </div>
       </div>
 
@@ -490,8 +510,22 @@ function LeadCard({ lead, onClick, isDragging }: { lead: Lead; onClick: () => vo
 
 // ── Column ────────────────────────────────────────────────────────────────────
 
+// Efeito de "assentar" o card ao soltar — leve escala + sombre suavizando até sumir,
+// em vez do card só piscar de volta pro lugar sem transição nenhuma.
+const dropAnimation: DropAnimation = {
+  duration: 220,
+  easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
+  sideEffects: defaultDropAnimationSideEffects({
+    styles: { active: { opacity: '0.4' } },
+  }),
+}
+
 function Column({ stage, leads, onCardClick }: { stage: Stage; leads: Lead[]; onCardClick: (lead: Lead) => void }) {
   const total = leads.reduce((s, l) => s + (l.dealValue ?? 0), 0)
+  // A coluna inteira precisa ser um droppable próprio — sem isso, só os cards (via
+  // useSortable) contam como alvo de drop, então soltar em espaço vazio (coluna vazia ou
+  // abaixo do último card) não move o lead pra essa etapa.
+  const { setNodeRef, isOver } = useDroppable({ id: stage.id })
   return (
     <div className="flex flex-col flex-shrink-0 w-64">
       <div className="flex items-center justify-between mb-3">
@@ -514,7 +548,9 @@ function Column({ stage, leads, onCardClick }: { stage: Stage; leads: Lead[]; on
         </div>
       </div>
 
-      <div className="flex-1 glass rounded-xl p-2 space-y-2 min-h-[200px]">
+      <div ref={setNodeRef}
+        className={`flex-1 glass rounded-xl p-2 space-y-2 min-h-[200px] transition-colors ${isOver ? 'ring-2 ring-[#6a11cb]/60' : ''}`}
+      >
         <SortableContext items={leads.map(l => l.id)} strategy={verticalListSortingStrategy}>
           {leads.map(lead => (
             <LeadCard key={lead.id} lead={lead} onClick={() => onCardClick(lead)} />
@@ -545,8 +581,24 @@ export default function PipelinePage() {
 
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [dealPending, setDealPending] = useState<{ lead: Lead; stageId: string } | null>(null)
+  // Estágio do lead antes do drag começar — guardado num ref (não state) porque só serve pra
+  // decidir, no drop, se precisa persistir (handleDragOver já vai ter mudado leads[].pipelineStageId
+  // ao vivo pra o reordenamento visual acontecer durante o arrasto, não só depois de soltar).
+  const dragStartStageRef = useRef<string | null>(null)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+
+  // closestCorners compara os 4 cantos do retângulo do card arrastado (não só o ponteiro)
+  // contra os cantos de cada droppable — perto da borda entre colunas, o retângulo do card
+  // (mesma largura da coluna) já invade a coluna vizinha, fazendo o drop "vazar" pra ela antes
+  // da hora (era a causa do "precisa arrastar bem além pra soltar na etapa certa"). pointerWithin
+  // usa a posição real do mouse, que é o que o usuário espera; cai pra rectIntersection só se o
+  // ponteiro estiver momentaneamente fora de qualquer droppable (ex: no gap entre colunas).
+  const collisionDetectionStrategy: CollisionDetection = (args) => {
+    const pointerCollisions = pointerWithin(args)
+    if (pointerCollisions.length > 0) return pointerCollisions
+    return rectIntersection(args)
+  }
 
   const load = useCallback(async () => {
     if (!token) return
@@ -574,31 +626,70 @@ export default function PipelinePage() {
 
   useEffect(() => { load() }, [load])
 
+  function handleDragStart(event: DragStartEvent) {
+    setActiveId(event.active.id as string)
+    dragStartStageRef.current = leads.find(l => l.id === event.active.id)?.pipelineStageId ?? null
+  }
+
+  // Roda a cada momento em que o card arrastado passa por cima de outro card/coluna — reordena
+  // o array local ao vivo (sem tocar a API) pra que os outros leads "abram espaço" dinamicamente
+  // durante o arrasto, em vez de só ajustar quando solta.
+  function handleDragOver(event: DragOverEvent) {
+    const { active, over } = event
+    if (!over) return
+    const activeId = active.id as string
+    const overId = over.id as string
+    if (activeId === overId) return
+
+    setLeads(prev => {
+      const activeLead = prev.find(l => l.id === activeId)
+      if (!activeLead) return prev
+
+      const overLead = prev.find(l => l.id === overId)
+      const overIsStage = stages.some(s => s.id === overId)
+      const targetStageId = overLead ? overLead.pipelineStageId : (overIsStage ? overId : null)
+      if (!targetStageId) return prev
+
+      const withoutActive = prev.filter(l => l.id !== activeId)
+      let insertAt: number
+      if (overLead) {
+        insertAt = withoutActive.findIndex(l => l.id === overId)
+      } else {
+        // Área vazia da coluna (sem card embaixo do ponteiro) — manda pro fim do grupo dessa etapa.
+        let lastIdx = -1
+        withoutActive.forEach((l, i) => { if (l.pipelineStageId === targetStageId) lastIdx = i })
+        insertAt = lastIdx + 1
+      }
+
+      const moved = { ...activeLead, pipelineStageId: targetStageId }
+      const next = [...withoutActive]
+      next.splice(insertAt, 0, moved)
+
+      const unchanged = next.length === prev.length && next.every((l, i) => l.id === prev[i].id && l.pipelineStageId === prev[i].pipelineStageId)
+      return unchanged ? prev : next
+    })
+  }
+
   async function handleDragEnd(event: DragEndEvent) {
     setActiveId(null)
-    const { active, over } = event
-    if (!over || active.id === over.id) return
+    const leadId = event.active.id as string
+    const originStageId = dragStartStageRef.current
+    dragStartStageRef.current = null
 
-    const leadId = active.id as string
+    // handleDragOver já moveu leads[] pro estágio/posição visual final — só falta persistir
+    // se o estágio realmente mudou em relação ao que era antes do drag começar.
     const lead = leads.find(l => l.id === leadId)
-    if (!lead) return
+    if (!lead || !originStageId || lead.pipelineStageId === originStageId) return
 
-    const targetLead = leads.find(l => l.id === over.id)
-    const targetStageId = targetLead ? targetLead.pipelineStageId : (over.id as string)
-
-    if (lead.pipelineStageId === targetStageId) return
-
+    const targetStageId = lead.pipelineStageId
     const targetStage = stages.find(s => s.id === targetStageId)
 
-    // If moving to a purchase stage → show deal popup
+    // If moving to a purchase stage → show deal popup (volta pro estágio original até confirmar)
     if (targetStage?.triggerCapiEvent === 'purchase') {
-      setDealPending({ lead, stageId: targetStageId })
+      setLeads(prev => prev.map(l => l.id === leadId ? { ...l, pipelineStageId: originStageId } : l))
+      setDealPending({ lead: { ...lead, pipelineStageId: originStageId }, stageId: targetStageId })
       return
     }
-
-    // Otherwise move directly
-    const prevLeads = [...leads]
-    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, pipelineStageId: targetStageId } : l))
 
     try {
       const res = await fetch(`/api/leads/${leadId}/stage`, {
@@ -611,7 +702,7 @@ export default function PipelinePage() {
         toast.success(`Evento CAPI enfileirado 🎯`)
       }
     } catch {
-      setLeads(prevLeads)
+      setLeads(prev => prev.map(l => l.id === leadId ? { ...l, pipelineStageId: originStageId } : l))
       toast.error('Erro ao mover lead')
     }
   }
@@ -714,10 +805,10 @@ export default function PipelinePage() {
           {/* Kanban */}
           <DndContext
             sensors={sensors}
-            collisionDetection={closestCorners}
-            onDragStart={e => setActiveId(e.active.id as string)}
+            collisionDetection={collisionDetectionStrategy}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
-            onDragOver={(_: DragOverEvent) => {}}
           >
             <div className="flex gap-4 overflow-x-auto pb-4 flex-1">
               {stages.map(stage => (
@@ -734,7 +825,7 @@ export default function PipelinePage() {
                 </div>
               )}
             </div>
-            <DragOverlay>
+            <DragOverlay dropAnimation={dropAnimation}>
               {activeLead && <LeadCard lead={activeLead} onClick={() => {}} isDragging />}
             </DragOverlay>
           </DndContext>
