@@ -17,6 +17,14 @@ interface DashData {
   googLeads: number
   crmLeads: number
   crmDeals: number
+  igFollowers: number | null
+  igReach: number
+  igEngagement: number
+  hasInstagram: boolean
+  gbpViews: number | null
+  gbpCalls: number | null
+  gbpRating: number | null
+  hasGbp: boolean
 }
 
 interface MonthlyChartRow { mes: string; meta: number; google: number }
@@ -25,6 +33,8 @@ const empty: DashData = {
   metaSpend: 0, metaLeads: 0, metaRoas: 0,
   googSpend: 0, googLeads: 0,
   crmLeads: 0, crmDeals: 0,
+  igFollowers: null, igReach: 0, igEngagement: 0, hasInstagram: false,
+  gbpViews: null, gbpCalls: null, gbpRating: null, hasGbp: false,
 }
 
 const Tt = ({ active, payload, label }: { active?: boolean; payload?: { value: number; name: string; color: string }[]; label?: string }) => {
@@ -85,6 +95,21 @@ export default function DashboardPage() {
     setCustomRange({ from, to })
   }
 
+  // Google Business é lançado manualmente por mês (YYYY-MM), não tem granularidade diária —
+  // quando o período selecionado mapeia pra um mês exato (mês específico, "este mês", "mês
+  // anterior"), busca esse mês certinho; caso contrário (7d/30d/todo período) não há um mês
+  // único correspondente, então mostra o snapshot mais recente disponível.
+  function periodToYearMonth(): string | null {
+    if (specificMonth) return specificMonth
+    const now = new Date()
+    if (period === 'this_month') return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    if (period === 'last_month') {
+      const d = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    }
+    return null
+  }
+
   const load = useCallback(async () => {
     if (!token) return
     setLoading(true)
@@ -92,21 +117,31 @@ export default function DashboardPage() {
     const periodQs = period === 'custom' && customRange
       ? `period=custom&from=${customRange.from}&to=${customRange.to}`
       : `period=${period}`
+    const ym = periodToYearMonth()
+    const gbpUrl = ym ? `/api/google-business?period=${ym}` : '/api/google-business'
     try {
-      const [metaRes, googRes, leadsRes, monthlyRes] = await Promise.all([
+      const [metaRes, googRes, leadsRes, monthlyRes, socialRes, gbpRes] = await Promise.all([
         fetch(`/api/trafego/meta?${periodQs}`, { headers: h }),
         fetch(`/api/trafego/google?${periodQs}`, { headers: h }),
         fetch(`/api/leads?${periodQs}`, { headers: h }),
         fetch('/api/dashboard/leads-by-month', { headers: h }),
+        fetch(`/api/social-media?${periodQs}`, { headers: h }),
+        fetch(gbpUrl, { headers: h }),
       ])
 
       const meta = metaRes.ok ? await metaRes.json() : null
       const goog = googRes.ok ? await googRes.json() : null
       const leadsArr = leadsRes.ok ? await leadsRes.json() : []
       const monthly = monthlyRes.ok ? await monthlyRes.json() : null
+      const social = socialRes.ok ? await socialRes.json() : null
+      const gbp = gbpRes.ok ? await gbpRes.json() : null
 
       const leads = Array.isArray(leadsArr) ? leadsArr : []
       const crmDeals = leads.reduce((s: number, l: { dealValue?: number }) => s + (l.dealValue ?? 0), 0)
+
+      // Sem `period` explícito, /api/google-business devolve os últimos 12 meses (mais antigo
+      // primeiro) — pega o mais recente. Com `period`, devolve um único registro (ou null).
+      const gbpRow = ym ? gbp?.data : (Array.isArray(gbp?.data) ? gbp.data[gbp.data.length - 1] : null)
 
       setData({
         metaSpend: meta?.kpis?.spend ?? 0,
@@ -116,12 +151,20 @@ export default function DashboardPage() {
         googLeads: goog?.kpis?.conversions ?? 0,
         crmLeads: leads.length,
         crmDeals,
+        igFollowers: social?.kpis?.followersTotal ?? null,
+        igReach: social?.kpis?.reach ?? 0,
+        igEngagement: social?.kpis?.accountsEngaged ?? 0,
+        hasInstagram: social?.hasInstagram ?? false,
+        gbpViews: gbpRow?.profileViews ?? null,
+        gbpCalls: gbpRow?.phoneCalls ?? null,
+        gbpRating: gbpRow?.averageStars ?? null,
+        hasGbp: !!gbpRow,
       })
       setMonthlyChart(monthly?.chart ?? [])
     } catch { /* show zeros */ } finally {
       setLoading(false)
     }
-  }, [token, period, customRange]) // eslint-disable-line
+  }, [token, period, customRange, specificMonth]) // eslint-disable-line
 
   useEffect(() => { load() }, [load])
 
@@ -141,9 +184,17 @@ export default function DashboardPage() {
     { label: 'CRM Pipeline', href: '/pipeline', icon: Users, color: '#10b981', badge: 'Leads e Vendas',
       stats: [{ label: 'Leads', value: String(data.crmLeads) }, { label: 'Vendas', value: `${curr}${fmt(data.crmDeals)}` }, { label: 'CAPI', value: '—' }] },
     { label: 'Social Media', href: '/social-media', icon: Share2, color: '#ec4899', badge: 'Instagram · Facebook',
-      stats: [{ label: 'Seguidores', value: '—' }, { label: 'Alcance', value: '—' }, { label: 'Eng.', value: '—' }] },
+      stats: [
+        { label: 'Seguidores', value: data.hasInstagram && data.igFollowers != null ? fmt(data.igFollowers) : '—' },
+        { label: 'Alcance', value: data.hasInstagram ? fmt(data.igReach) : '—' },
+        { label: 'Eng.', value: data.hasInstagram ? fmt(data.igEngagement) : '—' },
+      ] },
     { label: 'Google Business', href: '/google-business', icon: MapPin, color: '#10b981', badge: 'Meu Negócio',
-      stats: [{ label: 'Visualizações', value: '—' }, { label: 'Ligações', value: '—' }, { label: 'Avaliação', value: '—' }] },
+      stats: [
+        { label: 'Visualizações', value: data.gbpViews != null ? fmt(data.gbpViews) : '—' },
+        { label: 'Ligações', value: data.gbpCalls != null ? fmt(data.gbpCalls) : '—' },
+        { label: 'Avaliação', value: data.gbpRating != null ? `${data.gbpRating.toFixed(1)} ⭐` : '—' },
+      ] },
   ]
 
   if (loading) {
