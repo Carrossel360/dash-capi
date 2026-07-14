@@ -7,21 +7,24 @@ export async function GET(req: NextRequest) {
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { searchParams } = new URL(req.url)
-  const status   = searchParams.get('status')
-  const search   = searchParams.get('search')
-  const phone    = searchParams.get('phone')
+  const status     = searchParams.get('status')
+  const search     = searchParams.get('search')
+  const phone      = searchParams.get('phone')
+  const assignedTo = searchParams.get('assignedTo')
 
   const conversations = await prisma.conversation.findMany({
     where: {
       workspaceId: auth.workspaceId,
       ...(status && status !== 'all' ? { status } : {}),
       ...(phone ? { customerPhone: { contains: phone } } : {}),
+      ...(assignedTo === 'unassigned' ? { assignedTo: null }
+        : assignedTo && assignedTo !== 'all' ? { assignedTo } : {}),
     },
     orderBy: { lastMessageAt: 'desc' },
     include: {
       tags: { include: { tag: true } },
       messages: { orderBy: { sentAt: 'desc' }, take: 1 },
-      lead: { select: { id: true, name: true, ctwaClid: true } },
+      lead: { select: { id: true, name: true, ctwaClid: true, stage: { select: { id: true, name: true, color: true } } } },
     },
   })
 
@@ -53,7 +56,7 @@ export async function GET(req: NextRequest) {
     lastMessageAt: c.lastMessageAt,
     unreadCount:   c.unreadCount,
     lastMessage:   c.messages[0]
-      ? { content: c.messages[0].content, direction: c.messages[0].direction }
+      ? { content: c.messages[0].content, direction: c.messages[0].direction, deletedAt: c.messages[0].deletedAt }
       : null,
     tags:      c.tags.map(ct => ({ id: ct.tag.id, name: ct.tag.name, color: ct.tag.color })),
     createdAt: c.createdAt,

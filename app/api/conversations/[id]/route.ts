@@ -11,7 +11,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     include: {
       tags:     { include: { tag: true } },
       messages: { orderBy: { sentAt: 'asc' } },
-      lead:     { select: { id: true, name: true, ctwaClid: true } },
+      lead:     { select: { id: true, name: true, ctwaClid: true, stage: { select: { id: true, name: true, color: true } } } },
     },
   })
   if (!conv) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -57,6 +57,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       senderUserId: m.senderUserId,
       sentAt:      m.sentAt,
       reactions:   m.reactions,
+      editedAt:    m.editedAt,
+      deletedAt:   m.deletedAt,
     })),
     members: members.map(m => ({ userId: m.userId, name: m.user.name, role: m.role })),
     createdAt: conv.createdAt,

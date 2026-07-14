@@ -4,6 +4,7 @@ import {
   Search, Phone, Send, Loader2, X, Check, Tag,
   UserCheck, MessageCircle, Circle, CheckCircle2, Clock,
   ChevronDown, Trash2, Plus, Mic, Paperclip, MicOff, StopCircle,
+  Pencil, Smile, BarChart2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
@@ -14,17 +15,21 @@ import { useSearchParams } from 'next/navigation'
 
 interface ConvTag { id: string; name: string; color: string }
 
+interface LeadStage { id: string; name: string; color: string }
+interface ConvLead { id: string; name: string; ctwaClid: string | null; stage: LeadStage | null }
+
 interface ConvSummary {
   id: string
   customerPhone: string
   customerName: string | null
   leadId: string | null
+  lead: ConvLead | null
   assignedTo: string | null
   assignedName: string | null
   status: string
   lastMessageAt: string | null
   unreadCount: number
-  lastMessage: { content: string; direction: string } | null
+  lastMessage: { content: string; direction: string; deletedAt: string | null } | null
   tags: ConvTag[]
   createdAt: string
 }
@@ -35,7 +40,28 @@ interface Msg {
   direction: 'inbound' | 'outbound'
   senderName: string | null
   sentAt: string
-  reactions: { sender: string; emoji: string }[]
+  reactions: { userId: string; userName: string; emoji: string }[]
+  editedAt: string | null
+  deletedAt: string | null
+}
+
+const EMOJI_SET = ['👍', '❤️', '😂', '😮', '😢', '🙏']
+
+interface ConvStats {
+  total: number
+  byStatus: Record<string, number>
+  totalUnread: number
+  byAssignee: { name: string; total: number; open: number }[]
+  avgFirstResponseMs: number | null
+}
+
+function fmtDuration(ms: number | null): string {
+  if (ms == null) return '—'
+  const min = Math.round(ms / 60000)
+  if (min < 60) return `${min}min`
+  const h = Math.floor(min / 60)
+  const rem = min % 60
+  return rem > 0 ? `${h}h ${rem}min` : `${h}h`
 }
 
 interface ConvDetail extends ConvSummary {
@@ -44,6 +70,7 @@ interface ConvDetail extends ConvSummary {
 }
 
 interface SupportTag { id: string; name: string; color: string }
+interface WorkspaceMemberOpt { id: string; name: string }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -132,6 +159,14 @@ export default function ConversasPage() {
   const [tags, setTags]                   = useState<SupportTag[]>([])
   const [search, setSearch]               = useState('')
   const [statusFilter, setStatusFilter]   = useState('all')
+  const [assignedFilter, setAssignedFilter] = useState('all')
+  const [members, setMembers]             = useState<WorkspaceMemberOpt[]>([])
+  const [stages, setStages]               = useState<LeadStage[]>([])
+  const [showStagePanel, setShowStagePanel] = useState(false)
+  const [changingStage, setChangingStage] = useState(false)
+  const [showStats, setShowStats]         = useState(false)
+  const [stats, setStats]                 = useState<ConvStats | null>(null)
+  const [loadingStats, setLoadingStats]   = useState(false)
   const [input, setInput]                 = useState('')
   const [sending, setSending]             = useState(false)
   const [loadingList, setLoadingList]     = useState(true)
@@ -142,6 +177,12 @@ export default function ConversasPage() {
   const [noConvPhone, setNoConvPhone]     = useState<string | null>(null)
   const [startMsg, setStartMsg]           = useState('')
   const [startingSend, setStartingSend]   = useState(false)
+
+  // Edição / exclusão / reação de mensagem
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
+  const [editText, setEditText]                 = useState('')
+  const [savingEdit, setSavingEdit]             = useState(false)
+  const [reactingMessageId, setReactingMessageId] = useState<string | null>(null)
 
   // Audio recording
   const [recording, setRecording]         = useState(false)
@@ -162,6 +203,7 @@ export default function ConversasPage() {
     try {
       const q = new URLSearchParams()
       if (statusFilter !== 'all') q.set('status', statusFilter)
+      if (assignedFilter !== 'all') q.set('assignedTo', assignedFilter)
       if (search) q.set('search', search)
       if (initialPhone && !search) q.set('phone', initialPhone)
       const res = await fetch(`/api/conversations?${q}`, { headers: h })
@@ -177,7 +219,7 @@ export default function ConversasPage() {
       }
     } catch {}
     finally { setLoadingList(false) }
-  }, [token, statusFilter, search, initialPhone]) // eslint-disable-line
+  }, [token, statusFilter, assignedFilter, search, initialPhone]) // eslint-disable-line
 
   useEffect(() => {
     loadList()
@@ -220,6 +262,44 @@ export default function ConversasPage() {
     fetch('/api/support/tags', { headers: h })
       .then(r => r.json()).then(setTags).catch(() => {})
   }, [token]) // eslint-disable-line
+
+  // ── Fetch members (filtro por atendente) ──────────────────────────────────────
+  useEffect(() => {
+    if (!token) return
+    fetch('/api/workspace/members', { headers: h })
+      .then(r => r.json()).then(d => setMembers(d.members ?? [])).catch(() => {})
+  }, [token]) // eslint-disable-line
+
+  // ── Fetch stages (painel de estágio do CRM) ────────────────────────────────────
+  useEffect(() => {
+    if (!token) return
+    fetch('/api/stages', { headers: h })
+      .then(r => r.json()).then(d => setStages(Array.isArray(d) ? d : [])).catch(() => {})
+  }, [token]) // eslint-disable-line
+
+  // ── Estatísticas ───────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!token || !showStats) return
+    setLoadingStats(true)
+    fetch('/api/conversations/stats', { headers: h })
+      .then(r => r.json()).then(setStats).catch(() => {})
+      .finally(() => setLoadingStats(false))
+  }, [token, showStats]) // eslint-disable-line
+
+  async function changeLeadStage(stageId: string) {
+    if (!detail?.leadId || changingStage) return
+    setChangingStage(true)
+    try {
+      const res = await fetch(`/api/leads/${detail.leadId}`, {
+        method: 'PATCH', headers: h, body: JSON.stringify({ pipelineStageId: stageId }),
+      })
+      if (!res.ok) throw new Error()
+      setShowStagePanel(false)
+      await loadDetail()
+      await loadList()
+    } catch { toast.error('Erro ao mudar estágio') }
+    finally { setChangingStage(false) }
+  }
 
   // ── Send message ─────────────────────────────────────────────────────────────
   function blobToBase64(blob: Blob): Promise<string> {
@@ -328,6 +408,7 @@ export default function ConversasPage() {
     const optimistic: Msg = {
       id: `opt-${Date.now()}`, content: input, direction: 'outbound',
       senderName: null, sentAt: new Date().toISOString(), reactions: [],
+      editedAt: null, deletedAt: null,
     }
     setDetail(prev => prev ? { ...prev, messages: [...prev.messages, optimistic] } : prev)
     const text = input
@@ -385,6 +466,59 @@ export default function ConversasPage() {
     }
   }
 
+  // ── Editar / apagar / reagir a mensagem ───────────────────────────────────────
+  function startEdit(msg: Msg) {
+    setEditingMessageId(msg.id)
+    setEditText(msg.content)
+    setReactingMessageId(null)
+  }
+
+  function cancelEdit() {
+    setEditingMessageId(null)
+    setEditText('')
+  }
+
+  async function saveEdit() {
+    if (!activeId || !editingMessageId || !editText.trim() || savingEdit) return
+    setSavingEdit(true)
+    try {
+      const res = await fetch(`/api/conversations/${activeId}/messages/${editingMessageId}`, {
+        method: 'PATCH', headers: h, body: JSON.stringify({ content: editText.trim() }),
+      })
+      if (!res.ok) throw new Error((await res.json()).error)
+      setEditingMessageId(null)
+      setEditText('')
+      await loadDetail()
+      await loadList()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao editar mensagem')
+    } finally { setSavingEdit(false) }
+  }
+
+  async function deleteMessage(messageId: string) {
+    if (!activeId || !confirm('Apagar esta mensagem?')) return
+    try {
+      const res = await fetch(`/api/conversations/${activeId}/messages/${messageId}`, { method: 'DELETE', headers: h })
+      if (!res.ok) throw new Error((await res.json()).error)
+      await loadDetail()
+      await loadList()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao apagar mensagem')
+    }
+  }
+
+  async function toggleReaction(messageId: string, emoji: string) {
+    if (!activeId) return
+    setReactingMessageId(null)
+    try {
+      const res = await fetch(`/api/conversations/${activeId}/messages/${messageId}`, {
+        method: 'POST', headers: h, body: JSON.stringify({ emoji }),
+      })
+      if (!res.ok) throw new Error()
+      await loadDetail()
+    } catch { toast.error('Erro ao reagir') }
+  }
+
   const filtered = conversations.filter(c => {
     const matchSearch = !search ||
       c.customerName?.toLowerCase().includes(search.toLowerCase()) ||
@@ -401,27 +535,41 @@ export default function ConversasPage() {
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── Sidebar ───────────────────────────────────────────────────────── */}
-        <div className="w-72 flex-shrink-0 border-r border-[#1e1635] bg-[#0a0818] flex flex-col">
+        <div className="w-80 flex-shrink-0 border-r border-[#1e1635] bg-[#0a0818] flex flex-col">
           {/* Search + filter */}
-          <div className="p-3 space-y-2 border-b border-[#1e1635]">
+          <div className="p-4 space-y-2.5 border-b border-[#1e1635]">
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input
                 value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="Buscar conversa..."
-                className="w-full pl-8 pr-3 py-2 text-xs bg-[#1e1635] border border-[#2d2550] rounded-lg text-slate-300 placeholder-slate-600 focus:outline-none focus:border-[#6a11cb]"
+                placeholder="Buscar por nome ou telefone..."
+                className="w-full pl-9 pr-3 py-2.5 text-sm bg-[#1e1635] border border-[#2d2550] rounded-lg text-slate-300 placeholder-slate-600 focus:outline-none focus:border-[#6a11cb]"
               />
             </div>
             <div className="flex gap-1">
               {(['all', 'open', 'in_progress', 'closed'] as const).map(s => (
                 <button key={s}
-                  onClick={() => setStatusFilter(s)}
-                  className={`flex-1 py-1 rounded text-[10px] font-medium transition-all ${statusFilter === s ? 'bg-[#6a11cb] text-white' : 'text-slate-500 hover:text-white'}`}
+                  onClick={() => { setStatusFilter(s); setShowStats(false) }}
+                  className={`flex-1 py-1.5 rounded text-xs font-medium transition-all ${statusFilter === s && !showStats ? 'bg-[#6a11cb] text-white' : 'text-slate-500 hover:text-white'}`}
                 >
                   {s === 'all' ? 'Todos' : s === 'open' ? 'Aberto' : s === 'in_progress' ? 'Andamento' : 'Fechado'}
                 </button>
               ))}
+              <button onClick={() => setShowStats(s => !s)}
+                title="Estatísticas"
+                className={`flex-shrink-0 w-8 py-1.5 rounded flex items-center justify-center transition-all ${showStats ? 'bg-[#6a11cb] text-white' : 'text-slate-500 hover:text-white'}`}>
+                <BarChart2 className="w-3.5 h-3.5" />
+              </button>
             </div>
+            <select
+              value={assignedFilter}
+              onChange={e => setAssignedFilter(e.target.value)}
+              className="w-full text-xs bg-[#1e1635] border border-[#2d2550] rounded-lg px-2.5 py-2 text-slate-300 focus:outline-none focus:border-[#6a11cb]"
+            >
+              <option value="all">Filtrar por atendente</option>
+              <option value="unassigned">Sem atendente</option>
+              {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
           </div>
 
           {/* List */}
@@ -438,46 +586,46 @@ export default function ConversasPage() {
               </div>
             )}
             {filtered.map(conv => (
-              <button key={conv.id} onClick={() => setActiveId(conv.id)}
-                className={`w-full text-left px-3 py-3 border-b border-[#1e1635]/40 transition-colors ${
+              <button key={conv.id} onClick={() => { setActiveId(conv.id); setShowStats(false) }}
+                className={`w-full text-left px-4 py-4 border-b border-[#1e1635]/40 transition-colors ${
                   activeId === conv.id
                     ? 'bg-[#6a11cb]/10 border-l-2 border-l-[#6a11cb]'
                     : 'hover:bg-white/[0.03]'
                 }`}
               >
-                <div className="flex items-start gap-2.5">
+                <div className="flex items-start gap-3">
                   <div className="relative flex-shrink-0">
-                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white"
                       style={{ background: 'linear-gradient(135deg, #6a11cb, #2575fc)' }}>
                       {initials(conv.customerName, conv.customerPhone)}
                     </div>
-                    <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#0a0818]"
+                    <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#0a0818]"
                       style={{ background: STATUS_COLORS[conv.status] ?? '#666' }} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-white truncate">
+                      <span className="text-sm font-semibold text-white truncate">
                         {conv.customerName || conv.customerPhone}
                       </span>
-                      <div className="flex items-center gap-1 flex-shrink-0">
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
                         {conv.unreadCount > 0 && (
-                          <span className="w-4 h-4 bg-[#6a11cb] rounded-full text-[9px] text-white flex items-center justify-center font-bold">
+                          <span className="w-5 h-5 bg-[#6a11cb] rounded-full text-[10px] text-white flex items-center justify-center font-bold">
                             {conv.unreadCount > 9 ? '9+' : conv.unreadCount}
                           </span>
                         )}
-                        <span className="text-[10px] text-slate-600">{timeAgo(conv.lastMessageAt)}</span>
+                        <span className="text-xs text-slate-600">{timeAgo(conv.lastMessageAt)}</span>
                       </div>
                     </div>
                     {conv.lastMessage && (
-                      <p className="text-[10px] text-slate-500 truncate mt-0.5">
+                      <p className="text-xs text-slate-500 truncate mt-1">
                         {conv.lastMessage.direction === 'outbound' ? '↪ ' : ''}
-                        {previewContent(conv.lastMessage.content)}
+                        {conv.lastMessage.deletedAt ? <span className="italic">Mensagem apagada</span> : previewContent(conv.lastMessage.content)}
                       </p>
                     )}
                     {conv.tags.length > 0 && (
-                      <div className="flex gap-1 mt-1 flex-wrap">
+                      <div className="flex gap-1 mt-1.5 flex-wrap">
                         {conv.tags.slice(0, 3).map(t => (
-                          <span key={t.id} className="text-[9px] px-1.5 py-0.5 rounded-full font-medium"
+                          <span key={t.id} className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
                             style={{ background: t.color + '22', color: t.color }}>
                             {t.name}
                           </span>
@@ -491,8 +639,53 @@ export default function ConversasPage() {
           </div>
         </div>
 
-        {/* ── Chat area ─────────────────────────────────────────────────────── */}
-        {!activeId ? (
+        {/* ── Estatísticas ──────────────────────────────────────────────────── */}
+        {showStats ? (
+          <div className="flex-1 overflow-y-auto p-6">
+            <h2 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
+              <BarChart2 className="w-4 h-4 text-[#8b5cf6]" /> Estatísticas de Atendimento
+            </h2>
+            {loadingStats && !stats ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="w-5 h-5 animate-spin text-[#6a11cb]" />
+              </div>
+            ) : stats ? (
+              <div className="space-y-5 max-w-3xl">
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                  {[
+                    { label: 'Total de conversas', value: stats.total },
+                    { label: 'Abertas', value: stats.byStatus.open ?? 0 },
+                    { label: 'Em andamento', value: stats.byStatus.in_progress ?? 0 },
+                    { label: 'Fechadas', value: stats.byStatus.closed ?? 0 },
+                    { label: 'Não lidas', value: stats.totalUnread },
+                    { label: 'Tempo médio de 1ª resposta', value: fmtDuration(stats.avgFirstResponseMs) },
+                  ].map(c => (
+                    <div key={c.label} className="glass rounded-xl p-4">
+                      <p className="text-2xl font-bold text-white">{c.value}</p>
+                      <p className="text-xs text-slate-500 mt-1">{c.label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="glass rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-white mb-3">Por atendente</h3>
+                  {stats.byAssignee.length === 0 ? (
+                    <p className="text-xs text-slate-500">Nenhuma conversa ainda.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {stats.byAssignee.map(a => (
+                        <div key={a.name} className="flex items-center justify-between text-sm">
+                          <span className="text-slate-300">{a.name}</span>
+                          <span className="text-slate-500 text-xs">{a.total} total · {a.open} em aberto</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : !activeId ? (
           <div className="flex-1 flex items-center justify-center">
             {noConvPhone ? (
               <div className="w-full max-w-md mx-auto px-6 space-y-4">
@@ -535,42 +728,68 @@ export default function ConversasPage() {
           <div className="flex-1 flex flex-col overflow-hidden">
 
             {/* Chat header */}
-            <div className="px-4 py-3 border-b border-[#1e1635] bg-[#0f0b1e]/60 flex items-center justify-between flex-shrink-0">
+            <div className="px-5 py-4 border-b border-[#1e1635] bg-[#0f0b1e]/60 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white"
                   style={{ background: 'linear-gradient(135deg, #6a11cb, #2575fc)' }}>
                   {detail ? initials(detail.customerName, detail.customerPhone) : '…'}
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-white">
+                  <p className="text-base font-semibold text-white">
                     {detail?.customerName || detail?.customerPhone || '…'}
                   </p>
                   <div className="flex items-center gap-2">
-                    <p className="text-xs text-slate-500">{detail?.customerPhone}</p>
+                    <p className="text-sm text-slate-500">{detail?.customerPhone}</p>
                     {detail?.assignedName && (
-                      <span className="text-[10px] text-[#8b5cf6] bg-[#6a11cb]/10 px-1.5 py-0.5 rounded">
+                      <span className="text-xs text-[#8b5cf6] bg-[#6a11cb]/10 px-1.5 py-0.5 rounded">
                         {detail.assignedName}
                       </span>
+                    )}
+                    {detail?.lead && (
+                      <div className="relative">
+                        <button onClick={() => setShowStagePanel(s => !s)}
+                          className="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded transition-colors"
+                          style={{
+                            color: detail.lead.stage?.color ?? '#94a3b8',
+                            background: `${detail.lead.stage?.color ?? '#94a3b8'}1a`,
+                          }}>
+                          {detail.lead.stage?.name ?? 'Sem estágio'}
+                          <ChevronDown className="w-3 h-3" />
+                        </button>
+                        {showStagePanel && (
+                          <div className="absolute left-0 top-7 z-50 w-44 bg-[#0f0b1e] border border-[#2d2550] rounded-xl shadow-2xl overflow-hidden">
+                            <p className="text-xs text-slate-500 px-3 pt-2 pb-1 font-semibold uppercase tracking-wider">Estágio no CRM</p>
+                            {stages.map(s => (
+                              <button key={s.id} disabled={changingStage}
+                                onClick={() => changeLeadStage(s.id)}
+                                className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-[#1e1635] transition-colors disabled:opacity-50">
+                                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />
+                                <span className={detail.lead?.stage?.id === s.id ? 'text-white font-medium' : 'text-slate-300'}>{s.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
               </div>
 
               {/* Header actions */}
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 {/* Status selector */}
                 <div className="relative">
                   <button onClick={() => setShowAssign(false)}
-                    className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-[#2d2550] text-slate-300 hover:border-[#6a11cb]/50 transition-colors">
+                    className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-[#2d2550] text-slate-300 hover:border-[#6a11cb]/50 transition-colors">
                     <Circle className="w-2.5 h-2.5 fill-current" style={{ color: STATUS_COLORS[detail?.status ?? 'open'] }} />
                     {STATUS_LABELS[detail?.status ?? 'open']}
-                    <ChevronDown className="w-3 h-3 ml-0.5" />
+                    <ChevronDown className="w-3.5 h-3.5 ml-0.5" />
                   </button>
                 </div>
                 {['open', 'in_progress', 'closed'].map(s => (
                   detail?.status !== s && (
                     <button key={s} onClick={() => updateConv({ status: s })}
-                      className="text-[10px] px-2 py-1 rounded border border-[#2d2550] text-slate-500 hover:text-white hover:border-[#6a11cb]/50 transition-colors">
+                      className="text-xs px-2.5 py-1.5 rounded border border-[#2d2550] text-slate-500 hover:text-white hover:border-[#6a11cb]/50 transition-colors">
                       → {STATUS_LABELS[s]}
                     </button>
                   )
@@ -579,23 +798,23 @@ export default function ConversasPage() {
                 {/* Assign */}
                 <div className="relative">
                   <button onClick={() => setShowAssign(s => !s)}
-                    className="w-8 h-8 rounded-lg bg-[#1e1635] flex items-center justify-center text-slate-500 hover:text-white transition-colors">
-                    <UserCheck className="w-3.5 h-3.5" />
+                    className="w-9 h-9 rounded-lg bg-[#1e1635] flex items-center justify-center text-slate-500 hover:text-white transition-colors">
+                    <UserCheck className="w-4 h-4" />
                   </button>
                   {showAssign && detail && (
-                    <div className="absolute right-0 top-10 z-50 w-48 bg-[#0f0b1e] border border-[#2d2550] rounded-xl shadow-2xl overflow-hidden">
-                      <p className="text-[10px] text-slate-500 px-3 pt-2 pb-1 font-semibold uppercase tracking-wider">Atribuir para</p>
+                    <div className="absolute right-0 top-11 z-50 w-52 bg-[#0f0b1e] border border-[#2d2550] rounded-xl shadow-2xl overflow-hidden">
+                      <p className="text-xs text-slate-500 px-3 pt-2 pb-1 font-semibold uppercase tracking-wider">Atribuir para</p>
                       {detail.members.map(m => (
                         <button key={m.userId}
                           onClick={() => { updateConv({ assignedTo: m.userId }); setShowAssign(false) }}
-                          className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-[#1e1635] transition-colors ${detail.assignedTo === m.userId ? 'text-[#8b5cf6]' : 'text-slate-300'}`}>
-                          {detail.assignedTo === m.userId && <Check className="w-3 h-3" />}
-                          <span className={detail.assignedTo === m.userId ? '' : 'ml-4'}>{m.name}</span>
+                          className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-[#1e1635] transition-colors ${detail.assignedTo === m.userId ? 'text-[#8b5cf6]' : 'text-slate-300'}`}>
+                          {detail.assignedTo === m.userId && <Check className="w-3.5 h-3.5" />}
+                          <span className={detail.assignedTo === m.userId ? '' : 'ml-5'}>{m.name}</span>
                         </button>
                       ))}
                       {detail.assignedTo && (
                         <button onClick={() => { updateConv({ assignedTo: null }); setShowAssign(false) }}
-                          className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-[#1e1635] transition-colors">
+                          className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-[#1e1635] transition-colors">
                           Remover atribuição
                         </button>
                       )}
@@ -606,18 +825,18 @@ export default function ConversasPage() {
                 {/* Tags */}
                 <div className="relative">
                   <button onClick={() => setShowTagPanel(s => !s)}
-                    className="w-8 h-8 rounded-lg bg-[#1e1635] flex items-center justify-center text-slate-500 hover:text-white transition-colors">
-                    <Tag className="w-3.5 h-3.5" />
+                    className="w-9 h-9 rounded-lg bg-[#1e1635] flex items-center justify-center text-slate-500 hover:text-white transition-colors">
+                    <Tag className="w-4 h-4" />
                   </button>
                   {showTagPanel && detail && (
-                    <div className="absolute right-0 top-10 z-50 w-52 bg-[#0f0b1e] border border-[#2d2550] rounded-xl shadow-2xl p-3 space-y-2">
-                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Tags</p>
+                    <div className="absolute right-0 top-11 z-50 w-56 bg-[#0f0b1e] border border-[#2d2550] rounded-xl shadow-2xl p-3 space-y-2">
+                      <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Tags</p>
                       {tags.map(tag => {
                         const has = detail.tags.some(t => t.id === tag.id)
                         return (
                           <button key={tag.id} onClick={() => toggleTag(tag.id)}
-                            className={`w-full flex items-center gap-2 text-xs px-2 py-1.5 rounded-lg transition-colors ${has ? 'bg-[#6a11cb]/10' : 'hover:bg-[#1e1635]'}`}>
-                            {has ? <CheckCircle2 className="w-3.5 h-3.5 text-[#8b5cf6]" /> : <Circle className="w-3.5 h-3.5 text-slate-600" />}
+                            className={`w-full flex items-center gap-2 text-sm px-2 py-1.5 rounded-lg transition-colors ${has ? 'bg-[#6a11cb]/10' : 'hover:bg-[#1e1635]'}`}>
+                            {has ? <CheckCircle2 className="w-4 h-4 text-[#8b5cf6]" /> : <Circle className="w-4 h-4 text-slate-600" />}
                             <span className="font-medium" style={{ color: tag.color }}>{tag.name}</span>
                           </button>
                         )
@@ -626,11 +845,11 @@ export default function ConversasPage() {
                         <input value={newTagName} onChange={e => setNewTagName(e.target.value)}
                           onKeyDown={e => e.key === 'Enter' && createTag()}
                           placeholder="Nova tag..."
-                          className="flex-1 text-xs bg-[#1e1635] border border-[#2d2550] rounded px-2 py-1 text-white placeholder-slate-600 focus:outline-none focus:border-[#6a11cb]"
+                          className="flex-1 text-sm bg-[#1e1635] border border-[#2d2550] rounded px-2 py-1.5 text-white placeholder-slate-600 focus:outline-none focus:border-[#6a11cb]"
                         />
                         <button onClick={createTag}
-                          className="w-7 h-7 flex items-center justify-center rounded bg-[#6a11cb] text-white hover:opacity-90">
-                          <Plus className="w-3.5 h-3.5" />
+                          className="w-8 h-8 flex items-center justify-center rounded bg-[#6a11cb] text-white hover:opacity-90">
+                          <Plus className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
@@ -638,21 +857,21 @@ export default function ConversasPage() {
                 </div>
 
                 <button onClick={() => setActiveId(null)}
-                  className="w-8 h-8 rounded-lg bg-[#1e1635] flex items-center justify-center text-slate-500 hover:text-red-400 transition-colors">
-                  <X className="w-3.5 h-3.5" />
+                  className="w-9 h-9 rounded-lg bg-[#1e1635] flex items-center justify-center text-slate-500 hover:text-red-400 transition-colors">
+                  <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
             {/* Tags display */}
             {detail?.tags && detail.tags.length > 0 && (
-              <div className="px-4 py-1.5 flex gap-1.5 flex-wrap border-b border-[#1e1635]/50 bg-[#0a0818]">
+              <div className="px-5 py-2 flex gap-1.5 flex-wrap border-b border-[#1e1635]/50 bg-[#0a0818]">
                 {detail.tags.map(t => (
-                  <span key={t.id} className="text-[10px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1"
+                  <span key={t.id} className="text-xs px-2 py-0.5 rounded-full font-medium flex items-center gap-1"
                     style={{ background: t.color + '22', color: t.color }}>
                     {t.name}
                     <button onClick={() => toggleTag(t.id)} className="hover:opacity-70">
-                      <X className="w-2.5 h-2.5" />
+                      <X className="w-3 h-3" />
                     </button>
                   </span>
                 ))}
@@ -660,34 +879,117 @@ export default function ConversasPage() {
             )}
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="flex-1 overflow-y-auto p-5 space-y-3">
               {loadingDetail && !detail && (
                 <div className="flex items-center justify-center h-20">
                   <Loader2 className="w-4 h-4 animate-spin text-[#6a11cb]" />
                 </div>
               )}
-              {detail?.messages.map((msg) => (
-                <div key={msg.id} className={`flex ${msg.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[72%] px-3 py-2 rounded-xl text-xs ${
-                    msg.direction === 'outbound'
-                      ? 'text-white rounded-br-sm'
-                      : 'bg-[#0f0b1e] border border-[#1e1635] text-slate-200 rounded-bl-sm'
-                  }`} style={msg.direction === 'outbound' ? { background: 'linear-gradient(135deg, #6a11cb, #2575fc)' } : {}}>
-                    {msg.senderName && msg.direction === 'outbound' && (
-                      <p className="text-[10px] text-white/60 mb-0.5">{msg.senderName}</p>
-                    )}
-                    <MessageContent content={msg.content} />
-                    <p className={`text-[10px] mt-1 ${msg.direction === 'outbound' ? 'text-white/50 text-right' : 'text-slate-600'}`}>
-                      {new Date(msg.sentAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                    </p>
+              {detail?.messages.map((msg) => {
+                const isOutbound = msg.direction === 'outbound'
+                const isEditing = editingMessageId === msg.id
+                const canEdit = isOutbound && !msg.deletedAt && !msg.content.startsWith('[')
+                const canDelete = isOutbound && !msg.deletedAt
+                const reactionGroups = Object.entries(
+                  msg.reactions.reduce<Record<string, string[]>>((acc, r) => {
+                    acc[r.emoji] = [...(acc[r.emoji] ?? []), r.userName]
+                    return acc
+                  }, {})
+                )
+                return (
+                  <div key={msg.id} className={`group flex ${isOutbound ? 'justify-end' : 'justify-start'}`}>
+                    <div className="flex items-center gap-1.5 min-w-0 max-w-full" style={{ flexDirection: isOutbound ? 'row-reverse' : 'row' }}>
+                      {/* Hover actions */}
+                      {!isEditing && (
+                        <div className="relative flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                          <button onClick={() => setReactingMessageId(p => p === msg.id ? null : msg.id)}
+                            className="w-7 h-7 rounded-full bg-[#1e1635] flex items-center justify-center text-slate-400 hover:text-white transition-colors" title="Reagir">
+                            <Smile className="w-3.5 h-3.5" />
+                          </button>
+                          {canEdit && (
+                            <button onClick={() => startEdit(msg)}
+                              className="w-7 h-7 rounded-full bg-[#1e1635] flex items-center justify-center text-slate-400 hover:text-white transition-colors" title="Editar">
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button onClick={() => deleteMessage(msg.id)}
+                              className="w-7 h-7 rounded-full bg-[#1e1635] flex items-center justify-center text-slate-400 hover:text-red-400 transition-colors" title="Apagar">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {reactingMessageId === msg.id && (
+                            <div className={`absolute bottom-8 z-50 flex gap-1 bg-[#0f0b1e] border border-[#2d2550] rounded-full px-2 py-1.5 shadow-2xl ${isOutbound ? 'right-0' : 'left-0'}`}>
+                              {EMOJI_SET.map(e => (
+                                <button key={e} onClick={() => toggleReaction(msg.id, e)}
+                                  className="text-base hover:scale-125 transition-transform">{e}</button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className={`${isEditing ? 'w-72' : 'max-w-[65%]'} min-w-0 px-4 py-2.5 rounded-xl text-sm ${
+                        isOutbound
+                          ? 'text-white rounded-br-sm'
+                          : 'bg-[#0f0b1e] border border-[#1e1635] text-slate-200 rounded-bl-sm'
+                      }`} style={isOutbound ? { background: 'linear-gradient(135deg, #6a11cb, #2575fc)' } : {}}>
+                        {msg.senderName && isOutbound && (
+                          <p className="text-xs text-white/60 mb-0.5">{msg.senderName}</p>
+                        )}
+
+                        {isEditing ? (
+                          <div className="space-y-1.5">
+                            <textarea
+                              value={editText}
+                              onChange={e => setEditText(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit() } }}
+                              rows={2}
+                              autoFocus
+                              className="w-full text-sm bg-white/10 rounded-lg px-2 py-1.5 text-white placeholder-white/40 focus:outline-none resize-none"
+                            />
+                            <div className="flex items-center justify-end gap-2">
+                              <button onClick={cancelEdit} className="text-xs text-white/70 hover:text-white">Cancelar</button>
+                              <button onClick={saveEdit} disabled={savingEdit || !editText.trim()}
+                                className="text-xs bg-white/20 hover:bg-white/30 px-2 py-1 rounded-lg disabled:opacity-40 flex items-center gap-1">
+                                {savingEdit ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Salvar
+                              </button>
+                            </div>
+                          </div>
+                        ) : msg.deletedAt ? (
+                          <span className="italic text-white/50 text-sm">Mensagem apagada</span>
+                        ) : (
+                          <MessageContent content={msg.content} />
+                        )}
+
+                        {!isEditing && (
+                          <p className={`text-xs mt-1 ${isOutbound ? 'text-white/50 text-right' : 'text-slate-600'}`}>
+                            {new Date(msg.sentAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            {msg.editedAt && !msg.deletedAt && ' · editada'}
+                          </p>
+                        )}
+
+                        {reactionGroups.length > 0 && (
+                          <div className={`flex gap-1 flex-wrap mt-1 ${isOutbound ? 'justify-end' : 'justify-start'}`}>
+                            {reactionGroups.map(([emoji, names]) => (
+                              <button key={emoji} onClick={() => toggleReaction(msg.id, emoji)}
+                                className="flex items-center gap-1 text-xs bg-black/20 hover:bg-black/30 rounded-full px-1.5 py-0.5 transition-colors"
+                                title={names.join(', ')}>
+                                {emoji} <span className="text-white/70">{names.length}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
               <div ref={messagesEndRef} />
             </div>
 
             {/* Input */}
-            <div className="px-4 py-3 border-t border-[#1e1635] bg-[#0f0b1e]/80 flex-shrink-0">
+            <div className="px-5 py-4 border-t border-[#1e1635] bg-[#0f0b1e]/80 flex-shrink-0">
               <input ref={fileInputRef} type="file" accept="image/*,video/*,.pdf,.doc,.docx" className="hidden" onChange={handleFileAttachment} />
 
               {recording ? (

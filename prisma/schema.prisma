@@ -542,6 +542,8 @@ model Message {
   senderUserId   String?
   externalId     String?  @unique
   reactions      Json     @default("[]")
+  editedAt       DateTime?
+  deletedAt      DateTime?
   sentAt         DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
