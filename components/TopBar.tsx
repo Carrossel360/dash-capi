@@ -1,10 +1,11 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { Bell, Search, ChevronDown, Check, Building2, Sun, Moon, AlertTriangle, AlertCircle } from 'lucide-react'
 import { useAuthStore } from '@/lib/store/auth'
 import { useTheme } from '@/lib/hooks/useTheme'
 import type { WorkspaceInfo } from '@/lib/store/auth'
+import { defaultRouteForRole, ATTENDANT_ALLOWED_HREFS } from '@/lib/roleAccess'
 
 interface NotificationRow {
   id: string
@@ -50,6 +51,7 @@ export default function TopBar({ title, hideWorkspaceSwitcher }: { title: string
   const [search, setSearch] = useState('')
   const ref = useRef<HTMLDivElement>(null)
   const router = useRouter()
+  const pathname = usePathname()
   const { theme, toggle } = useTheme()
 
   const [notifications, setNotifications] = useState<NotificationRow[]>([])
@@ -103,7 +105,18 @@ export default function TopBar({ title, hideWorkspaceSwitcher }: { title: string
         body: JSON.stringify({ workspaceId }),
       })
       const data = await res.json()
-      if (res.ok) { switchWorkspace(data.token, data.workspace); setOpen(false); router.refresh() }
+      if (res.ok) {
+        switchWorkspace(data.token, data.workspace)
+        setOpen(false)
+        // Atendente só vê CRM Pipeline/Conversas no menu — se a página atual não é uma
+        // dessas duas rotas, manda pra rota permitida em vez de deixar numa tela órfã do menu.
+        const isRestrictedAttendant = !data.workspace?.isAgency && data.workspace?.role === 'attendant'
+        if (isRestrictedAttendant && !ATTENDANT_ALLOWED_HREFS.includes(pathname)) {
+          router.push(defaultRouteForRole(data.workspace))
+        } else {
+          router.refresh()
+        }
+      }
     } finally { setLoading(false) }
   }
 

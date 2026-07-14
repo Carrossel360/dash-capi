@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { useAuthStore } from '@/lib/store/auth'
+import { defaultRouteForRole } from '@/lib/roleAccess'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -23,7 +24,7 @@ export default function LoginPage() {
     const data = await res.json()
     if (!res.ok) throw new Error(data.error || 'Credenciais inválidas')
     login(data.user, data.token, data.workspace ?? { id: data.workspaceId, name: '', slug: '' })
-    router.push('/dashboard')
+    router.push(defaultRouteForRole(data.workspace))
   }
 
   async function handleSubmit(ev: React.FormEvent) {

@@ -11,6 +11,7 @@ import {
 import { useAuthStore } from '@/lib/store/auth'
 import LockedServiceModal from '@/components/LockedServiceModal'
 import ComingSoonModal from '@/components/ComingSoonModal'
+import { ATTENDANT_ALLOWED_HREFS } from '@/lib/roleAccess'
 
 type ServiceKey = 'trafeqoPago' | 'socialMedia' | 'googleBusiness' | 'googleLocal' | 'contentStudio'
 
@@ -62,7 +63,6 @@ const navGroups = [
 
 // Únicos itens visíveis pro papel "atendente" num workspace de cliente — vê só o
 // operacional do dia a dia (CRM + conversas), nada de métricas/configuração/áreas em construção.
-const ATTENDANT_ALLOWED_HREFS = ['/pipeline', '/conversas']
 
 const SERVICE_LABELS: Record<ServiceKey, string> = {
   trafeqoPago: 'Tráfego Pago',
