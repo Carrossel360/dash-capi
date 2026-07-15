@@ -172,10 +172,9 @@ function DealPopup({ lead, stageId, products, currency, token, onConfirm, onCanc
 
 // ── Lead Modal ────────────────────────────────────────────────────────────────
 
-function LeadModal({ lead, stages, products, token, onClose, onSaved, onDeleted, onRequestDeal }: {
+function LeadModal({ lead, stages, token, onClose, onSaved, onDeleted, onRequestDeal }: {
   lead: Lead
   stages: Stage[]
-  products: Product[]
   token: string
   onClose: () => void
   onSaved: (lead: Lead) => void
@@ -295,7 +294,10 @@ function LeadModal({ lead, stages, products, token, onClose, onSaved, onDeleted,
               <select value={form.source} onChange={e => set('source', e.target.value)}
                 className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb]">
                 <option value="">Selecione...</option>
-                {products.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                <option value="Cliente Novo">Cliente Novo</option>
+                <option value="Cliente Ativo">Cliente Ativo</option>
+                <option value="Cliente Recuperado">Cliente Recuperado</option>
+                <option value="Visitante">Visitante</option>
               </select>
             </div>
             <div className="space-y-1.5">
@@ -571,6 +573,127 @@ function Column({ stage, leads, onCardClick }: { stage: Stage; leads: Lead[]; on
   )
 }
 
+// ── New lead modal ───────────────────────────────────────────────────────────
+
+function NewLeadModal({ stages, token, onClose, onCreated }: {
+  stages: Stage[]
+  token: string
+  onClose: () => void
+  onCreated: (lead: Lead) => void
+}) {
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    source: '',
+    pipelineStageId: stages[0]?.id ?? '',
+  })
+  const [saving, setSaving] = useState(false)
+
+  function set(k: string, v: string) { setForm(p => ({ ...p, [k]: v })) }
+
+  async function handleCreate() {
+    if (!form.name.trim() || !form.pipelineStageId) {
+      toast.error('Nome e estágio são obrigatórios')
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email || undefined,
+          phone: form.phone || undefined,
+          source: form.source || undefined,
+          stageId: form.pipelineStageId,
+        }),
+      })
+      if (!res.ok) throw new Error()
+      const created = await res.json()
+      onCreated(created)
+      toast.success('Lead criado')
+      onClose()
+    } catch {
+      toast.error('Erro ao criar lead')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative rounded-2xl w-full max-w-lg shadow-2xl z-10 overflow-y-auto max-h-[90vh]"
+        style={{ background: '#0d0a1f', border: '1px solid rgba(106,17,203,0.3)' }}>
+
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#1e1635]">
+          <h2 className="text-sm font-bold text-white">Novo Lead</h2>
+          <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400">Nome</label>
+              <input value={form.name} onChange={e => set('name', e.target.value)} autoFocus
+                className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb]" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400">Estágio</label>
+              <select value={form.pipelineStageId} onChange={e => set('pipelineStageId', e.target.value)}
+                className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb]">
+                {stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400">Tipo de Cliente</label>
+              <select value={form.source} onChange={e => set('source', e.target.value)}
+                className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb]">
+                <option value="">Selecione...</option>
+                <option value="Cliente Novo">Cliente Novo</option>
+                <option value="Cliente Ativo">Cliente Ativo</option>
+                <option value="Cliente Recuperado">Cliente Recuperado</option>
+                <option value="Visitante">Visitante</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400 flex items-center gap-1"><Mail className="w-3 h-3" /> Email</label>
+              <input type="email" value={form.email} onChange={e => set('email', e.target.value)}
+                className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb]" />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-400 flex items-center gap-1"><Phone className="w-3 h-3" /> Telefone</label>
+            <input type="tel" value={form.phone} onChange={e => set('phone', e.target.value)}
+              className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb]" />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-[#1e1635]">
+          <button onClick={onClose}
+            className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white transition-colors">
+            Cancelar
+          </button>
+          <button onClick={handleCreate} disabled={saving}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg, #6a11cb, #2575fc)' }}>
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+            Criar Lead
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function PipelinePage() {
@@ -586,6 +709,7 @@ export default function PipelinePage() {
 
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [dealPending, setDealPending] = useState<{ lead: Lead; stageId: string } | null>(null)
+  const [showNewLead, setShowNewLead] = useState(false)
   // Estágio do lead antes do drag começar — guardado num ref (não state) porque só serve pra
   // decidir, no drop, se precisa persistir (handleDragOver já vai ter mudado leads[].pipelineStageId
   // ao vivo pra o reordenamento visual acontecer durante o arrasto, não só depois de soltar).
@@ -725,6 +849,10 @@ export default function PipelinePage() {
     setLeads(prev => prev.filter(l => l.id !== id))
   }
 
+  function handleLeadCreated(lead: Lead) {
+    setLeads(prev => [lead, ...prev])
+  }
+
   const activeLead = activeId ? leads.find(l => l.id === activeId) : null
 
   const totalLeads = leads.length
@@ -747,7 +875,6 @@ export default function PipelinePage() {
         <LeadModal
           lead={selectedLead}
           stages={stages}
-          products={products}
           token={token!}
           onClose={() => setSelectedLead(null)}
           onSaved={handleLeadSaved}
@@ -765,6 +892,15 @@ export default function PipelinePage() {
           token={token!}
           onConfirm={handleDealConfirm}
           onCancel={() => setDealPending(null)}
+        />
+      )}
+
+      {showNewLead && (
+        <NewLeadModal
+          stages={stages}
+          token={token!}
+          onClose={() => setShowNewLead(false)}
+          onCreated={handleLeadCreated}
         />
       )}
 
@@ -800,7 +936,9 @@ export default function PipelinePage() {
               )}
             </div>
 
-            <button className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg text-white font-medium hover:opacity-90 transition-opacity"
+            <button onClick={() => setShowNewLead(true)}
+              disabled={stages.length === 0}
+              className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
               style={{ background: 'linear-gradient(135deg, #6a11cb, #2575fc)' }}>
               <Plus className="w-3.5 h-3.5" />
               Novo Lead
