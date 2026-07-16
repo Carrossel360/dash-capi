@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { generateEventId } from '@/lib/utils'
+import { enqueueCapiEvent } from '@/lib/capi-events'
 
 // GET — Meta webhook verification (step 1 of setup)
 export async function GET(
@@ -106,20 +106,12 @@ export async function POST(
         // Immediately queue a Lead CAPI event if we have a ctwa_clid
         // This tells Meta that the ad generated a lead (top-of-funnel signal)
         if (ctwaClid) {
-          await prisma.cAPIEvent.create({
-            data: {
-              workspaceId,
-              leadId: newLead.id,
-              eventName: 'Lead',
-              eventTime: new Date(),
-              eventId: generateEventId(),
-              source: 'whatsapp',
-              status: 'queued',
-              userData: {
-                phone: newLead.phone,
-                ctwaClid,
-              },
-            },
+          await enqueueCapiEvent({
+            workspaceId,
+            leadId: newLead.id,
+            eventName: 'Lead',
+            source: 'whatsapp',
+            userData: { phone: newLead.phone, ctwaClid },
           })
         }
       }

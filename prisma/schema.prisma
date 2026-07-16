@@ -767,6 +767,7 @@ enum CAPITrigger {
   none
   lead
   purchase
+  qualified_lead
 }
 
 enum EventSource {

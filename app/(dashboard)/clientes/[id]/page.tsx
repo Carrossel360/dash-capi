@@ -1085,6 +1085,7 @@ export default function ClienteDetailPage() {
                         className="text-xs bg-[#1e1635] border border-[#2d2550] text-slate-300 rounded-lg px-2 py-1 focus:outline-none flex-shrink-0">
                         <option value="none">Sem evento</option>
                         <option value="lead">Lead event</option>
+                        <option value="qualified_lead">Lead Qualificado</option>
                         <option value="purchase">Purchase event</option>
                       </select>
                       <button onClick={() => deleteStage(stage.id)} className="text-slate-600 hover:text-red-400 transition-colors flex-shrink-0">

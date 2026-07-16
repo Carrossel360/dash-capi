@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import type { Prisma } from '@prisma/client'
+import { enqueueCapiEvent } from '@/lib/capi-events'
 
 function normalizePhone(raw: string): string {
   const digits = raw.replace(/\D/g, '')
@@ -199,6 +200,18 @@ export async function POST(
         select: { id: true },
       })
       lead = newLead
+
+      // Mesmo sinal de topo de funil que o webhook oficial da Cloud API já manda pra Meta —
+      // aqui é o caminho que realmente está ativo (instância UazAPI vinculada ao cliente).
+      if (ctwaClid) {
+        await enqueueCapiEvent({
+          workspaceId,
+          leadId: newLead.id,
+          eventName: 'Lead',
+          source: 'whatsapp',
+          userData: { phone: `+55${phone}`, ctwaClid },
+        })
+      }
     }
   }
 

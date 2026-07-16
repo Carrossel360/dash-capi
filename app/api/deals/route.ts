@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthPayload } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { generateEventId } from '@/lib/utils'
+import { enqueueCapiEvent, stageEventName } from '@/lib/capi-events'
 
 export async function POST(req: NextRequest) {
   const auth = await getAuthPayload(req)
@@ -38,21 +38,18 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  // Fire CAPI event if stage has purchase trigger
-  if (stage.triggerCapiEvent !== 'none') {
-    const eventName = stage.triggerCapiEvent === 'purchase' ? 'Purchase' : 'Lead'
-    await prisma.cAPIEvent.create({
-      data: {
-        workspaceId: auth.workspaceId,
-        leadId,
-        eventName,
-        eventTime: new Date(),
-        eventId: generateEventId(),
-        source: 'crm',
-        status: 'queued',
-        userData: { email: lead.email, phone: lead.phone },
-        customData: { value: Number(value) || 0, currency: 'BRL' },
-      },
+  // Fire CAPI event if stage has a trigger configured
+  const eventName = stageEventName(stage.triggerCapiEvent)
+  if (eventName) {
+    const source = lead.ctwaClid ? 'whatsapp' : 'crm'
+    await enqueueCapiEvent({
+      workspaceId: auth.workspaceId,
+      leadId,
+      eventName,
+      source,
+      userData: { email: lead.email, phone: lead.phone, ctwaClid: lead.ctwaClid ?? undefined },
+      customData: { value: Number(value) || 0, currency: 'BRL' },
+      dedupe: eventName !== 'Purchase',
     })
   }
 
