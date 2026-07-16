@@ -7,7 +7,7 @@ import {
   Loader2, PlayCircle, ExternalLink, Image as ImageIcon, ArrowUpDown, Film, ChevronDown, Repeat,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, History } from 'lucide-react'
 import TopBar from '@/components/TopBar'
 import PeriodSelector, { type Period } from '@/components/PeriodSelector'
 import LockedServiceModal from '@/components/LockedServiceModal'
@@ -541,6 +541,7 @@ export default function TrafegoPagoPage() {
   const [period, setPeriod]   = useState<Period>('this_month')
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null)
   const [syncing, setSyncing] = useState(false)
+  const [backfilling, setBackfilling] = useState(false)
   const [syncNonce, setSyncNonce] = useState(0)
   const [animated, setAnimated] = useState(false)
   const [manualEdit, setManualEdit]       = useState<{ key: string; label: string; value: string } | null>(null)
@@ -658,6 +659,31 @@ export default function TrafegoPagoPage() {
       toast.error(err instanceof Error ? err.message : 'Falha ao sincronizar')
     } finally {
       setSyncing(false)
+    }
+  }
+
+  async function handleBackfill() {
+    if (!token || backfilling) return
+    setBackfilling(true)
+    try {
+      const body = period === 'custom' && customRange
+        ? { period: 'custom', from: customRange.from, to: customRange.to }
+        : { period }
+      const endpoint = tab === 'meta' ? '/api/trafego/meta/backfill' : '/api/trafego/google/backfill'
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao buscar histórico')
+      if (data.result?.error) throw new Error(data.result.error)
+      toast.success('Histórico sincronizado')
+      setSyncNonce(n => n + 1)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao buscar histórico')
+    } finally {
+      setBackfilling(false)
     }
   }
 
@@ -780,6 +806,17 @@ export default function TrafegoPagoPage() {
               <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
               Atualizar agora
             </button>
+            {period !== 'all' && (
+              <button
+                onClick={handleBackfill}
+                disabled={backfilling}
+                title="Refaz a sincronização do período selecionado direto na API — útil quando a conta foi vinculada há pouco tempo e o sync automático (janela de 30 dias) não alcançou dias mais antigos."
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 border border-[#1e1635] hover:text-white hover:border-[#6a11cb] transition-all disabled:opacity-50"
+              >
+                {backfilling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <History className="w-3.5 h-3.5" />}
+                Buscar histórico
+              </button>
+            )}
           </div>
 
           {/* Análise de Criativos (Meta) — logo abaixo das abas, antes das métricas: sessão
@@ -884,7 +921,7 @@ export default function TrafegoPagoPage() {
 
           {!loading && !(isMeta ? metaHasData : googHasData) && (
             <div className="glass rounded-xl px-4 py-3 text-xs text-amber-400 bg-amber-400/5 border border-amber-400/20">
-              Nenhum dado sincronizado para este período ainda. Clique em "Atualizar agora" ou aguarde a próxima sincronização automática.
+              Nenhum dado sincronizado para este período ainda. O sync automático só cobre uma janela móvel de 30 dias — para períodos mais antigos (ex: conta vinculada há pouco tempo), use o botão &quot;Buscar histórico&quot; acima.
             </div>
           )}
 

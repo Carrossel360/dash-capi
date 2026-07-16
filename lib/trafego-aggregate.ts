@@ -99,23 +99,26 @@ export async function buildMetaTrafficSnapshot(workspaceId: string, period: stri
     }
     const impressions = sum('impressoes')
     const reach = sum('alcance')
+    const spend = sum('valorGasto')
+    const clicks = sum('cliques')
     return {
-      spend: sum('valorGasto'),
+      spend,
       impressions,
       reach,
-      // impressões/alcance sobre os totais somados do período, não a média das linhas diárias
-      // (média de razões diárias distorceria o resultado ao agregar múltiplos dias/campanhas).
+      // impressões/alcance/ctr/cpc sobre os totais somados do período, não a média das linhas
+      // diárias (média de razões diárias pesa igual um dia com 1 clique e um dia com 50 —
+      // distorce muito o valor final ao agregar múltiplos dias/campanhas).
       frequency: reach > 0 ? impressions / reach : 0,
-      link_clicks: sum('cliques'),
+      link_clicks: clicks,
       results: totalResults,
       resultsFromForm,
       resultsFromConversas,
-      ctr: rows.length ? sum('ctr') / rows.length : 0,
-      cpc: rows.length ? sum('cpc') / rows.length : 0,
-      cost_per_result: costPer(sum('valorGasto'), totalResults),
+      ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+      cpc: clicks > 0 ? spend / clicks : 0,
+      cost_per_result: costPer(spend, totalResults),
       messaging_conversations_started: sum('conversasIniciadas'),
-      cost_per_conversation: costPer(sum('valorGasto'), sum('conversasIniciadas')),
-      cpm: cpm(sum('valorGasto'), sum('impressoes')),
+      cost_per_conversation: costPer(spend, sum('conversasIniciadas')),
+      cpm: cpm(spend, impressions),
     }
   }
 
@@ -237,17 +240,23 @@ export async function buildGoogleTrafficSnapshot(workspaceId: string, period: st
 
   function buildAggregate(rows: typeof daily) {
     const sum = (key: string) => rows.reduce((acc, r) => acc + (Number((r as Record<string, unknown>)[key]) || 0), 0)
+    const spend = sum('valorGasto')
+    const impressions = sum('impressoes')
+    const clicks = sum('cliques')
+    const conversions = sum('resultados')
     return {
-      spend: sum('valorGasto'),
-      impressions: sum('impressoes'),
-      clicks: sum('cliques'),
-      conversions: sum('resultados'),
-      // GoogleAdsDailyData.ctr guarda a fração crua que a Google Ads API devolve (ex: 0.0523 =
-      // 5.23%), diferente da Meta (que já devolve percentual pronto) — sem o *100 aqui, o card
-      // mostrava um CTR ~100x menor que o real (ex: "0.05%" em vez de "5.23%").
-      ctr: rows.length ? (sum('ctr') / rows.length) * 100 : 0,
-      cpc: rows.length ? sum('cpc') / rows.length : 0,
-      cost_per_conversion: rows.length ? sum('custoResultado') / rows.length : 0,
+      spend,
+      impressions,
+      clicks,
+      conversions,
+      // Derivado dos totais somados, não da média das razões diárias armazenadas por linha —
+      // médias de ctr/cpc/custoResultado por dia pesam igual um dia com 1 clique e um dia com
+      // 50, distorcendo muito o valor final (era a causa da divergência vs. a UI do Google Ads,
+      // que sempre calcula em cima dos totais do período). Também elimina de vez o problema de
+      // unidade do campo `ctr` armazenado (fração crua da API do Google, sem *100).
+      ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+      cpc: clicks > 0 ? spend / clicks : 0,
+      cost_per_conversion: conversions > 0 ? spend / conversions : 0,
       leads_bc: sum('leadesBc'),
     }
   }

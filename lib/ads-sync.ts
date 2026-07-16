@@ -32,12 +32,24 @@ const ACCOUNT_TOTAL_ID = 'account-total'
 
 export async function syncWorkspaceMetaAds(workspace: Workspace): Promise<SyncResult> {
   if (!workspace.metaAdAccountId) return 'skip'
+  const { since, until } = syncWindow()
+  return syncMetaAdsRange(workspace, since, until)
+}
+
+// Mesmo motivo do backfill de Google Ads: se a conta de anúncio só foi vinculada ao workspace
+// bem depois de o cliente já estar ativo, os dias que já tinham "envelhecido" pra fora da
+// janela móvel de 30 dias antes do primeiro sync nunca são cobertos pelo cron normal.
+export async function backfillWorkspaceMetaAds(workspace: Workspace, fromDate: string, toDate: string): Promise<SyncResult> {
+  if (!workspace.metaAdAccountId) return 'skip'
+  return syncMetaAdsRange(workspace, fromDate, toDate)
+}
+
+async function syncMetaAdsRange(workspace: Workspace, since: string, until: string): Promise<SyncResult> {
   const accessToken = process.env.META_ADS_ACCESS_TOKEN
   if (!accessToken) return 'skip'
 
   try {
-    const { since, until } = syncWindow()
-    const rows = await fetchMetaInsights({ adAccountId: workspace.metaAdAccountId, accessToken, since, until })
+    const rows = await fetchMetaInsights({ adAccountId: workspace.metaAdAccountId!, accessToken, since, until })
 
     for (const r of rows) {
       const conversasIniciadas = sumActions(r.actions, MESSAGING_ACTION_TYPES)
@@ -95,12 +107,28 @@ function mccForWorkspace(workspace: Workspace): GoogleAdsMcc {
 
 export async function syncWorkspaceGoogleAds(workspace: Workspace): Promise<SyncResult> {
   if (!workspace.googleAdsCustomerId) return 'skip'
+  const { since, until } = syncWindow()
+  return syncGoogleAdsRange(workspace, since, until)
+}
+
+// Preenche retroativamente um range de datas que o sync horário (janela móvel de
+// SYNC_WINDOW_DAYS) nunca cobriu — mesmo motivo do backfill de Instagram: se a conta de
+// anúncio só foi configurada muito depois de o cliente já estar ativo, os dias mais antigos
+// que "envelheceram" pra fora da janela de 30 dias antes do primeiro sync nunca são
+// alcançados pelo cron normal e ficam faltando pra sempre sem isso. Diferente do Instagram,
+// aqui não há limite de retenção da API pra métricas de custo/clique — o histórico completo
+// da conta está disponível, então o backfill sempre consegue fechar a lacuna de verdade.
+export async function backfillWorkspaceGoogleAds(workspace: Workspace, fromDate: string, toDate: string): Promise<SyncResult> {
+  if (!workspace.googleAdsCustomerId) return 'skip'
+  return syncGoogleAdsRange(workspace, fromDate, toDate)
+}
+
+async function syncGoogleAdsRange(workspace: Workspace, since: string, until: string): Promise<SyncResult> {
   const mcc = mccForWorkspace(workspace)
   if (!isGoogleAdsConfigured(mcc)) return 'skip'
 
   try {
-    const { since, until } = syncWindow()
-    const rows = await fetchGoogleAdsReport({ mcc, customerId: workspace.googleAdsCustomerId, since, until })
+    const rows = await fetchGoogleAdsReport({ mcc, customerId: workspace.googleAdsCustomerId!, since, until })
 
     for (const r of rows) {
       const spend = r.costMicros / 1_000_000
