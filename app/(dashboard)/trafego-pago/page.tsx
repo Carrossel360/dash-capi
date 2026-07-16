@@ -97,6 +97,16 @@ function MetricBreakdown({ items }: { items: { label: string; count: number }[] 
   return <p className="text-[10px] text-slate-600 mt-0.5">{items.map(i => `${i.count} ${i.label}`).join(' + ')}</p>
 }
 
+// CTR do KPI é ponderado pelo total de impressões do período — uma campanha de alto volume
+// e CTR baixo (comum em Performance Max) puxa a média geral pra baixo mesmo quando a campanha
+// de Pesquisa individualmente performa muito melhor. Mostra o CTR de cada campanha à parte
+// pra não parecer que o número geral "está errado".
+function CtrByCampaign({ items }: { items: { name: string; ctr: string }[] }) {
+  const relevant = items.filter(i => i.ctr !== '0%' && i.name.trim() !== '')
+  if (relevant.length < 2) return null
+  return <p className="text-[10px] text-slate-600 mt-0.5">{relevant.map(i => `${i.name}: ${i.ctr}`).join(' · ')}</p>
+}
+
 function ComparisonBadge({ metricKey, pct }: { metricKey: string; pct: number | null | undefined }) {
   if (pct === null || pct === undefined || !isFinite(pct)) return null
   const improved = LOWER_IS_BETTER.has(metricKey) ? pct < 0 : pct > 0
@@ -956,6 +966,9 @@ export default function TrafegoPagoPage() {
                   )}
                   {key === 'conversions' && !isMeta && (
                     <MetricBreakdown items={googConversionsBreakdown} />
+                  )}
+                  {key === 'ctr' && !isMeta && (
+                    <CtrByCampaign items={campaigns.map(c => ({ name: c.name, ctr: c.ctr }))} />
                   )}
                 </div>
               ))}
