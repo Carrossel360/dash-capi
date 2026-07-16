@@ -951,7 +951,6 @@ export default function TrafegoPagoPage() {
                   </div>
                   {manualOverrides[key] !== undefined && (
                     <div className="flex items-center gap-1 mb-1">
-                      <span className="text-[9px] text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded">manual</span>
                       <button onClick={() => removeManualOverride(key)}
                         className="text-slate-600 hover:text-red-400"><X className="w-3 h-3" /></button>
                     </div>
