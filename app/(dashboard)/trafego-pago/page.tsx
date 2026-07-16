@@ -570,6 +570,10 @@ export default function TrafegoPagoPage() {
   const [creativeSort, setCreativeSort] = useState<'spend' | 'ctr' | 'leads'>('spend')
   const [selectedCreative, setSelectedCreative] = useState<Creative | null>(null)
 
+  // Chave de período usada tanto pro fetch dos overrides manuais quanto pra escopar onde eles
+  // se aplicam (editar "CPL" em Julho não deve valer também pra Agosto).
+  const periodKey = period === 'custom' && customRange ? `custom:${customRange.from}:${customRange.to}` : period
+
   useEffect(() => {
     if (!token) return
     if (period === 'custom' && !customRange) return
@@ -595,6 +599,51 @@ export default function TrafegoPagoPage() {
       setGoogHasData(goog.kpis?.hasData ?? true)
     }).finally(() => setLoading(false))
   }, [token, period, customRange, syncNonce])
+
+  // Overrides manuais persistidos por workspace + serviço (meta_ads/google_ads) + período —
+  // recarrega (e substitui o estado local por inteiro) sempre que qualquer um desses muda, pra
+  // não vazar o valor editado de um cliente/aba/período pro próximo que for aberto na mesma sessão.
+  useEffect(() => {
+    if (!token) return
+    if (period === 'custom' && !customRange) return
+    const service = tab === 'meta' ? 'meta_ads' : 'google_ads'
+    fetch(`/api/manual-metrics?service=${service}&period=${encodeURIComponent(periodKey)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : { overrides: {} })
+      .then(d => setManualOverrides(d.overrides ?? {}))
+      .catch(() => setManualOverrides({}))
+  }, [token, tab, periodKey])
+
+  async function saveManualOverride(metricKey: string, value: number) {
+    if (!token) return
+    setManualOverrides(prev => ({ ...prev, [metricKey]: value })) // otimista
+    try {
+      const res = await fetch('/api/manual-metrics', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ service: tab === 'meta' ? 'meta_ads' : 'google_ads', period: periodKey, metricKey, value }),
+      })
+      if (!res.ok) throw new Error()
+    } catch {
+      toast.error('Erro ao salvar edição manual')
+    }
+  }
+
+  async function removeManualOverride(metricKey: string) {
+    if (!token) return
+    setManualOverrides(p => { const n = { ...p }; delete n[metricKey]; return n }) // otimista
+    try {
+      const service = tab === 'meta' ? 'meta_ads' : 'google_ads'
+      const res = await fetch(`/api/manual-metrics?service=${service}&period=${encodeURIComponent(periodKey)}&metricKey=${metricKey}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error()
+    } catch {
+      toast.error('Erro ao remover edição manual')
+    }
+  }
 
   async function handleSyncNow() {
     if (!token || syncing) return
@@ -677,7 +726,7 @@ export default function TrafegoPagoPage() {
           metric={manualEdit.label}
           value={manualEdit.value}
           currency={currency}
-          onSave={(v) => setManualOverrides(prev => ({ ...prev, [manualEdit!.key]: parseFloat(v) || 0 }))}
+          onSave={(v) => saveManualOverride(manualEdit!.key, parseFloat(v) || 0)}
           onClose={() => setManualEdit(null)}
         />
       )}
@@ -856,7 +905,7 @@ export default function TrafegoPagoPage() {
                   {manualOverrides[key] !== undefined && (
                     <div className="flex items-center gap-1 mb-1">
                       <span className="text-[9px] text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded">manual</span>
-                      <button onClick={() => setManualOverrides(p => { const n = { ...p }; delete n[key]; return n })}
+                      <button onClick={() => removeManualOverride(key)}
                         className="text-slate-600 hover:text-red-400"><X className="w-3 h-3" /></button>
                     </div>
                   )}

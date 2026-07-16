@@ -242,7 +242,10 @@ export async function buildGoogleTrafficSnapshot(workspaceId: string, period: st
       impressions: sum('impressoes'),
       clicks: sum('cliques'),
       conversions: sum('resultados'),
-      ctr: rows.length ? sum('ctr') / rows.length : 0,
+      // GoogleAdsDailyData.ctr guarda a fração crua que a Google Ads API devolve (ex: 0.0523 =
+      // 5.23%), diferente da Meta (que já devolve percentual pronto) — sem o *100 aqui, o card
+      // mostrava um CTR ~100x menor que o real (ex: "0.05%" em vez de "5.23%").
+      ctr: rows.length ? (sum('ctr') / rows.length) * 100 : 0,
       cpc: rows.length ? sum('cpc') / rows.length : 0,
       cost_per_conversion: rows.length ? sum('custoResultado') / rows.length : 0,
       leads_bc: sum('leadesBc'),

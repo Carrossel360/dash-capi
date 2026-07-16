@@ -188,6 +188,53 @@ export default function SocialMediaPage() {
 
   useEffect(() => { loadSocialData() }, [token, period, customRange])
 
+  // Chave de período usada tanto pro fetch dos overrides manuais quanto pra escopar onde eles
+  // se aplicam (editar "Seguidores" em Julho não deve valer também pra Agosto).
+  const periodKey = period === 'custom' && customRange ? `custom:${customRange.from}:${customRange.to}` : period
+
+  // Overrides manuais persistidos por workspace + período — recarrega (substituindo o estado
+  // local por inteiro) sempre que o token/período muda, pra não vazar o valor editado de um
+  // cliente pro próximo que for aberto na mesma sessão (era o bug: "muda 1 e muda em todos").
+  useEffect(() => {
+    if (!token) return
+    if (period === 'custom' && !customRange) return
+    fetch(`/api/manual-metrics?service=social_media&period=${encodeURIComponent(periodKey)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : { overrides: {} })
+      .then(d => setManualOverrides(d.overrides ?? {}))
+      .catch(() => setManualOverrides({}))
+  }, [token, periodKey])
+
+  async function saveManualOverride(metricKey: string, val: number) {
+    if (!token) return
+    setManualOverrides(prev => ({ ...prev, [metricKey]: val })) // otimista
+    try {
+      const res = await fetch('/api/manual-metrics', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ service: 'social_media', period: periodKey, metricKey, value: val }),
+      })
+      if (!res.ok) throw new Error()
+    } catch {
+      toast.error('Erro ao salvar edição manual')
+    }
+  }
+
+  async function removeManualOverride(metricKey: string) {
+    if (!token) return
+    setManualOverrides(p => { const n = { ...p }; delete n[metricKey]; return n }) // otimista
+    try {
+      const res = await fetch(`/api/manual-metrics?service=social_media&period=${encodeURIComponent(periodKey)}&metricKey=${metricKey}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error()
+    } catch {
+      toast.error('Erro ao remover edição manual')
+    }
+  }
+
   async function handleBackfill() {
     if (!token) return
     setBackfilling(true)
@@ -245,7 +292,7 @@ export default function SocialMediaPage() {
         <ManualEditModal
           metric={manualEdit.label}
           value={manualEdit.value}
-          onSave={(v) => setManualOverrides(prev => ({ ...prev, [manualEdit!.key]: parseFloat(v) || 0 }))}
+          onSave={(v) => saveManualOverride(manualEdit!.key, parseFloat(v) || 0)}
           onClose={() => setManualEdit(null)}
         />
       )}
@@ -316,7 +363,7 @@ export default function SocialMediaPage() {
                     {manualOverrides[key] !== undefined && (
                       <div className="flex items-center gap-1 mb-1">
                         <span className="text-[9px] text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded">manual</span>
-                        <button onClick={() => setManualOverrides(p => { const n = { ...p }; delete n[key]; return n })}
+                        <button onClick={() => removeManualOverride(key)}
                           className="text-slate-600 hover:text-red-400"><X className="w-3 h-3" /></button>
                       </div>
                     )}
