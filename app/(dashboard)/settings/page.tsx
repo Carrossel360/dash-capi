@@ -10,12 +10,6 @@ import TopBar from '@/components/TopBar'
 import { useAuthStore } from '@/lib/store/auth'
 import { OPENAI_TEXT_MODELS, ANTHROPIC_TEXT_MODELS } from '@/lib/ai-models'
 
-interface Stage {
-  id: string; name: string; color: string; order: number; triggerCapiEvent: string
-}
-interface ProductRow {
-  id: string; name: string; price: number; currency: string; description: string
-}
 interface Member {
   id: string; role: string
   user: { id: string; name: string; email: string }
@@ -36,11 +30,8 @@ interface WorkspaceData {
   telegramChatId: string | null
   openaiApiKey: string | null
   anthropicApiKey: string | null
-  stages: Stage[]
   members: Member[]
 }
-
-const COLORS = ['#6a11cb','#2575fc','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899']
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Admin', manager: 'Gerente', attendant: 'Atendente', viewer: 'Visualizador',
@@ -105,21 +96,20 @@ export default function SettingsPage() {
   // cliente final nunca tem membership no workspace isAgency:true.
   const isAgencyStaff = accessibleWorkspaces.some(w => w.isAgency)
 
-  // Meta CAPI and Contas only visible inside agency's own workspace
+  // Meta CAPI and Contas only visible inside agency's own workspace. Pipeline/Produtos/Rastreio
+  // de cada cliente ficam em Clientes → [cliente] → Configurar (CRM/Produtos/Rastreio) — aqui só
+  // sobram configurações da própria agência, já que esta tela só é acessível com Carrossel 360 selecionado.
   const ALL_TABS = [
     { id: 'meta',       label: 'Meta CAPI',          agencyOnly: true,  staffOnly: false },
     { id: 'contas',     label: 'Contas de Anúncios',  agencyOnly: true,  staffOnly: false },
-    { id: 'pipeline',   label: 'Pipeline',             agencyOnly: false, staffOnly: false },
-    { id: 'produtos',   label: 'Produtos',              agencyOnly: false, staffOnly: false },
     { id: 'equipe',     label: 'Equipe',               agencyOnly: false, staffOnly: false },
     { id: 'whatsapp',   label: 'WhatsApp',             agencyOnly: false, staffOnly: false },
-    { id: 'rastreio',   label: 'Rastreio',              agencyOnly: false, staffOnly: false },
     { id: 'alertas',    label: 'Alertas',               agencyOnly: true,  staffOnly: false },
     { id: 'relatorios-ia', label: 'Relatórios com IA',  agencyOnly: false, staffOnly: true },
   ]
   const tabs = ALL_TABS.filter(t => (!t.agencyOnly || isAgency) && (!t.staffOnly || isAgencyStaff))
 
-  const [tab, setTab] = useState(() => isAgency ? 'meta' : 'pipeline')
+  const [tab, setTab] = useState(() => isAgency ? 'meta' : 'equipe')
   const [ws, setWs] = useState<WorkspaceData | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -132,12 +122,6 @@ export default function SettingsPage() {
   const [adAccountId,      setAdAccountId]      = useState('')
   const [igAccountId,      setIgAccountId]      = useState('')
   const [googleCustomerId, setGoogleCustomerId] = useState('')
-
-  // Pipeline stages
-  const [stages, setStages] = useState<Stage[]>([])
-
-  // Produtos
-  const [products, setProducts] = useState<ProductRow[]>([])
 
   // WhatsApp — admin fields
   const [uazapiUrl,          setUazapiUrl]          = useState('')
@@ -179,14 +163,6 @@ export default function SettingsPage() {
   const [newPw, setNewPw] = useState('')
   const [savingPw, setSavingPw] = useState(false)
 
-  // Rastreio (frases de atribuição pro webhook do WhatsApp)
-  const [phrases, setPhrases] = useState<{ id: string; phrase: string; source: string; campaign: string | null }[]>([])
-  const [loadingPhrases, setLoadingPhrases] = useState(false)
-  const [newPhrase, setNewPhrase] = useState('')
-  const [newSource, setNewSource] = useState('')
-  const [newCampaign, setNewCampaign] = useState('')
-  const [addingPhrase, setAddingPhrase] = useState(false)
-
   const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
 
   const load = useCallback(async () => {
@@ -202,7 +178,6 @@ export default function SettingsPage() {
       setAdAccountId(data.metaAdAccountId ?? '')
       setIgAccountId(data.instagramAccountId ?? '')
       setGoogleCustomerId(data.googleAdsCustomerId ?? '')
-      setStages(data.stages ?? [])
       setUazapiUrl(data.uazapiUrl ?? '')
       setUazapiAdminToken(data.uazapiAdminToken ?? '')
       setUazapiInstanceName(data.uazapiInstanceName ?? '')
@@ -212,28 +187,11 @@ export default function SettingsPage() {
       setTelegramChatId(data.telegramChatId ?? '')
       setOpenaiApiKey(data.openaiApiKey ?? '')
       setAnthropicApiKey(data.anthropicApiKey ?? '')
-
-      const prodRes = await fetch('/api/products', { headers: { Authorization: `Bearer ${token}` } })
-      if (prodRes.ok) {
-        const prodData = await prodRes.json()
-        setProducts(prodData.products ?? [])
-      }
     } catch { toast.error('Erro ao carregar configurações') }
     finally { setLoading(false) }
   }, [token])
 
   useEffect(() => { load() }, [load])
-
-  const loadPhrases = useCallback(async () => {
-    if (!token) return
-    setLoadingPhrases(true)
-    try {
-      const res = await fetch('/api/workspace/tracking-phrases', { headers: { Authorization: `Bearer ${token}` } })
-      if (res.ok) { const d = await res.json(); setPhrases(d.phrases ?? []) }
-    } finally { setLoadingPhrases(false) }
-  }, [token])
-
-  useEffect(() => { if (tab === 'rastreio') loadPhrases() }, [tab, loadPhrases])
 
   const loadReportConfig = useCallback(async () => {
     if (!token) return
@@ -254,30 +212,6 @@ export default function SettingsPage() {
   }, [token])
 
   useEffect(() => { if (tab === 'relatorios-ia') loadReportConfig() }, [tab, loadReportConfig])
-
-  async function addPhrase() {
-    if (!newPhrase.trim() || !newSource.trim()) { toast.error('Frase e origem são obrigatórios'); return }
-    setAddingPhrase(true)
-    try {
-      const res = await fetch('/api/workspace/tracking-phrases', {
-        method: 'POST', headers: h,
-        body: JSON.stringify({ phrase: newPhrase.trim(), source: newSource.trim(), campaign: newCampaign.trim() || undefined }),
-      })
-      if (res.ok) {
-        toast.success('Frase cadastrada')
-        setNewPhrase(''); setNewSource(''); setNewCampaign('')
-        loadPhrases()
-      } else {
-        const d = await res.json().catch(() => ({}))
-        toast.error(d.error ?? 'Erro ao cadastrar')
-      }
-    } finally { setAddingPhrase(false) }
-  }
-
-  async function deletePhrase(id: string) {
-    const res = await fetch(`/api/workspace/tracking-phrases/${id}`, { method: 'DELETE', headers: h })
-    if (res.ok) { toast.success('Removida'); loadPhrases() } else toast.error('Erro ao remover')
-  }
 
   // Auto-check WhatsApp status once instance is loaded
   useEffect(() => {
@@ -344,66 +278,6 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error()
       toast.success('Configuração salva!')
     } catch { toast.error('Erro ao salvar') } finally { setSaving(false) }
-  }
-
-  async function savePipeline() {
-    setSaving(true)
-    try {
-      await Promise.all(stages.map((s, i) => {
-        if (s.id.startsWith('new-')) {
-          return fetch('/api/stages', {
-            method: 'POST', headers: h,
-            body: JSON.stringify({ name: s.name, color: s.color, order: i, triggerCapiEvent: s.triggerCapiEvent }),
-          })
-        }
-        return fetch(`/api/stages/${s.id}`, {
-          method: 'PATCH', headers: h,
-          body: JSON.stringify({ name: s.name, color: s.color, order: i, triggerCapiEvent: s.triggerCapiEvent }),
-        })
-      }))
-      toast.success('Pipeline salvo!')
-      load()
-    } catch { toast.error('Erro ao salvar pipeline') } finally { setSaving(false) }
-  }
-
-  async function deleteStage(id: string) {
-    if (id.startsWith('new-')) { setStages(p => p.filter(s => s.id !== id)); return }
-    try {
-      const res = await fetch(`/api/stages/${id}`, { method: 'DELETE', headers: h })
-      if (!res.ok) throw new Error()
-      setStages(p => p.filter(s => s.id !== id))
-      toast.success('Estágio removido')
-    } catch { toast.error('Não foi possível remover — existem leads neste estágio') }
-  }
-
-  async function saveProducts() {
-    setSaving(true)
-    try {
-      await Promise.all(products.map(p => {
-        if (p.id.startsWith('new-')) {
-          return fetch('/api/products', {
-            method: 'POST', headers: h,
-            body: JSON.stringify({ name: p.name, price: p.price, currency: p.currency, description: p.description }),
-          })
-        }
-        return fetch(`/api/products/${p.id}`, {
-          method: 'PATCH', headers: h,
-          body: JSON.stringify({ name: p.name, price: p.price, currency: p.currency, description: p.description }),
-        })
-      }))
-      toast.success('Produtos salvos!')
-      load()
-    } catch { toast.error('Erro ao salvar produtos') } finally { setSaving(false) }
-  }
-
-  async function deleteProduct(id: string) {
-    if (id.startsWith('new-')) { setProducts(p => p.filter(x => x.id !== id)); return }
-    try {
-      const res = await fetch(`/api/products/${id}`, { method: 'DELETE', headers: h })
-      if (!res.ok) throw new Error()
-      setProducts(p => p.filter(x => x.id !== id))
-      toast.success('Produto removido')
-    } catch { toast.error('Erro ao remover produto') }
   }
 
   async function openAddMember() {
@@ -723,142 +597,6 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* ── Pipeline ── */}
-          {tab === 'pipeline' && (
-            <div className="glass rounded-2xl p-5 space-y-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold text-white">Estágios do Pipeline</h2>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {canManage ? 'Configure estágios e gatilhos de eventos CAPI.' : 'Estágios do seu pipeline de vendas.'}
-                  </p>
-                </div>
-                {canManage && (
-                  <button
-                    onClick={() => setStages(prev => [...prev, {
-                      id: `new-${Date.now()}`, name: 'Novo Estágio',
-                      color: '#6a11cb', order: prev.length, triggerCapiEvent: 'none',
-                    }])}
-                    className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-brand text-white font-medium hover:opacity-90">
-                    <Plus className="w-3.5 h-3.5" /> Adicionar
-                  </button>
-                )}
-              </div>
-              <div className="space-y-2">
-                {stages.map(stage => (
-                  <div key={stage.id} className="flex items-center gap-3 p-3 bg-[#0f0b1e] rounded-xl border border-[#1e1635]">
-                    {canManage && (
-                      <div className="flex gap-1 flex-shrink-0 flex-wrap max-w-[100px]">
-                        {COLORS.map(c => (
-                          <button key={c}
-                            onClick={() => setStages(prev => prev.map(s => s.id === stage.id ? { ...s, color: c } : s))}
-                            className={`w-3.5 h-3.5 rounded-full transition-all ${stage.color === c ? 'ring-2 ring-white ring-offset-1 ring-offset-[#0f0b1e] scale-110' : 'opacity-50 hover:opacity-100'}`}
-                            style={{ background: c }} />
-                        ))}
-                      </div>
-                    )}
-                    {!canManage && (
-                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: stage.color }} />
-                    )}
-                    <input
-                      value={stage.name}
-                      readOnly={!canManage}
-                      onChange={e => canManage && setStages(prev => prev.map(s => s.id === stage.id ? { ...s, name: e.target.value } : s))}
-                      className="flex-1 text-sm bg-transparent text-white focus:outline-none border-b border-transparent focus:border-[#6a11cb] transition-colors min-w-0" />
-                    {canManage && (
-                      <>
-                        <select
-                          value={stage.triggerCapiEvent}
-                          onChange={e => setStages(prev => prev.map(s => s.id === stage.id ? { ...s, triggerCapiEvent: e.target.value } : s))}
-                          className="text-xs bg-[#1e1635] border border-[#2d2550] text-slate-300 rounded-lg px-2 py-1 focus:outline-none flex-shrink-0">
-                          <option value="none">Sem evento</option>
-                          <option value="lead">Lead event</option>
-                          <option value="purchase">Purchase event</option>
-                        </select>
-                        <button onClick={() => deleteStage(stage.id)} className="text-slate-600 hover:text-red-400 transition-colors flex-shrink-0">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                ))}
-                {stages.length === 0 && (
-                  <p className="text-xs text-slate-500 text-center py-6">Nenhum estágio configurado.</p>
-                )}
-              </div>
-              {canManage && <SaveBtn onClick={savePipeline} loading={saving} />}
-            </div>
-          )}
-
-          {/* ── Produtos ── */}
-          {tab === 'produtos' && (
-            <div className="glass rounded-2xl p-5 space-y-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold text-white">Produtos / Serviços</h2>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {canManage ? 'Produtos vendidos e seus tickets — usados no popup de venda do Pipeline.' : 'Produtos e serviços vendidos.'}
-                  </p>
-                </div>
-                {canManage && (
-                  <button
-                    onClick={() => setProducts(prev => [...prev, {
-                      id: `new-${Date.now()}`, name: 'Novo Produto',
-                      price: 0, currency: 'BRL', description: '',
-                    }])}
-                    className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-brand text-white font-medium hover:opacity-90">
-                    <Plus className="w-3.5 h-3.5" /> Adicionar
-                  </button>
-                )}
-              </div>
-              <div className="space-y-2">
-                {products.map(product => (
-                  <div key={product.id} className="flex items-center gap-2 p-3 bg-[#0f0b1e] rounded-xl border border-[#1e1635]">
-                    <input
-                      value={product.name}
-                      readOnly={!canManage}
-                      placeholder="Nome do produto"
-                      onChange={e => canManage && setProducts(prev => prev.map(p => p.id === product.id ? { ...p, name: e.target.value } : p))}
-                      className="flex-1 text-sm bg-transparent text-white placeholder-slate-600 focus:outline-none border-b border-transparent focus:border-[#6a11cb] transition-colors min-w-0" />
-                    <input
-                      value={product.description}
-                      readOnly={!canManage}
-                      placeholder="Descrição (opcional)"
-                      onChange={e => canManage && setProducts(prev => prev.map(p => p.id === product.id ? { ...p, description: e.target.value } : p))}
-                      className="flex-1 text-xs bg-transparent text-slate-400 placeholder-slate-600 focus:outline-none border-b border-transparent focus:border-[#6a11cb] transition-colors min-w-0" />
-                    {canManage && (
-                      <>
-                        <select
-                          value={product.currency}
-                          onChange={e => setProducts(prev => prev.map(p => p.id === product.id ? { ...p, currency: e.target.value } : p))}
-                          className="text-xs bg-[#1e1635] border border-[#2d2550] text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none flex-shrink-0">
-                          <option value="BRL">R$</option>
-                          <option value="USD">US$</option>
-                        </select>
-                        <input
-                          type="number"
-                          value={product.price}
-                          onChange={e => setProducts(prev => prev.map(p => p.id === product.id ? { ...p, price: parseFloat(e.target.value) || 0 } : p))}
-                          placeholder="0,00"
-                          className="w-24 text-sm bg-[#1e1635] border border-[#2d2550] text-white rounded-lg px-2 py-1.5 focus:outline-none flex-shrink-0" />
-                        <button onClick={() => deleteProduct(product.id)} className="text-slate-600 hover:text-red-400 transition-colors flex-shrink-0">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </>
-                    )}
-                    {!canManage && (
-                      <span className="text-sm text-white flex-shrink-0">{product.currency === 'USD' ? 'US$' : 'R$'} {product.price.toLocaleString('pt-BR')}</span>
-                    )}
-                  </div>
-                ))}
-                {products.length === 0 && (
-                  <p className="text-xs text-slate-500 text-center py-6">Nenhum produto configurado.</p>
-                )}
-              </div>
-              {canManage && <SaveBtn onClick={saveProducts} loading={saving} />}
-            </div>
-          )}
-
           {/* ── Equipe ── */}
           {tab === 'equipe' && (
             <div className="glass rounded-2xl p-5 space-y-5">
@@ -1153,81 +891,6 @@ export default function SettingsPage() {
                     </button>
                   </div>
                   <p className="text-[11px] text-slate-600">Events a ativar: <code className="text-slate-400">onmessage</code></p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Rastreio ── */}
-          {tab === 'rastreio' && (
-            <div className="glass rounded-2xl p-5 space-y-5">
-              <div>
-                <h2 className="text-sm font-semibold text-white">Frases de Rastreio</h2>
-                <p className="text-xs text-slate-500 mt-1">
-                  Quando um contato novo manda uma mensagem no WhatsApp, o sistema tenta identificar a origem em duas etapas:
-                  primeiro pelo contexto real de anúncio da Meta (automático, quando existe), e se não tiver, casa o texto da
-                  mensagem contra as frases abaixo. Cadastre a frase aqui e cole o link gerado no botão de WhatsApp da página
-                  (Google Ads, site, bio do Instagram) — ou registre a mesma frase usada num anúncio de mensagem da Meta, como
-                  redundância caso o parâmetro de anúncio não chegue.
-                </p>
-              </div>
-
-              {!whatsappNumber && (
-                <div className="glass rounded-xl px-4 py-3 text-xs text-amber-400 bg-amber-400/5 border border-amber-400/20">
-                  Configure o número do WhatsApp na aba <button onClick={() => setTab('whatsapp')} className="underline font-semibold">WhatsApp</button> pra gerar os links automaticamente.
-                </div>
-              )}
-
-              {canManage && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  <TextInput value={newPhrase} onChange={setNewPhrase} placeholder="Frase (ex: Vim do site)" />
-                  <TextInput value={newSource} onChange={setNewSource} placeholder="Origem (ex: Google, Site)" />
-                  <div className="flex gap-2">
-                    <TextInput value={newCampaign} onChange={setNewCampaign} placeholder="Campanha (opcional)" />
-                    <button onClick={addPhrase} disabled={addingPhrase}
-                      className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2.5 rounded-lg gradient-brand text-white text-xs font-semibold hover:opacity-90 disabled:opacity-50">
-                      {addingPhrase ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {loadingPhrases ? (
-                <div className="flex justify-center py-6"><Loader2 className="w-4 h-4 text-slate-500 animate-spin" /></div>
-              ) : (
-                <div className="space-y-2">
-                  {phrases.map(p => {
-                    const waLink = whatsappNumber
-                      ? `https://wa.me/${whatsappNumber.replace(/\D/g, '')}?text=${encodeURIComponent(p.phrase)}`
-                      : null
-                    return (
-                      <div key={p.id} className="p-3 bg-[#0f0b1e] rounded-xl border border-[#1e1635] space-y-2">
-                        <div className="flex items-center gap-3">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium text-white truncate">&ldquo;{p.phrase}&rdquo;</p>
-                            <p className="text-[10px] text-slate-500 mt-0.5">{p.source}{p.campaign ? ` · ${p.campaign}` : ''}</p>
-                          </div>
-                          {canManage && (
-                            <button onClick={() => deletePhrase(p.id)} className="text-slate-600 hover:text-red-400 transition-colors flex-shrink-0">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                        {waLink && (
-                          <div className="flex items-center gap-2">
-                            <code className="flex-1 text-[11px] text-green-300 bg-[#0a0818] border border-[#1e1635] rounded-lg px-2.5 py-1.5 font-mono truncate">{waLink}</code>
-                            <button onClick={() => { navigator.clipboard.writeText(waLink); toast.success('Link copiado!') }}
-                              className="text-[11px] text-slate-500 hover:text-white border border-[#2d2550] px-2 py-1.5 rounded-lg hover:border-[#6a11cb]/50 transition-all flex-shrink-0">
-                              Copiar
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                  {phrases.length === 0 && (
-                    <p className="text-xs text-slate-500 text-center py-6">Nenhuma frase cadastrada ainda.</p>
-                  )}
                 </div>
               )}
             </div>

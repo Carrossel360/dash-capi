@@ -5,7 +5,7 @@ import {
   ArrowLeft, Save, Eye, EyeOff, Loader2, CheckCircle, Copy, Users, Zap, BarChart2,
   TrendingUp, Share2, MapPin, Star, DollarSign, MessageCircle, Sparkles, Globe,
   UserPlus, Trash2, ChevronDown, Key, Smartphone, Wifi, WifiOff, RefreshCw, Link2, Search,
-  Webhook, AlertTriangle,
+  Webhook, AlertTriangle, Plus,
 } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
@@ -17,9 +17,14 @@ const TABS = [
   { id: 'metricas', label: 'Métricas' },
   { id: 'meta', label: 'Meta CAPI' },
   { id: 'google', label: 'Google Ads' },
+  { id: 'crm', label: 'CRM' },
+  { id: 'produtos', label: 'Produtos' },
+  { id: 'rastreio', label: 'Rastreio' },
   { id: 'whatsapp', label: 'WhatsApp' },
   { id: 'acesso', label: 'Acesso' },
 ]
+
+const STAGE_COLORS = ['#6a11cb','#2575fc','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899']
 
 const SEGMENTS = ['Estética', 'Jurídico', 'Academia', 'Imobiliário', 'Saúde', 'Educação', 'E-commerce', 'Outros']
 const PLANS = [
@@ -87,17 +92,21 @@ const GOOGLE_METRICS = [
   { key: 'search_impression_share', label: 'Parcela de Impr. de Pesquisa' },
 ]
 
+interface Stage { id: string; name: string; color: string; order: number; triggerCapiEvent: string }
+interface ProductRow { id: string; name: string; price: number; currency: string; description: string }
+
 interface ClientDetail {
   id: string; name: string; slug: string; segment: string | null
   plan: string; metaPixelId: string | null; metaAccessToken: string | null
   metaAdAccountId: string | null
   googleAdsCustomerId: string | null; createdAt: string
   currency: string
+  whatsappNumber: string | null
   svcMetaAds: boolean; svcGoogleAds: boolean; svcSocialMedia: boolean
   svcGoogleBusiness: boolean; svcGoogleLocal: boolean; svcContentStudio: boolean; svcSiteGenerator: boolean
   metaVisibleMetrics: string[]; googleVisibleMetrics: string[]; funnelMetrics: string[]; googleFunnelMetrics: string[]
   members: { id: string; role: string; user: { id: string; name: string; email: string } }[]
-  stages: { id: string; name: string; color: string; order: number; triggerCapiEvent: string }[]
+  stages: Stage[]
   _count: { leads: number; capiEvents: number; campaigns: number }
 }
 
@@ -162,6 +171,26 @@ export default function ClienteDetailPage() {
   const [funnelSel, setFunnelSel] = useState<string[]>([])
   const [googleFunnelSel, setGoogleFunnelSel] = useState<string[]>([])
 
+  // CRM — estágios do pipeline
+  const [stages, setStages] = useState<Stage[]>([])
+  const [savingStages, setSavingStages] = useState(false)
+
+  // Produtos
+  const [products, setProducts] = useState<ProductRow[]>([])
+  const [productsLoaded, setProductsLoaded] = useState(false)
+  const [savingProducts, setSavingProducts] = useState(false)
+
+  // Rastreio — frases de atribuição + número do WhatsApp (usado pra gerar o link wa.me)
+  const [whatsappNumber, setWhatsappNumber] = useState('')
+  const [savingWhatsappNumber, setSavingWhatsappNumber] = useState(false)
+  const [phrases, setPhrases] = useState<{ id: string; phrase: string; source: string; campaign: string | null }[]>([])
+  const [phrasesLoaded, setPhrasesLoaded] = useState(false)
+  const [loadingPhrases, setLoadingPhrases] = useState(false)
+  const [newPhrase, setNewPhrase] = useState('')
+  const [newSource, setNewSource] = useState('')
+  const [newCampaign, setNewCampaign] = useState('')
+  const [addingPhrase, setAddingPhrase] = useState(false)
+
   useEffect(() => {
     fetch(`/api/clients/${clientId}`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
@@ -175,6 +204,8 @@ export default function ClienteDetailPage() {
         setMetaPixelId(w.metaPixelId ?? '')
         setMetaAdAccountId(w.metaAdAccountId ?? '')
         setGoogleAdsCustomerId(w.googleAdsCustomerId ?? '')
+        setWhatsappNumber(w.whatsappNumber ?? '')
+        setStages(w.stages ?? [])
         setServices({
           svcMetaAds: w.svcMetaAds ?? false,
           svcGoogleAds: w.svcGoogleAds ?? false,
@@ -278,7 +309,130 @@ export default function ClienteDetailPage() {
         })
         .finally(() => { setAdAccountsLoaded(true); setAdAccountsLoading(false) })
     }
+    if (tab === 'produtos' && !productsLoaded) {
+      fetch(`/api/clients/${clientId}/products`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json())
+        .then(d => setProducts(d.products ?? []))
+        .finally(() => setProductsLoaded(true))
+    }
+    if (tab === 'rastreio' && !phrasesLoaded) {
+      loadPhrases()
+    }
   }, [tab])
+
+  function loadPhrases() {
+    setLoadingPhrases(true)
+    fetch(`/api/clients/${clientId}/tracking-phrases`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => setPhrases(d.phrases ?? []))
+      .finally(() => { setLoadingPhrases(false); setPhrasesLoaded(true) })
+  }
+
+  async function addPhrase() {
+    if (!newPhrase.trim() || !newSource.trim()) { toast.error('Frase e origem são obrigatórios'); return }
+    setAddingPhrase(true)
+    try {
+      const res = await fetch(`/api/clients/${clientId}/tracking-phrases`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ phrase: newPhrase.trim(), source: newSource.trim(), campaign: newCampaign.trim() || undefined }),
+      })
+      if (res.ok) {
+        toast.success('Frase cadastrada')
+        setNewPhrase(''); setNewSource(''); setNewCampaign('')
+        loadPhrases()
+      } else {
+        const d = await res.json().catch(() => ({}))
+        toast.error(d.error ?? 'Erro ao cadastrar')
+      }
+    } finally { setAddingPhrase(false) }
+  }
+
+  async function deletePhrase(id: string) {
+    const res = await fetch(`/api/clients/${clientId}/tracking-phrases/${id}`, {
+      method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+    })
+    if (res.ok) { toast.success('Removida'); loadPhrases() } else toast.error('Erro ao remover')
+  }
+
+  async function saveWhatsappNumber() {
+    setSavingWhatsappNumber(true)
+    try {
+      const res = await fetch(`/api/clients/${clientId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ whatsappNumber }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success('Número salvo!')
+    } catch { toast.error('Erro ao salvar') } finally { setSavingWhatsappNumber(false) }
+  }
+
+  async function saveStages() {
+    setSavingStages(true)
+    try {
+      await Promise.all(stages.map((s, i) => {
+        if (s.id.startsWith('new-')) {
+          return fetch(`/api/clients/${clientId}/stages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ name: s.name, color: s.color, order: i, triggerCapiEvent: s.triggerCapiEvent }),
+          })
+        }
+        return fetch(`/api/clients/${clientId}/stages/${s.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ name: s.name, color: s.color, order: i, triggerCapiEvent: s.triggerCapiEvent }),
+        })
+      }))
+      toast.success('CRM salvo!')
+      const res = await fetch(`/api/clients/${clientId}/stages`, { headers: { Authorization: `Bearer ${token}` } })
+      if (res.ok) setStages(await res.json())
+    } catch { toast.error('Erro ao salvar estágios') } finally { setSavingStages(false) }
+  }
+
+  async function deleteStage(id: string) {
+    if (id.startsWith('new-')) { setStages(p => p.filter(s => s.id !== id)); return }
+    try {
+      const res = await fetch(`/api/clients/${clientId}/stages/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error()
+      setStages(p => p.filter(s => s.id !== id))
+      toast.success('Estágio removido')
+    } catch { toast.error('Não foi possível remover — existem leads neste estágio') }
+  }
+
+  async function saveProductsList() {
+    setSavingProducts(true)
+    try {
+      await Promise.all(products.map(p => {
+        if (p.id.startsWith('new-')) {
+          return fetch(`/api/clients/${clientId}/products`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ name: p.name, price: p.price, currency: p.currency, description: p.description }),
+          })
+        }
+        return fetch(`/api/clients/${clientId}/products/${p.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ name: p.name, price: p.price, currency: p.currency, description: p.description }),
+        })
+      }))
+      toast.success('Produtos salvos!')
+      const res = await fetch(`/api/clients/${clientId}/products`, { headers: { Authorization: `Bearer ${token}` } })
+      if (res.ok) setProducts((await res.json()).products ?? [])
+    } catch { toast.error('Erro ao salvar produtos') } finally { setSavingProducts(false) }
+  }
+
+  async function deleteProductRow(id: string) {
+    if (id.startsWith('new-')) { setProducts(p => p.filter(x => x.id !== id)); return }
+    try {
+      const res = await fetch(`/api/clients/${clientId}/products/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error()
+      setProducts(p => p.filter(x => x.id !== id))
+      toast.success('Produto removido')
+    } catch { toast.error('Erro ao remover produto') }
+  }
 
   async function handleLinkInstance() {
     const inst = instances.find(i => i.name === selectedInstance || i.token === selectedInstance)
@@ -889,6 +1043,215 @@ export default function ClienteDetailPage() {
                   </div>
                 </div>
                 <SaveBtn />
+              </div>
+            )}
+
+            {/* ─── CRM (estágios do pipeline) ─── */}
+            {tab === 'crm' && (
+              <div className="glass rounded-2xl p-5 space-y-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-sm font-semibold text-white">Estágios do Pipeline</h2>
+                    <p className="text-xs text-slate-500 mt-1">Configure os estágios e gatilhos de eventos CAPI do CRM deste cliente.</p>
+                  </div>
+                  <button
+                    onClick={() => setStages(prev => [...prev, {
+                      id: `new-${Date.now()}`, name: 'Novo Estágio',
+                      color: '#6a11cb', order: prev.length, triggerCapiEvent: 'none',
+                    }])}
+                    className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg text-white font-medium hover:opacity-90 transition-all"
+                    style={{ background: '#6a11cb' }}>
+                    <Plus className="w-3.5 h-3.5" /> Adicionar
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {stages.map(stage => (
+                    <div key={stage.id} className="flex items-center gap-3 p-3 bg-[#0f0b1e] rounded-xl border border-[#1e1635]">
+                      <div className="flex gap-1 flex-shrink-0 flex-wrap max-w-[100px]">
+                        {STAGE_COLORS.map(c => (
+                          <button key={c}
+                            onClick={() => setStages(prev => prev.map(s => s.id === stage.id ? { ...s, color: c } : s))}
+                            className={`w-3.5 h-3.5 rounded-full transition-all ${stage.color === c ? 'ring-2 ring-white ring-offset-1 ring-offset-[#0f0b1e] scale-110' : 'opacity-50 hover:opacity-100'}`}
+                            style={{ background: c }} />
+                        ))}
+                      </div>
+                      <input
+                        value={stage.name}
+                        onChange={e => setStages(prev => prev.map(s => s.id === stage.id ? { ...s, name: e.target.value } : s))}
+                        className="flex-1 text-sm bg-transparent text-white focus:outline-none border-b border-transparent focus:border-[#6a11cb] transition-colors min-w-0" />
+                      <select
+                        value={stage.triggerCapiEvent}
+                        onChange={e => setStages(prev => prev.map(s => s.id === stage.id ? { ...s, triggerCapiEvent: e.target.value } : s))}
+                        className="text-xs bg-[#1e1635] border border-[#2d2550] text-slate-300 rounded-lg px-2 py-1 focus:outline-none flex-shrink-0">
+                        <option value="none">Sem evento</option>
+                        <option value="lead">Lead event</option>
+                        <option value="purchase">Purchase event</option>
+                      </select>
+                      <button onClick={() => deleteStage(stage.id)} className="text-slate-600 hover:text-red-400 transition-colors flex-shrink-0">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                  {stages.length === 0 && (
+                    <p className="text-xs text-slate-500 text-center py-6">Nenhum estágio configurado.</p>
+                  )}
+                </div>
+                <button onClick={saveStages} disabled={savingStages}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-50 transition-all"
+                  style={{ background: '#6a11cb', color: '#fff' }}>
+                  {savingStages ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Salvar
+                </button>
+              </div>
+            )}
+
+            {/* ─── Produtos ─── */}
+            {tab === 'produtos' && (
+              <div className="glass rounded-2xl p-5 space-y-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-sm font-semibold text-white">Produtos / Serviços</h2>
+                    <p className="text-xs text-slate-500 mt-1">Produtos vendidos e seus tickets — usados no popup de venda do Pipeline.</p>
+                  </div>
+                  <button
+                    onClick={() => setProducts(prev => [...prev, {
+                      id: `new-${Date.now()}`, name: 'Novo Produto',
+                      price: 0, currency: 'BRL', description: '',
+                    }])}
+                    className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg text-white font-medium hover:opacity-90 transition-all"
+                    style={{ background: '#6a11cb' }}>
+                    <Plus className="w-3.5 h-3.5" /> Adicionar
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {products.map(product => (
+                    <div key={product.id} className="flex items-center gap-2 p-3 bg-[#0f0b1e] rounded-xl border border-[#1e1635]">
+                      <input
+                        value={product.name}
+                        placeholder="Nome do produto"
+                        onChange={e => setProducts(prev => prev.map(p => p.id === product.id ? { ...p, name: e.target.value } : p))}
+                        className="flex-1 text-sm bg-transparent text-white placeholder-slate-600 focus:outline-none border-b border-transparent focus:border-[#6a11cb] transition-colors min-w-0" />
+                      <input
+                        value={product.description}
+                        placeholder="Descrição (opcional)"
+                        onChange={e => setProducts(prev => prev.map(p => p.id === product.id ? { ...p, description: e.target.value } : p))}
+                        className="flex-1 text-xs bg-transparent text-slate-400 placeholder-slate-600 focus:outline-none border-b border-transparent focus:border-[#6a11cb] transition-colors min-w-0" />
+                      <select
+                        value={product.currency}
+                        onChange={e => setProducts(prev => prev.map(p => p.id === product.id ? { ...p, currency: e.target.value } : p))}
+                        className="text-xs bg-[#1e1635] border border-[#2d2550] text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none flex-shrink-0">
+                        <option value="BRL">R$</option>
+                        <option value="USD">US$</option>
+                      </select>
+                      <input
+                        type="number"
+                        value={product.price}
+                        onChange={e => setProducts(prev => prev.map(p => p.id === product.id ? { ...p, price: parseFloat(e.target.value) || 0 } : p))}
+                        placeholder="0,00"
+                        className="w-24 text-sm bg-[#1e1635] border border-[#2d2550] text-white rounded-lg px-2 py-1.5 focus:outline-none flex-shrink-0" />
+                      <button onClick={() => deleteProductRow(product.id)} className="text-slate-600 hover:text-red-400 transition-colors flex-shrink-0">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                  {products.length === 0 && (
+                    <p className="text-xs text-slate-500 text-center py-6">Nenhum produto configurado.</p>
+                  )}
+                </div>
+                <button onClick={saveProductsList} disabled={savingProducts}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-50 transition-all"
+                  style={{ background: '#6a11cb', color: '#fff' }}>
+                  {savingProducts ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Salvar
+                </button>
+              </div>
+            )}
+
+            {/* ─── Rastreio ─── */}
+            {tab === 'rastreio' && (
+              <div className="space-y-4">
+                <div className="glass rounded-2xl p-5 space-y-3">
+                  <div>
+                    <h2 className="text-sm font-semibold text-white">Número do WhatsApp</h2>
+                    <p className="text-xs text-slate-500 mt-1">Com DDI (ex: 5511999999999) — usado para gerar os links wa.me abaixo.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input value={whatsappNumber} onChange={e => setWhatsappNumber(e.target.value)}
+                      placeholder="5511999999999"
+                      className="flex-1 px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb] transition-all" />
+                    <button onClick={saveWhatsappNumber} disabled={savingWhatsappNumber}
+                      className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2.5 rounded-lg text-white text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-all"
+                      style={{ background: '#6a11cb' }}>
+                      {savingWhatsappNumber ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="glass rounded-2xl p-5 space-y-5">
+                  <div>
+                    <h2 className="text-sm font-semibold text-white">Frases de Rastreio</h2>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Quando um contato novo manda uma mensagem no WhatsApp, o sistema tenta identificar a origem em duas etapas:
+                      primeiro pelo contexto real de anúncio da Meta (automático, quando existe), e se não tiver, casa o texto da
+                      mensagem contra as frases abaixo. Cadastre a frase aqui e cole o link gerado no botão de WhatsApp da página
+                      (Google Ads, site, bio do Instagram) — ou registre a mesma frase usada num anúncio de mensagem da Meta, como
+                      redundância caso o parâmetro de anúncio não chegue.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <input value={newPhrase} onChange={e => setNewPhrase(e.target.value)} placeholder="Frase (ex: Vim do site)"
+                      className="px-3 py-2.5 text-sm bg-[#1e1635] border border-[#2d2550] rounded-lg text-white placeholder-slate-600 focus:outline-none focus:border-[#6a11cb] transition-colors" />
+                    <input value={newSource} onChange={e => setNewSource(e.target.value)} placeholder="Origem (ex: Google, Site)"
+                      className="px-3 py-2.5 text-sm bg-[#1e1635] border border-[#2d2550] rounded-lg text-white placeholder-slate-600 focus:outline-none focus:border-[#6a11cb] transition-colors" />
+                    <div className="flex gap-2">
+                      <input value={newCampaign} onChange={e => setNewCampaign(e.target.value)} placeholder="Campanha (opcional)"
+                        className="flex-1 px-3 py-2.5 text-sm bg-[#1e1635] border border-[#2d2550] rounded-lg text-white placeholder-slate-600 focus:outline-none focus:border-[#6a11cb] transition-colors" />
+                      <button onClick={addPhrase} disabled={addingPhrase}
+                        className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2.5 rounded-lg text-white text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-all"
+                        style={{ background: '#6a11cb' }}>
+                        {addingPhrase ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {loadingPhrases ? (
+                    <div className="flex justify-center py-6"><Loader2 className="w-4 h-4 text-slate-500 animate-spin" /></div>
+                  ) : (
+                    <div className="space-y-2">
+                      {phrases.map(p => {
+                        const waLink = whatsappNumber
+                          ? `https://wa.me/${whatsappNumber.replace(/\D/g, '')}?text=${encodeURIComponent(p.phrase)}`
+                          : null
+                        return (
+                          <div key={p.id} className="p-3 bg-[#0f0b1e] rounded-xl border border-[#1e1635] space-y-2">
+                            <div className="flex items-center gap-3">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium text-white truncate">&ldquo;{p.phrase}&rdquo;</p>
+                                <p className="text-[10px] text-slate-500 mt-0.5">{p.source}{p.campaign ? ` · ${p.campaign}` : ''}</p>
+                              </div>
+                              <button onClick={() => deletePhrase(p.id)} className="text-slate-600 hover:text-red-400 transition-colors flex-shrink-0">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                            {waLink && (
+                              <div className="flex items-center gap-2">
+                                <code className="flex-1 text-[11px] text-green-300 bg-[#0a0818] border border-[#1e1635] rounded-lg px-2.5 py-1.5 font-mono truncate">{waLink}</code>
+                                <button onClick={() => { navigator.clipboard.writeText(waLink); toast.success('Link copiado!') }}
+                                  className="text-[11px] text-slate-500 hover:text-white border border-[#2d2550] px-2 py-1.5 rounded-lg hover:border-[#6a11cb]/50 transition-all flex-shrink-0">
+                                  Copiar
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                      {phrases.length === 0 && (
+                        <p className="text-xs text-slate-500 text-center py-6">Nenhuma frase cadastrada ainda.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

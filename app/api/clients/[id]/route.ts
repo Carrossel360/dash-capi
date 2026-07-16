@@ -37,7 +37,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const {
     name, segment, plan, metaPixelId, metaAccessToken, metaAdAccountId, googleAdsCustomerId,
     currency, svcMetaAds, svcGoogleAds, svcSocialMedia, svcGoogleBusiness, svcGoogleLocal, svcContentStudio, svcSiteGenerator,
-    metaVisibleMetrics, googleVisibleMetrics, funnelMetrics, googleFunnelMetrics,
+    metaVisibleMetrics, googleVisibleMetrics, funnelMetrics, googleFunnelMetrics, whatsappNumber,
   } = await req.json()
 
   const workspace = await prisma.workspace.update({
@@ -50,6 +50,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(metaAccessToken && { metaAccessToken }),
       ...(metaAdAccountId !== undefined && { metaAdAccountId }),
       ...(googleAdsCustomerId !== undefined && { googleAdsCustomerId }),
+      ...(whatsappNumber !== undefined && { whatsappNumber }),
       ...(currency && { currency }),
       ...(svcMetaAds !== undefined && { svcMetaAds }),
       ...(svcGoogleAds !== undefined && { svcGoogleAds }),
