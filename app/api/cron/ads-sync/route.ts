@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { syncWorkspace } from '@/lib/ads-sync'
+import { syncWorkspace, syncWorkspaceLocalServices } from '@/lib/ads-sync'
 import { syncWorkspaceInstagram } from '@/lib/social-sync'
 
 // Disparado pelo cron-job.org a cada 1h. Header CRON_SECRET protege contra chamadas externas
@@ -12,12 +12,13 @@ export async function GET(req: NextRequest) {
   }
 
   const workspaces = await prisma.workspace.findMany({
-    where: { OR: [{ svcMetaAds: true }, { svcGoogleAds: true }, { svcSocialMedia: true }] },
+    where: { OR: [{ svcMetaAds: true }, { svcGoogleAds: true }, { svcSocialMedia: true }, { svcGoogleLocal: true }] },
   })
 
   let metaOk = 0, metaSkip = 0, metaErr = 0
   let googleOk = 0, googleSkip = 0, googleErr = 0
   let socialOk = 0, socialSkip = 0, socialErr = 0
+  let localOk = 0, localSkip = 0, localErr = 0
 
   // Workspaces em paralelo (eram sequenciais) — com 20+ clientes, um por vez estourava
   // o timeout de 30s do cron-job.org (chegava a ~37s). Cada syncWorkspace/syncWorkspaceInstagram
@@ -36,6 +37,14 @@ export async function GET(req: NextRequest) {
     if (social === 'ok') socialOk++
     else if (social === 'skip') socialSkip++
     else { socialErr++; console.error('[cron/ads-sync] social', workspace.id, social.error) }
+
+    // Só roda de verdade pra workspaces com localServicesAccountId configurado (skip imediato
+    // pros demais) — cada chamada pode levar até ~25s (limitação da própria API, ver comentário
+    // em lib/google-ads.ts), então só vale a pena pra quem realmente usa o serviço.
+    const local = await syncWorkspaceLocalServices(workspace)
+    if (local === 'ok') localOk++
+    else if (local === 'skip') localSkip++
+    else { localErr++; console.error('[cron/ads-sync] local', workspace.id, local.error) }
   }))
 
   return NextResponse.json({
@@ -43,5 +52,6 @@ export async function GET(req: NextRequest) {
     meta: { ok: metaOk, skip: metaSkip, error: metaErr },
     google: { ok: googleOk, skip: googleSkip, error: googleErr },
     social: { ok: socialOk, skip: socialSkip, error: socialErr },
+    local: { ok: localOk, skip: localSkip, error: localErr },
   })
 }

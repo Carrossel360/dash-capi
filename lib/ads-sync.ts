@@ -1,7 +1,7 @@
 import type { Workspace } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { fetchMetaInsights, sumActions, leadCount, MESSAGING_ACTION_TYPES } from '@/lib/meta-ads'
-import { fetchGoogleAdsReport, isGoogleAdsConfigured, type GoogleAdsMcc } from '@/lib/google-ads'
+import { fetchGoogleAdsReport, fetchLocalServicesAccountReport, isGoogleAdsConfigured, type GoogleAdsMcc } from '@/lib/google-ads'
 
 // Janela deslizante: reprocessa os últimos N dias a cada sync (corrige atraso de atribuição
 // e faz upsert de novo em cima de dias já sincronizados). 30 dias garante que o filtro de
@@ -180,4 +180,63 @@ export async function syncWorkspace(workspace: Workspace) {
     syncWorkspaceGoogleAds(workspace),
   ])
   return { meta, google }
+}
+
+function ymdLocal(y: number, m: number, d: number): string {
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+}
+
+// Snapshot mensal (não diário — ver comentário em fetchLocalServicesAccountReport sobre a
+// limitação de range da API). Sincroniza sempre "este mês" (period = mês corrente) e "mês
+// anterior" (period = mês anterior), sobrescrevendo o snapshot salvo a cada rodada — é assim
+// que o mês corrente "fecha" com o valor final quando vira o mês seguinte.
+export async function syncWorkspaceLocalServices(workspace: Workspace): Promise<SyncResult> {
+  if (!workspace.localServicesAccountId) return 'skip'
+  const mcc = mccForWorkspace(workspace)
+  if (!isGoogleAdsConfigured(mcc)) return 'skip'
+
+  const now = new Date()
+  const thisMonthPeriod = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`
+  const thisMonthSince = ymdLocal(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)
+  const thisMonthUntil = ymdLocal(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate())
+
+  const lastMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
+  const lastMonthPeriod = `${lastMonthDate.getUTCFullYear()}-${String(lastMonthDate.getUTCMonth() + 1).padStart(2, '0')}`
+  const lastMonthSince = ymdLocal(lastMonthDate.getUTCFullYear(), lastMonthDate.getUTCMonth() + 1, 1)
+  const lastMonthLastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0)).getUTCDate()
+  const lastMonthUntil = ymdLocal(lastMonthDate.getUTCFullYear(), lastMonthDate.getUTCMonth() + 1, lastMonthLastDay)
+
+  try {
+    for (const { period, since, until } of [
+      { period: thisMonthPeriod, since: thisMonthSince, until: thisMonthUntil },
+      { period: lastMonthPeriod, since: lastMonthSince, until: lastMonthUntil },
+      { period: 'all', since: '2015-01-01', until: thisMonthUntil },
+    ]) {
+      const report = await fetchLocalServicesAccountReport({ mcc, accountId: workspace.localServicesAccountId, since, until })
+      if (!report) continue
+
+      const data = {
+        accountId: report.accountId,
+        businessName: report.businessName,
+        currencyCode: report.currencyCode,
+        totalCost: report.totalCost,
+        chargedLeads: report.chargedLeads,
+        phoneCalls: report.phoneCalls,
+        connectedPhoneCalls: report.connectedPhoneCalls,
+        averageWeeklyBudget: report.averageWeeklyBudget,
+        averageFiveStarRating: report.averageFiveStarRating,
+        totalReview: report.totalReview,
+        phoneLeadResponsiveness: report.phoneLeadResponsiveness,
+      }
+
+      await prisma.googleLocalServicesData.upsert({
+        where: { workspaceId_period: { workspaceId: workspace.id, period } },
+        create: { workspaceId: workspace.id, period, ...data },
+        update: data,
+      })
+    }
+    return 'ok'
+  } catch (err: any) {
+    return { error: err?.response?.data?.error?.message || err.message }
+  }
 }

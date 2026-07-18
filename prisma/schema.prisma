@@ -34,6 +34,7 @@ model Workspace {
   metaAdAccountId       String?
   instagramAccountId    String?
   googleAdsCustomerId   String?
+  localServicesAccountId String? // ID da conta de Local Services Ads — diferente do googleAdsCustomerId, precisa ser configurado à parte (não tem como descobrir automaticamente por cliente)
   googleAdsRefreshToken String?
   currency              String               @default("BRL")
   svcTrafeqoPago        Boolean              @default(false) // legado — substituído por svcMetaAds/svcGoogleAds, mantido só pra não quebrar leituras antigas
@@ -74,6 +75,7 @@ model Workspace {
   googleAdsData         GoogleAdsData[]
   googleAdsDailyData    GoogleAdsDailyData[]
   googleAdsKeywords     GoogleAdsKeyword[]
+  googleLocalServicesData GoogleLocalServicesData[]
   googleBusinessData    GoogleBusinessData[]
   socialMediaData       SocialMediaData[]
   socialMediaDailyData  SocialMediaDailyData[]
@@ -362,6 +364,32 @@ model GoogleAdsDailyData {
   workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, date, campaignId])
+}
+
+// Local Services Ads é uma API própria (localservices.googleapis.com), separada da Google Ads
+// API "clássica" — só aceita ranges de data em escala de mês (~30 dias), ranges curtos (1-21
+// dias testados) travam/erroram. Por isso o snapshot é por mês (period "YYYY-MM"), não diário
+// como GoogleAdsDailyData — não tem como ter granularidade fina nessa API.
+model GoogleLocalServicesData {
+  id                       String    @id @default(cuid())
+  workspaceId              String
+  period                   String    // "YYYY-MM", ou "all" pro histórico completo
+  accountId                String?
+  businessName             String?
+  currencyCode             String?
+  totalCost                Float?
+  chargedLeads             Int?
+  phoneCalls               Int?
+  connectedPhoneCalls      Int?
+  averageWeeklyBudget      Float?
+  averageFiveStarRating    Float?
+  totalReview              Int?
+  phoneLeadResponsiveness  Float?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  workspace                Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, period])
 }
 
 model GoogleAdsKeyword {

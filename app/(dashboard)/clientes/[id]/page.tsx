@@ -99,7 +99,7 @@ interface ClientDetail {
   id: string; name: string; slug: string; segment: string | null
   plan: string; metaPixelId: string | null; metaAccessToken: string | null
   metaAdAccountId: string | null
-  googleAdsCustomerId: string | null; createdAt: string
+  googleAdsCustomerId: string | null; localServicesAccountId: string | null; createdAt: string
   currency: string
   whatsappNumber: string | null
   svcMetaAds: boolean; svcGoogleAds: boolean; svcSocialMedia: boolean
@@ -162,6 +162,7 @@ export default function ClienteDetailPage() {
   const [acctSearch, setAcctSearch] = useState('')
   const acctPickerRef = useRef<HTMLDivElement>(null)
   const [googleAdsCustomerId, setGoogleAdsCustomerId] = useState('')
+  const [localServicesAccountId, setLocalServicesAccountId] = useState('')
   const [services, setServices] = useState({
     svcMetaAds: false, svcGoogleAds: false, svcSocialMedia: false,
     svcGoogleBusiness: false, svcGoogleLocal: false, svcContentStudio: false, svcSiteGenerator: false,
@@ -204,6 +205,7 @@ export default function ClienteDetailPage() {
         setMetaPixelId(w.metaPixelId ?? '')
         setMetaAdAccountId(w.metaAdAccountId ?? '')
         setGoogleAdsCustomerId(w.googleAdsCustomerId ?? '')
+        setLocalServicesAccountId(w.localServicesAccountId ?? '')
         setWhatsappNumber(w.whatsappNumber ?? '')
         setStages(w.stages ?? [])
         setServices({
@@ -231,6 +233,7 @@ export default function ClienteDetailPage() {
       if (metaAccessToken) body.metaAccessToken = metaAccessToken
       if (metaAdAccountId) body.metaAdAccountId = metaAdAccountId
       if (googleAdsCustomerId) body.googleAdsCustomerId = googleAdsCustomerId
+      if (localServicesAccountId) body.localServicesAccountId = localServicesAccountId
 
       const res = await fetch(`/api/clients/${clientId}`, {
         method: 'PATCH',
@@ -1041,6 +1044,26 @@ export default function ClienteDetailPage() {
                       {showGToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
+                </div>
+                <SaveBtn />
+              </div>
+            )}
+
+            {/* ─── Google Local Service Ads ─── */}
+            {tab === 'google' && (
+              <div className="glass rounded-2xl p-5 space-y-4">
+                <div>
+                  <h2 className="text-sm font-semibold text-white">Google Local Service Ads</h2>
+                  <p className="text-xs text-slate-500 mt-1">
+                    ID da conta de Local Services (diferente do Customer ID do Google Ads acima). Reaproveita as mesmas credenciais OAuth do Google Ads configuradas por trás — só habilite pra clientes que realmente contratam Local Services.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-400">Account ID</label>
+                  <input value={localServicesAccountId} onChange={e => setLocalServicesAccountId(e.target.value)}
+                    placeholder="Ex: 1669536458"
+                    className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb] transition-all"
+                  />
                 </div>
                 <SaveBtn />
               </div>

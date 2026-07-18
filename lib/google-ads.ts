@@ -257,6 +257,82 @@ export async function fetchGoogleAdsStatuses({ mcc, customerId }: FetchGoogleAds
   }
 }
 
+export interface LocalServicesAccountReport {
+  accountId: string
+  businessName: string | null
+  currencyCode: string | null
+  totalCost: number
+  chargedLeads: number
+  phoneCalls: number
+  connectedPhoneCalls: number
+  averageWeeklyBudget: number | null
+  averageFiveStarRating: number | null
+  totalReview: number | null
+  phoneLeadResponsiveness: number | null
+}
+
+interface FetchLocalServicesOptions {
+  mcc: GoogleAdsMcc
+  accountId: string
+  since: string // YYYY-MM-DD
+  until: string // YYYY-MM-DD
+}
+
+function dateParts(d: string) {
+  const [y, m, day] = d.split('-')
+  return { year: y, month: String(Number(m)), day: String(Number(day)) }
+}
+
+// A Local Services Ads API (localservices.googleapis.com) é separada da Google Ads API
+// "clássica" usada no resto deste arquivo — REST simples (GET + query string), não GAQL. Só
+// devolve dado de forma confiável com ranges de data em escala de mês (~30 dias); ranges
+// curtos (testado 1/7/14/21 dias) travam/dão erro do lado do Google. A consulta é sempre por
+// manager_customer_id (devolve TODAS as contas do gerenciador numa lista só) — por isso o
+// accountId de cada cliente precisa estar configurado à parte (Workspace.localServicesAccountId),
+// não tem relação com o googleAdsCustomerId normal.
+export async function fetchLocalServicesAccountReport({ mcc, accountId, since, until }: FetchLocalServicesOptions): Promise<LocalServicesAccountReport | null> {
+  const creds = getMccCreds(mcc)
+  const accessToken = await refreshGoogleAccessToken(creds)
+
+  const s = dateParts(since)
+  const u = dateParts(until)
+  const params = new URLSearchParams({
+    query: `manager_customer_id:${creds.loginCustomerId}`,
+    pageSize: '200',
+    'startDate.year': s.year, 'startDate.month': s.month, 'startDate.day': s.day,
+    'endDate.year': u.year, 'endDate.month': u.month, 'endDate.day': u.day,
+  })
+
+  const { data } = await axios.get(
+    `https://localservices.googleapis.com/v1/accountReports:search?${params}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'developer-token': creds.developerToken,
+        'login-customer-id': creds.loginCustomerId,
+      },
+      timeout: 25000,
+    }
+  )
+
+  const row = (data?.accountReports ?? []).find((r: any) => r.accountId === accountId)
+  if (!row) return null
+
+  return {
+    accountId: row.accountId,
+    businessName: row.businessName ?? null,
+    currencyCode: row.currencyCode ?? null,
+    totalCost: Number(row.currentPeriodTotalCost ?? 0),
+    chargedLeads: Number(row.currentPeriodChargedLeads ?? 0),
+    phoneCalls: Number(row.currentPeriodPhoneCalls ?? 0),
+    connectedPhoneCalls: Number(row.currentPeriodConnectedPhoneCalls ?? 0),
+    averageWeeklyBudget: row.averageWeeklyBudget != null ? Number(row.averageWeeklyBudget) : null,
+    averageFiveStarRating: row.averageFiveStarRating != null ? Number(row.averageFiveStarRating) : null,
+    totalReview: row.totalReview != null ? Number(row.totalReview) : null,
+    phoneLeadResponsiveness: row.phoneLeadResponsiveness != null ? Number(row.phoneLeadResponsiveness) : null,
+  }
+}
+
 export interface GoogleAdsQualitySummary {
   avgSearchImpressionShare: number | null // 0–100 (já em %, pronto pro fmt do frontend)
   avgQualityScore: number | null // 1–10

@@ -28,7 +28,7 @@ const navGroups = [
       { label: 'Tráfego Pago', href: '/trafego-pago', icon: TrendingUp, service: 'trafeqoPago' as ServiceKey, adminOnly: false, agencyOnly: false, comingSoon: false },
       { label: 'Social Media', href: '/social-media', icon: Share2, service: 'socialMedia' as ServiceKey, adminOnly: false, agencyOnly: false, comingSoon: false },
       { label: 'Google Business', href: '/google-business', icon: MapPin, service: 'googleBusiness' as ServiceKey, adminOnly: false, agencyOnly: false, comingSoon: false },
-      { label: 'Google Local', href: '/google-local', icon: Star, service: 'googleLocal' as ServiceKey, adminOnly: false, agencyOnly: false, comingSoon: true },
+      { label: 'Google Local', href: '/google-local', icon: Star, service: 'googleLocal' as ServiceKey, adminOnly: false, agencyOnly: false, comingSoon: false },
       { label: 'Relatórios com IA', href: '/relatorios-ia', icon: Bot, service: 'trafeqoPago' as ServiceKey, adminOnly: false, agencyOnly: true, comingSoon: false },
     ],
   },
