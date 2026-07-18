@@ -28,8 +28,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ step: 'token', error: tokenJson }, { status: 500 })
   }
 
+  const dateStr = req.nextUrl.searchParams.get('date') // YYYY-MM-DD, opcional
   const query = `manager_customer_id:${loginCustomerId}`
-  const params = new URLSearchParams({ query, pageSize: '100' })
+  const paramsObj: Record<string, string> = { query, pageSize: '100' }
+  if (dateStr) {
+    const [y, m, d] = dateStr.split('-')
+    paramsObj['startDate.year'] = y; paramsObj['startDate.month'] = String(Number(m)); paramsObj['startDate.day'] = String(Number(d))
+    paramsObj['endDate.year'] = y; paramsObj['endDate.month'] = String(Number(m)); paramsObj['endDate.day'] = String(Number(d))
+  }
+  const params = new URLSearchParams(paramsObj)
 
   const res = await fetch(`https://localservices.googleapis.com/v1/accountReports:search?${params}`, {
     method: 'GET',
