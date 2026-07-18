@@ -28,21 +28,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ step: 'token', error: tokenJson }, { status: 500 })
   }
 
-  const until = new Date().toISOString().slice(0, 10)
-  const sinceDate = new Date(); sinceDate.setUTCDate(sinceDate.getUTCDate() - 30)
-  const since = sinceDate.toISOString().slice(0, 10)
+  const query = `manager_customer_id:${loginCustomerId}`
+  const params = new URLSearchParams({ query, pageSize: '100' })
 
-  const query = `SELECT lead_type, lead_status, lead_charged, lead_price.currency_code, lead_price.amount_micros, lead_creation_time FROM detailed_lead_report WHERE lead_creation_time >= '${since} 00:00:00' AND lead_creation_time <= '${until} 23:59:59'`
-
-  const res = await fetch('https://localservices.googleapis.com/v1/detailedLeadReports:search', {
-    method: 'POST',
+  const res = await fetch(`https://localservices.googleapis.com/v1/accountReports:search?${params}`, {
+    method: 'GET',
     headers: {
       Authorization: `Bearer ${tokenJson.access_token}`,
       'developer-token': developerToken,
       'login-customer-id': loginCustomerId,
-      'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ query }),
   })
   const json = await res.json().catch(() => ({ raw: 'não-JSON' }))
 
@@ -50,6 +45,7 @@ export async function GET(req: NextRequest) {
     workspace: workspace.name,
     customerId: workspace.googleAdsCustomerId,
     mcc,
+    loginCustomerId,
     status: res.status,
     response: json,
   })
