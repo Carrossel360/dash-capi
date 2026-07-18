@@ -28,12 +28,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ step: 'token', error: tokenJson }, { status: 500 })
   }
 
-  const dateStr = req.nextUrl.searchParams.get('date') // YYYY-MM-DD, opcional
+  const fromStr = req.nextUrl.searchParams.get('from') // YYYY-MM-DD, opcional
+  const toStr = req.nextUrl.searchParams.get('to') // YYYY-MM-DD, opcional
   const query = `manager_customer_id:${loginCustomerId}`
   const paramsObj: Record<string, string> = { query, pageSize: '100' }
-  if (dateStr) {
-    const [y, m, d] = dateStr.split('-')
+  if (fromStr) {
+    const [y, m, d] = fromStr.split('-')
     paramsObj['startDate.year'] = y; paramsObj['startDate.month'] = String(Number(m)); paramsObj['startDate.day'] = String(Number(d))
+  }
+  if (toStr) {
+    const [y, m, d] = toStr.split('-')
     paramsObj['endDate.year'] = y; paramsObj['endDate.month'] = String(Number(m)); paramsObj['endDate.day'] = String(Number(d))
   }
   const params = new URLSearchParams(paramsObj)
@@ -47,7 +51,7 @@ export async function GET(req: NextRequest) {
         'developer-token': developerToken,
         'login-customer-id': loginCustomerId,
       },
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(25000),
     })
     const json = await res.json().catch(() => ({ raw: 'não-JSON' }))
 
@@ -65,7 +69,7 @@ export async function GET(req: NextRequest) {
       workspace: workspace.name,
       urlCalled: url,
       step: 'fetch',
-      error: err?.name === 'TimeoutError' ? 'TIMEOUT após 10s' : (err?.message || String(err)),
+      error: err?.name === 'TimeoutError' ? 'TIMEOUT após 25s' : (err?.message || String(err)),
     }, { status: 504 })
   }
 }
