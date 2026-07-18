@@ -38,22 +38,34 @@ export async function GET(req: NextRequest) {
   }
   const params = new URLSearchParams(paramsObj)
 
-  const res = await fetch(`https://localservices.googleapis.com/v1/accountReports:search?${params}`, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${tokenJson.access_token}`,
-      'developer-token': developerToken,
-      'login-customer-id': loginCustomerId,
-    },
-  })
-  const json = await res.json().catch(() => ({ raw: 'não-JSON' }))
+  const url = `https://localservices.googleapis.com/v1/accountReports:search?${params}`
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${tokenJson.access_token}`,
+        'developer-token': developerToken,
+        'login-customer-id': loginCustomerId,
+      },
+      signal: AbortSignal.timeout(10000),
+    })
+    const json = await res.json().catch(() => ({ raw: 'não-JSON' }))
 
-  return NextResponse.json({
-    workspace: workspace.name,
-    customerId: workspace.googleAdsCustomerId,
-    mcc,
-    loginCustomerId,
-    status: res.status,
-    response: json,
-  })
+    return NextResponse.json({
+      workspace: workspace.name,
+      customerId: workspace.googleAdsCustomerId,
+      mcc,
+      loginCustomerId,
+      urlCalled: url,
+      status: res.status,
+      response: json,
+    })
+  } catch (err: any) {
+    return NextResponse.json({
+      workspace: workspace.name,
+      urlCalled: url,
+      step: 'fetch',
+      error: err?.name === 'TimeoutError' ? 'TIMEOUT após 10s' : (err?.message || String(err)),
+    }, { status: 504 })
+  }
 }
