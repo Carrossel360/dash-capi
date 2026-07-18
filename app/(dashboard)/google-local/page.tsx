@@ -149,10 +149,10 @@ export default function GoogleLocalPage() {
               </p>
             )}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <MetricCard label="Valor Gasto" value={`${curr} ${(kpis.totalCost ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} icon={DollarSign} color="#ef4444" />
+              <MetricCard label="Valor Gasto" value={`${curr} ${(kpis.totalCost ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} icon={DollarSign} color="#ef4444" />
               <MetricCard label="Leads Cobrados" value={String(kpis.chargedLeads ?? 0)} icon={Users} color="#10b981" />
-              <MetricCard label="Custo por Lead" value={`${curr} ${(kpis.costPerLead ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} icon={Wallet} color="#F5A314" />
-              <MetricCard label="Orçamento Semanal Médio" value={kpis.averageWeeklyBudget != null ? `${curr} ${kpis.averageWeeklyBudget.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '-'} icon={DollarSign} color="#6a11cb" />
+              <MetricCard label="Custo por Lead" value={`${curr} ${(kpis.costPerLead ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} icon={Wallet} color="#F5A314" />
+              <MetricCard label="Orçamento Semanal Médio" value={kpis.averageWeeklyBudget != null ? `${curr} ${kpis.averageWeeklyBudget.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'} icon={DollarSign} color="#6a11cb" />
               <MetricCard label="Ligações" value={String(kpis.phoneCalls ?? 0)} icon={Phone} color="#2575fc" />
               <MetricCard label="Ligações Atendidas" value={String(kpis.connectedPhoneCalls ?? 0)} icon={PhoneCall} color="#2575fc" />
               <MetricCard label="Taxa de Resposta" value={kpis.phoneLeadResponsiveness != null ? `${(kpis.phoneLeadResponsiveness * 100).toFixed(0)}%` : '-'} icon={MessageCircle} color="#8b5cf6" />
