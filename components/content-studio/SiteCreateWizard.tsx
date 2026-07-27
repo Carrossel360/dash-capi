@@ -12,8 +12,13 @@ interface UploadedImage {
   uploading: boolean
 }
 
-export default function SiteCreateWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { token } = useAuthStore()
+// `overrideToken`/`onCreated`: usados por Tarefas > Criação pra gerar em nome de um cliente
+// específico sem trocar o workspace da sessão — ver CarouselCreateModal.tsx.
+export default function SiteCreateWizard({ open, onClose, overrideToken, onCreated }: {
+  open: boolean; onClose: () => void; overrideToken?: string; onCreated?: (id: string) => void
+}) {
+  const { token: sessionToken } = useAuthStore()
+  const token = overrideToken ?? sessionToken
   const router = useRouter()
   const [step, setStep] = useState(1)
   const [generating, setGenerating] = useState(false)
@@ -97,7 +102,8 @@ export default function SiteCreateWizard({ open, onClose }: { open: boolean; onC
       const genData = await genRes.json()
       if (!genRes.ok) throw new Error(genData.error || 'Erro ao gerar site')
 
-      router.push(`/content-studio/sites/${project.id}`)
+      if (onCreated) onCreated(project.id)
+      else router.push(`/content-studio/sites/${project.id}`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao gerar site')
     } finally {

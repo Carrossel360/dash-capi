@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     const ws = membership.workspace
     return NextResponse.json({
       token,
-      user: { id: user.id, name: user.name, email: user.email },
+      user: { id: user.id, name: user.name, email: user.email, avatarUrl: user.avatarUrl },
       workspace: {
         id: ws.id, name: ws.name, slug: ws.slug,
         segment: ws.segment, isAgency: ws.isAgency,

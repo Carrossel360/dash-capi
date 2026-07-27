@@ -17,7 +17,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   const body = await req.json()
-  const { name, color, order, triggerCapiEvent } = body
+  const { name, color, order, triggerCapiEvent, isMeetingStage } = body
 
   const stage = await prisma.pipelineStage.findFirst({ where: { id: params.stageId, workspaceId: params.id } })
   if (!stage) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -29,6 +29,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(color !== undefined && { color }),
       ...(order !== undefined && { order }),
       ...(triggerCapiEvent !== undefined && { triggerCapiEvent }),
+      ...(isMeetingStage !== undefined && { isMeetingStage }),
     },
   })
   return NextResponse.json(updated)

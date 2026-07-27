@@ -4,11 +4,18 @@ import { useRouter } from 'next/navigation'
 import {
   Plus, Search, Users, Zap, Settings2, X, Eye, EyeOff,
   Loader2, CheckCircle, Building2, TrendingUp, BarChart2, Share2, MapPin, Star,
-  DollarSign, Trash2, AlertTriangle,
+  DollarSign, Trash2, AlertTriangle, Archive, ArchiveRestore,
 } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
 import { useAuthStore } from '@/lib/store/auth'
+import { EXTRA_SERVICES } from '@/lib/services-catalog'
+
+const SERVICE_BADGE_LABELS: Record<string, string> = {
+  svcMetaAds: 'Tráfego Meta', svcGoogleAds: 'Tráfego Google', svcGoogleLocal: 'GLS',
+  svcSocialMedia: 'Social Media', svcGoogleBusiness: 'Google Business',
+  ...Object.fromEntries(EXTRA_SERVICES.map(s => [s.key, s.label])),
+}
 
 const PLANS = [
   { id: 'starter', label: 'Starter' },
@@ -23,18 +30,20 @@ const PLAN_COLOR: Record<string, string> = {
 const SEGMENTS = ['Estética', 'Jurídico', 'Academia', 'Imobiliário', 'Saúde', 'Educação', 'E-commerce', 'Outros']
 
 const SERVICES = [
-  { key: 'svcMetaAds', label: 'Meta Ads', icon: TrendingUp },
-  { key: 'svcGoogleAds', label: 'Google Ads', icon: BarChart2 },
+  { key: 'svcMetaAds', label: 'Tráfego Meta', icon: TrendingUp },
+  { key: 'svcGoogleAds', label: 'Tráfego Google Ads', icon: BarChart2 },
+  { key: 'svcGoogleLocal', label: 'Tráfego GLS', icon: Star },
   { key: 'svcSocialMedia', label: 'Social Media', icon: Share2 },
-  { key: 'svcGoogleBusiness', label: 'Google Business Profile', icon: MapPin },
-  { key: 'svcGoogleLocal', label: 'Google Local Service', icon: Star },
+  { key: 'svcGoogleBusiness', label: 'Google Business', icon: MapPin },
 ]
 
 interface Client {
   id: string; name: string; slug: string; segment: string | null
   plan: string; metaPixelId: string | null; metaAccessToken: string | null
-  googleAdsCustomerId: string | null; createdAt: string
+  googleAdsCustomerId: string | null; createdAt: string; isActive: boolean; isAgencyInternal: boolean
   leadsCount: number; eventsCount: number
+  svcMetaAds: boolean; svcGoogleAds: boolean; svcGoogleLocal: boolean; svcSocialMedia: boolean; svcGoogleBusiness: boolean
+  extraServices: string[]
   members: { id: string; role: string; user: { id: string; name: string; email: string } }[]
 }
 
@@ -56,6 +65,7 @@ function NovoCLienteModal({ onClose, onCreated }: { onClose: () => void; onCreat
     svcGoogleBusiness: false,
     svcGoogleLocal: false,
   })
+  const [extraServices, setExtraServices] = useState<string[]>([])
 
   function set(field: string, value: string | boolean) {
     setForm(prev => ({ ...prev, [field]: value }))
@@ -71,7 +81,7 @@ function NovoCLienteModal({ onClose, onCreated }: { onClose: () => void; onCreat
       const res = await fetch('/api/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, extraServices }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
@@ -175,6 +185,32 @@ function NovoCLienteModal({ onClose, onCreated }: { onClose: () => void; onCreat
                       {active && <CheckCircle className="w-3 h-3 text-white" />}
                     </div>
                     <Icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: active ? '#8b5cf6' : '#475569' }} />
+                    <span className="truncate">{label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Outros serviços (catálogo completo, sem gate de acesso) */}
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-slate-400">Outros serviços contratados</label>
+            <div className="grid grid-cols-2 gap-2">
+              {EXTRA_SERVICES.map(({ key, label }) => {
+                const active = extraServices.includes(key)
+                return (
+                  <button key={key} onClick={() => setExtraServices(prev => active ? prev.filter(k => k !== key) : [...prev, key])}
+                    className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-xs font-medium transition-all text-left ${
+                      active
+                        ? 'border-[#6a11cb] bg-[#6a11cb]/10 text-white'
+                        : 'border-[#2d2550] text-slate-500 hover:border-[#2d2550]/80'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 ${
+                      active ? 'bg-[#6a11cb]' : 'bg-[#1a1230] border border-[#2d2550]'
+                    }`}>
+                      {active && <CheckCircle className="w-3 h-3 text-white" />}
+                    </div>
                     <span className="truncate">{label}</span>
                   </button>
                 )
@@ -287,13 +323,38 @@ function DeleteConfirmModal({ client, onClose, onDeleted }: {
 }
 
 export default function ClientesPage() {
-  const { token } = useAuthStore()
+  const { token, switchWorkspace } = useAuthStore()
   const router = useRouter()
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Client | null>(null)
+  const [statusTab, setStatusTab] = useState<'active' | 'archived'>('active')
+  const [archiving, setArchiving] = useState<string | null>(null)
+  const [entering, setEntering] = useState<string | null>(null)
+
+  // Troca pro workspace do cliente e navega pro dash dele — entrar no "modo cliente" (o
+  // seletor do topo só aparece depois disso, ver TopBar.tsx:showSwitcher).
+  async function enterClient(client: Client) {
+    setEntering(client.id)
+    try {
+      const res = await fetch('/api/auth/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ workspaceId: client.id }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        switchWorkspace(data.token, data.workspace)
+        router.push('/dashboard')
+      } else {
+        toast.error('Erro ao entrar no cliente')
+      }
+    } finally {
+      setEntering(null)
+    }
+  }
 
   async function loadClients() {
     try {
@@ -307,10 +368,31 @@ export default function ClientesPage() {
 
   useEffect(() => { loadClients() }, [token])
 
-  const filtered = clients.filter(c =>
+  async function toggleActive(client: Client) {
+    setArchiving(client.id)
+    try {
+      const res = await fetch(`/api/clients/${client.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ isActive: !client.isActive }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success(client.isActive ? `"${client.name}" arquivado` : `"${client.name}" reativado`)
+      setClients(prev => prev.map(c => c.id === client.id ? { ...c, isActive: !c.isActive } : c))
+    } catch {
+      toast.error('Erro ao atualizar status do cliente')
+    } finally {
+      setArchiving(null)
+    }
+  }
+
+  const byStatus = clients.filter(c => statusTab === 'active' ? c.isActive : !c.isActive)
+  const filtered = byStatus.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||
     (c.segment ?? '').toLowerCase().includes(search.toLowerCase())
   )
+  const activeCount = clients.filter(c => c.isActive).length
+  const archivedCount = clients.length - activeCount
 
   return (
     <>
@@ -325,7 +407,7 @@ export default function ClientesPage() {
           {/* Stats */}
           <div className="grid grid-cols-3 gap-3">
             {[
-              { label: 'Clientes ativos', value: clients.length, icon: Building2, color: '#F5A314' },
+              { label: 'Clientes ativos', value: activeCount, icon: Building2, color: '#F5A314' },
               { label: 'Total de leads', value: clients.reduce((a, c) => a + c.leadsCount, 0), icon: Users, color: '#8b5cf6' },
               { label: 'Eventos CAPI', value: clients.reduce((a, c) => a + c.eventsCount, 0), icon: Zap, color: '#6a11cb' },
             ].map(({ label, value, icon: Icon, color }) => (
@@ -338,6 +420,20 @@ export default function ClientesPage() {
                   <p className="text-xs text-slate-500">{label}</p>
                 </div>
               </div>
+            ))}
+          </div>
+
+          {/* Ativos / Arquivados */}
+          <div className="flex gap-1 p-1 bg-[#0f0b1e] rounded-xl border border-[#1e1635] w-fit">
+            {([['active', `Ativos (${activeCount})`], ['archived', `Arquivados (${archivedCount})`]] as const).map(([key, label]) => (
+              <button key={key} onClick={() => setStatusTab(key)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                style={statusTab === key
+                  ? { background: '#6a11cb', color: '#fff' }
+                  : { background: 'transparent', color: '#94a3b8' }}
+              >
+                {label}
+              </button>
             ))}
           </div>
 
@@ -367,10 +463,14 @@ export default function ClientesPage() {
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <Building2 className="w-10 h-10 text-slate-700 mb-3" />
-              <p className="text-sm text-slate-500">Nenhum cliente cadastrado ainda</p>
-              <button onClick={() => setShowModal(true)} className="mt-4 text-xs hover:underline" style={{ color: '#6a11cb' }}>
-                Criar o primeiro cliente →
-              </button>
+              <p className="text-sm text-slate-500">
+                {statusTab === 'archived' ? 'Nenhum cliente arquivado' : 'Nenhum cliente cadastrado ainda'}
+              </p>
+              {statusTab === 'active' && (
+                <button onClick={() => setShowModal(true)} className="mt-4 text-xs hover:underline" style={{ color: '#6a11cb' }}>
+                  Criar o primeiro cliente →
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
@@ -380,15 +480,23 @@ export default function ClientesPage() {
                 return (
                   <div key={client.id} className="glass rounded-xl overflow-hidden">
                     <div className="flex items-center justify-between px-4 py-4">
-                      <div className="flex items-center gap-3">
+                      <button onClick={() => enterClient(client)} disabled={entering === client.id}
+                        className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity disabled:opacity-50"
+                        title="Entrar no painel deste cliente"
+                      >
                         <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
                           style={{ background: 'linear-gradient(135deg, #6a11cb, #2575fc)' }}
                         >
-                          {getInitials(client.name)}
+                          {entering === client.id ? <Loader2 className="w-4 h-4 animate-spin" /> : getInitials(client.name)}
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
                             <p className="text-sm font-semibold text-white">{client.name}</p>
+                            {client.isAgencyInternal && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ color: '#F5A314', background: 'rgba(245,163,20,0.15)' }}>
+                                Interno
+                              </span>
+                            )}
                             <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
                               style={{ color: planColor, background: `${planColor}18` }}
                             >
@@ -405,7 +513,7 @@ export default function ClientesPage() {
                             )}
                           </div>
                         </div>
-                      </div>
+                      </button>
 
                       <div className="flex items-center gap-3">
                         <div className="hidden md:flex items-center gap-4 text-center">
@@ -419,14 +527,25 @@ export default function ClientesPage() {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1.5">
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${client.metaPixelId ? 'bg-[#1877f2]/10' : 'text-slate-600 bg-[#1e1635]'}`}
-                            style={client.metaPixelId ? { color: '#6a11cb' } : {}}>
-                            Meta {client.metaPixelId ? '✓' : '—'}
-                          </span>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${client.googleAdsCustomerId ? 'text-[#8b5cf6] bg-[#8b5cf6]/10' : 'text-slate-600 bg-[#1e1635]'}`}>
-                            Google {client.googleAdsCustomerId ? '✓' : '—'}
-                          </span>
+                        <div className="hidden lg:flex items-center gap-1 flex-wrap max-w-[220px]">
+                          {[...SERVICES.filter(s => client[s.key as keyof Client]).map(s => s.label),
+                            ...client.extraServices.map(k => SERVICE_BADGE_LABELS[k] ?? k)]
+                            .slice(0, 3)
+                            .map(label => (
+                              <span key={label} className="text-[10px] px-2 py-0.5 rounded-full font-medium text-[#8b5cf6] bg-[#8b5cf6]/10 whitespace-nowrap">
+                                {label}
+                              </span>
+                            ))}
+                          {(SERVICES.filter(s => client[s.key as keyof Client]).length + client.extraServices.length) === 0 && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium text-slate-600 bg-[#1e1635]">
+                              Nenhum serviço
+                            </span>
+                          )}
+                          {(SERVICES.filter(s => client[s.key as keyof Client]).length + client.extraServices.length) > 3 && (
+                            <span className="text-[10px] text-slate-500">
+                              +{(SERVICES.filter(s => client[s.key as keyof Client]).length + client.extraServices.length) - 3}
+                            </span>
+                          )}
                         </div>
 
                         <button
@@ -435,6 +554,16 @@ export default function ClientesPage() {
                         >
                           <Settings2 className="w-3.5 h-3.5" />
                           Configurar
+                        </button>
+                        <button
+                          onClick={() => toggleActive(client)}
+                          disabled={archiving === client.id}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg border border-[#2d2550] text-slate-500 hover:text-[#F5A314] hover:border-[#F5A314]/40 transition-all disabled:opacity-50"
+                          title={client.isActive ? 'Arquivar cliente (contrato encerrado)' : 'Reativar cliente'}
+                        >
+                          {archiving === client.id
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : client.isActive ? <Archive className="w-3.5 h-3.5" /> : <ArchiveRestore className="w-3.5 h-3.5" />}
                         </button>
                         <button
                           onClick={() => setDeleteTarget(client)}

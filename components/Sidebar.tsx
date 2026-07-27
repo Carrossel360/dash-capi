@@ -4,72 +4,102 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  LayoutDashboard, TrendingUp, Share2, MapPin, Star,
+  LayoutDashboard, TrendingUp, Share2, MapPin,
   Users, Megaphone, MessageSquare, Zap, Settings, Building2,
-  ChevronLeft, ChevronRight, LogOut, Lock, CheckSquare, Sparkles, Bot,
+  ChevronLeft, ChevronRight, LogOut, Lock, CheckSquare, Bot, Landmark, Sparkles,
 } from 'lucide-react'
 import { useAuthStore } from '@/lib/store/auth'
+import { useUIStore } from '@/lib/store/ui'
 import LockedServiceModal from '@/components/LockedServiceModal'
 import ComingSoonModal from '@/components/ComingSoonModal'
 import { ATTENDANT_ALLOWED_HREFS } from '@/lib/roleAccess'
 
 type ServiceKey = 'trafeqoPago' | 'socialMedia' | 'googleBusiness' | 'googleLocal' | 'contentStudio'
 
-// `agencyOnly`: some do menu inteiro pra qualquer papel de workspace de cliente (não é sobre
-// serviço contratado, é área que só faz sentido pra agência gerenciar).
+// Dois modos de navegação distintos (não é mais um único menu com flags cruzadas):
+// `context: 'agency'` — só aparece no painel da própria Carrossel (currentWorkspace.isAgency),
+// a "tela inicial" do admin: Visão Geral (da agência), Clientes, Tarefas, Configurações.
+// `context: 'client'` — só aparece depois de entrar num cliente específico (!isAgency):
+// Relatórios, CRM, Rastreamento, Criação — o mesmo conjunto pro admin navegando um cliente e
+// pro próprio usuário daquele cliente. Pra ver Tráfego Pago/Social/Pipeline/etc da própria
+// Carrossel, ela é cadastrada como cliente normal (ver Workspace.isAgencyInternal).
+// `agencyOnly`: dentro do contexto 'client', restringe a item visível só pro staff da agência
+// (não pro usuário final do cliente) — hoje Relatórios com IA e Eventos CAPI.
 // `comingSoon`: aparece no menu do cliente, mas ao clicar mostra "ainda não disponível" em vez
-// de navegar — usado em telas que hoje são só placeholder ("Em Breve") ou que ainda não
-// abrimos pra uso do cliente, independente de plano contratado.
+// de navegar — usado em telas que hoje são só placeholder.
 const navGroups = [
   {
+    label: 'Visão Geral',
+    context: 'agency' as const,
+    items: [
+      { label: 'Visão Geral', href: '/dashboard', icon: LayoutDashboard, service: null, adminOnly: false, agencyOnly: false, comingSoon: false },
+    ],
+  },
+  {
+    label: 'Agência',
+    context: 'agency' as const,
+    items: [
+      { label: 'Clientes', href: '/clientes', icon: Building2, service: null, adminOnly: false, agencyOnly: false, comingSoon: false },
+    ],
+  },
+  {
+    label: 'Tarefas',
+    context: 'agency' as const,
+    items: [
+      { label: 'Operacional', href: '/tarefas', icon: CheckSquare, service: null, adminOnly: false, agencyOnly: false, comingSoon: false },
+      { label: 'Criação', href: '/tarefas/criacao', icon: Sparkles, service: null, adminOnly: false, agencyOnly: false, comingSoon: false },
+    ],
+  },
+  {
+    label: 'BPO',
+    context: 'agency' as const,
+    items: [
+      // Placeholder "em breve" (DRE/DFC, Contas a Pagar x Receber, Agente Financeiro) — sem
+      // dado vinculado ainda, per mapa mental (referência de mercado: Organify).
+      { label: 'BPO Financeiro', href: '/bpo', icon: Landmark, service: null, adminOnly: false, agencyOnly: false, comingSoon: true },
+    ],
+  },
+  {
     label: 'Relatórios',
+    context: 'client' as const,
     items: [
       { label: 'Visão Geral', href: '/dashboard', icon: LayoutDashboard, service: null, adminOnly: false, agencyOnly: false, comingSoon: false },
       { label: 'Tráfego Pago', href: '/trafego-pago', icon: TrendingUp, service: 'trafeqoPago' as ServiceKey, adminOnly: false, agencyOnly: false, comingSoon: false },
       { label: 'Social Media', href: '/social-media', icon: Share2, service: 'socialMedia' as ServiceKey, adminOnly: false, agencyOnly: false, comingSoon: false },
       { label: 'Google Business', href: '/google-business', icon: MapPin, service: 'googleBusiness' as ServiceKey, adminOnly: false, agencyOnly: false, comingSoon: false },
-      { label: 'Google Local', href: '/google-local', icon: Star, service: 'googleLocal' as ServiceKey, adminOnly: false, agencyOnly: false, comingSoon: false },
       { label: 'Relatórios com IA', href: '/relatorios-ia', icon: Bot, service: 'trafeqoPago' as ServiceKey, adminOnly: false, agencyOnly: true, comingSoon: false },
     ],
   },
   {
-    label: 'Criação',
-    items: [
-      { label: 'Content Studio', href: '/content-studio', icon: Sparkles, service: 'contentStudio' as ServiceKey, adminOnly: false, agencyOnly: false, comingSoon: true },
-    ],
-  },
-  {
-    label: 'Automação',
+    label: 'CRM',
+    context: 'client' as const,
     items: [
       { label: 'Campanhas', href: '/campanhas', icon: Megaphone, service: null, adminOnly: false, agencyOnly: false, comingSoon: true },
-      { label: 'CRM Pipeline', href: '/pipeline', icon: Users, service: null, adminOnly: false, agencyOnly: false, comingSoon: false },
+      { label: 'Pipeline', href: '/pipeline', icon: Users, service: null, adminOnly: false, agencyOnly: false, comingSoon: false },
       { label: 'Conversas', href: '/conversas', icon: MessageSquare, service: null, adminOnly: false, agencyOnly: false, comingSoon: false },
-      { label: 'Tarefas', href: '/tarefas', icon: CheckSquare, service: null, adminOnly: true, agencyOnly: true, comingSoon: false },
     ],
   },
   {
     label: 'Rastreamento',
+    context: 'client' as const,
     items: [
       { label: 'Eventos CAPI', href: '/events', icon: Zap, service: null, adminOnly: false, agencyOnly: true, comingSoon: false },
-    ],
-  },
-  {
-    label: 'Agência',
-    items: [
-      { label: 'Clientes', href: '/clientes', icon: Building2, service: null, adminOnly: false, agencyOnly: true, comingSoon: false },
     ],
   },
 ]
 
 // Únicos itens visíveis pro papel "atendente" num workspace de cliente — vê só o
 // operacional do dia a dia (CRM + conversas), nada de métricas/configuração/áreas em construção.
+// Únicos itens visíveis pro lado Equipe (staff da agência sem papel de gestão — Visualizador/
+// Operador): só Tarefas, escopado por espaço (TaskSpaceMember, ver Fase C4).
+const EQUIPE_ALLOWED_HREFS = ['/tarefas']
 
 const SERVICE_LABELS: Record<ServiceKey, string> = {
   trafeqoPago: 'Tráfego Pago',
   socialMedia: 'Social Media',
   googleBusiness: 'Google Business Profile',
   googleLocal: 'Google Local Service',
-  contentStudio: 'Content Studio (IA)',
+  contentStudio: 'Estúdio de Criação (IA)',
 }
 
 export default function Sidebar() {
@@ -78,13 +108,37 @@ export default function Sidebar() {
   const [comingSoonLabel, setComingSoonLabel] = useState<string | null>(null)
   const [pendingHref, setPendingHref] = useState<string | null>(null)
   const pathname = usePathname()
-  const { user, logout, currentWorkspace } = useAuthStore()
+  const { user, token, logout, currentWorkspace, accessibleWorkspaces, switchWorkspace } = useAuthStore()
+  const { mobileNavOpen, closeMobileNav } = useUIStore()
   const router = useRouter()
+  const [switchingHome, setSwitchingHome] = useState(false)
 
   // Clear optimistic active when pathname settles
   useEffect(() => { setPendingHref(null) }, [pathname])
 
   function handleLogout() { logout(); router.push('/login') }
+
+  // Clicar no logo/nome da agência volta pro painel dela — mesmo mecanismo do switcher do
+  // TopBar (POST /api/auth/switch), só que sempre alvo o workspace isAgency:true da pessoa.
+  async function handleGoHome() {
+    if (currentWorkspace?.isAgency) { router.push('/dashboard'); return }
+    const agencyWorkspace = accessibleWorkspaces.find(w => w.isAgency)
+    if (!agencyWorkspace) return
+    setSwitchingHome(true)
+    try {
+      const res = await fetch('/api/auth/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ workspaceId: agencyWorkspace.id }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        switchWorkspace(data.token, data.workspace)
+        closeMobileNav()
+        router.push('/dashboard')
+      }
+    } finally { setSwitchingHome(false) }
+  }
 
   const isAgency = currentWorkspace?.isAgency ?? true
   const isViewer = currentWorkspace?.role === 'viewer'
@@ -92,18 +146,26 @@ export default function Sidebar() {
   const canManage = ['admin', 'manager'].includes(currentWorkspace?.role ?? '')
   const services = currentWorkspace?.services
 
+  // "É da equipe Carrossel" independe do workspace selecionado no momento — a pessoa pode
+  // estar navegando dentro de um cliente e continuar sendo staff (mesma lógica de
+  // lib/auth.ts:isAgencyStaff, versão client-side usando a lista já carregada no switcher).
+  const isAgencyStaffUser = accessibleWorkspaces.some(w => w.isAgency)
+  // Acesso Equipe (item 12): staff sem papel de gestão (Visualizador/Operador) — só vê Tarefas.
+  const isEquipe = isAgencyStaffUser && !canManage
+
   function isServiceLocked(service: ServiceKey | null): boolean {
     if (!service) return false
     if (isAgency) return false
     if (!isViewer) return false
-    // "Tráfego Pago" é uma rota só, mas cobre dois serviços contratáveis separadamente
-    // (Meta Ads / Google Ads) — só bloqueia a rota inteira se o cliente não tiver nenhum dos dois.
-    if (service === 'trafeqoPago') return !(services?.metaAds || services?.googleAds)
+    // "Tráfego Pago" é uma rota só, mas cobre três serviços contratáveis separadamente
+    // (Meta Ads / Google Ads / Google Local Service, aninhado em abas) — só bloqueia a
+    // rota inteira se o cliente não tiver nenhum dos três.
+    if (service === 'trafeqoPago') return !(services?.metaAds || services?.googleAds || services?.googleLocal)
     return !(services?.[service] ?? false)
   }
 
   function handleNavClick(e: React.MouseEvent, href: string, service: ServiceKey | null, comingSoon: boolean, label: string) {
-    if (comingSoon && !isAgency) {
+    if (comingSoon) {
       e.preventDefault()
       setComingSoonLabel(label)
       return
@@ -114,14 +176,21 @@ export default function Sidebar() {
       return
     }
     setPendingHref(href)
+    closeMobileNav()
   }
 
   return (
     <>
-      <aside className={`sidebar-transition flex flex-col h-screen bg-[#0a0818] border-r border-[#1e1635] relative z-20 flex-shrink-0 ${collapsed ? 'w-14' : 'w-56'}`}>
+      {/* Backdrop — só no mobile, quando o drawer está aberto */}
+      {mobileNavOpen && (
+        <div className="fixed inset-0 bg-black/60 z-30 md:hidden" onClick={closeMobileNav} />
+      )}
 
-        {/* Logo */}
-        <div className="flex items-center gap-2.5 px-3 py-3 border-b border-[#1e1635]">
+      <aside className={`sidebar-transition flex flex-col h-screen bg-[#0a0818] border-r border-[#1e1635] z-40 flex-shrink-0 fixed md:relative inset-y-0 left-0 transition-transform duration-200 ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'} ${collapsed ? 'w-14' : 'w-56'}`}>
+
+        {/* Logo — clicar volta pro painel da agência */}
+        <button onClick={handleGoHome} disabled={switchingHome} title={collapsed ? 'Painel da agência' : undefined}
+          className="flex items-center gap-2.5 px-3 py-3 border-b border-[#1e1635] hover:bg-white/[0.03] transition-colors text-left disabled:opacity-60">
           <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center"
             style={{ boxShadow: '0 0 10px rgba(245,163,20,0.3)' }}>
             <Image src="/logo-c360.png" alt="Carrossel 360" width={32} height={32} className="w-full h-full object-cover rounded-full" />
@@ -132,15 +201,17 @@ export default function Sidebar() {
               <p className="text-xs font-bold" style={{ color: '#F5A314' }}>CARROSSEL 360</p>
             </div>
           )}
-        </div>
+        </button>
 
         {/* Nav */}
         <nav className="flex-1 py-3 overflow-y-auto overflow-x-hidden">
           {navGroups.map((group) => {
+            if (group.context !== (isAgency ? 'agency' : 'client')) return null
             const visibleItems = group.items
               .filter(item => !item.adminOnly || canManage)
-              .filter(item => !item.agencyOnly || isAgency)
+              .filter(item => !item.agencyOnly || isAgencyStaffUser)
               .filter(item => !isAttendant || ATTENDANT_ALLOWED_HREFS.includes(item.href))
+              .filter(item => !isEquipe || EQUIPE_ALLOWED_HREFS.includes(item.href))
             if (visibleItems.length === 0) return null
             return (
             <div key={group.label} className="mb-3">
@@ -150,7 +221,7 @@ export default function Sidebar() {
               <div className="space-y-0.5 px-2">
                 {visibleItems.map(({ label, href, icon: Icon, service, comingSoon }) => {
                   const active = (pendingHref ?? pathname) === href
-                  const willShowComingSoon = comingSoon && !isAgency
+                  const willShowComingSoon = comingSoon
                   const locked = willShowComingSoon || isServiceLocked(service)
                   return (
                     <Link key={href} href={href} title={collapsed ? label : undefined}
@@ -177,7 +248,7 @@ export default function Sidebar() {
 
         {/* Bottom */}
         <div className="px-2 py-3 border-t border-[#1e1635] space-y-0.5">
-          {isAgency && (
+          {isAgency && isAgencyStaffUser && !isEquipe && (
             <Link href="/settings" title={collapsed ? 'Configurações' : undefined}
               onClick={() => setPendingHref('/settings')}
               className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all group
@@ -207,9 +278,9 @@ export default function Sidebar() {
           </button>
         </div>
 
-        {/* Collapse toggle */}
+        {/* Collapse toggle — só desktop; no mobile o drawer é aberto/fechado, não colapsado */}
         <button onClick={() => setCollapsed(!collapsed)}
-          className="absolute -right-3 top-5 w-5 h-5 rounded-full border flex items-center justify-center transition-all z-30"
+          className="hidden md:flex absolute -right-3 top-5 w-5 h-5 rounded-full border items-center justify-center transition-all z-30"
           style={{ background: '#0a0818', borderColor: '#2d2550', color: '#64748b' }}
           onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#F5A314'; (e.currentTarget as HTMLElement).style.color = '#F5A314'; }}
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#2d2550'; (e.currentTarget as HTMLElement).style.color = '#64748b'; }}

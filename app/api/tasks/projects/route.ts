@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthPayload } from '@/lib/auth'
+import { getAuthPayload, getAccessibleTaskSpaceIds } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
 export async function GET(req: NextRequest) {
@@ -9,8 +9,16 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const spaceId = searchParams.get('spaceId')
 
+  const accessibleSpaceIds = await getAccessibleTaskSpaceIds(auth)
+  if (spaceId && accessibleSpaceIds && !accessibleSpaceIds.includes(spaceId)) {
+    return NextResponse.json({ projects: [] })
+  }
+
   const projects = await prisma.taskProject.findMany({
-    where: { workspaceId: auth.workspaceId, ...(spaceId ? { spaceId } : {}) },
+    where: {
+      workspaceId: auth.workspaceId,
+      ...(spaceId ? { spaceId } : accessibleSpaceIds ? { spaceId: { in: accessibleSpaceIds } } : {}),
+    },
     include: { _count: { select: { tasks: { where: { parentId: null } } } } },
     orderBy: { position: 'asc' },
   })

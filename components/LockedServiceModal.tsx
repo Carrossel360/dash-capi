@@ -23,7 +23,7 @@ export default function LockedServiceModal({ label, onClose }: { label: string; 
           <span className="text-[#F5A314] font-semibold">{label}</span> não está incluído no seu plano atual.
         </p>
         <p className="text-xs text-slate-500 mb-5">Entre em contato com nossa equipe para contratar este serviço e ter acesso a todas as métricas e relatórios.</p>
-        <a href={`https://wa.me/5511999999999?text=Ol%C3%A1!+Gostaria+de+contratar+o+servi%C3%A7o+de+${encodeURIComponent(label)}`}
+        <a href={`https://wa.me/5519920019874?text=Ol%C3%A1!+Gostaria+de+contratar+o+servi%C3%A7o+de+${encodeURIComponent(label)}`}
           target="_blank" rel="noopener noreferrer"
           className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-all"
           style={{ background: '#25d366', boxShadow: '0 4px 16px rgba(37,211,102,0.3)' }}

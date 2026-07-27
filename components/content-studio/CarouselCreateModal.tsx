@@ -9,8 +9,14 @@ import { FORMAT_DIMENSIONS, type Slide, type CarouselFormat } from '@/lib/conten
 
 // Extraído de app/(dashboard)/content-studio/page.tsx — mesma lógica, só isolada
 // pra abrir espaço pro seletor de tipo de criação (Carrossel vs Site).
-export default function CarouselCreateModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { token } = useAuthStore()
+// `overrideToken`/`onCreated`: usados por Tarefas > Criação pra gerar em nome de um cliente
+// específico sem trocar o workspace da sessão (ver CriacaoPage) — sem eles, cai no
+// comportamento padrão (token da sessão atual + navega pro editor ao terminar).
+export default function CarouselCreateModal({ open, onClose, overrideToken, onCreated }: {
+  open: boolean; onClose: () => void; overrideToken?: string; onCreated?: (id: string) => void
+}) {
+  const { token: sessionToken } = useAuthStore()
+  const token = overrideToken ?? sessionToken
   const router = useRouter()
   const [generating, setGenerating] = useState(false)
 
@@ -53,7 +59,8 @@ export default function CarouselCreateModal({ open, onClose }: { open: boolean; 
       const created = await createRes.json()
       if (!createRes.ok) throw new Error(created.error || 'Erro ao salvar carrossel')
 
-      router.push(`/content-studio/${created.id}`)
+      if (onCreated) onCreated(created.id)
+      else router.push(`/content-studio/${created.id}`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao gerar carrossel')
     } finally {

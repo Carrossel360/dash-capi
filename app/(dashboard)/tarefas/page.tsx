@@ -5,6 +5,7 @@ import {
   Folder, FolderOpen, CheckSquare, Loader2, MoreHorizontal, Trash2,
   X, Hash,
 } from 'lucide-react'
+import toast from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
 import { useAuthStore } from '@/lib/store/auth'
 import CreateTaskModal from './CreateTaskModal'
@@ -46,7 +47,9 @@ function fmtDate(d: string | null) {
   return { label: date.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}), color: '#64748b' }
 }
 
-const SPACE_COLORS = ['#6a11cb','#2575fc','#10b981','#F5A314','#ef4444','#ec4899','#06b6d4','#84cc16']
+// Todos os spaces/listas usam a mesma cor (roxo da marca) — sem seletor de cor, visual
+// uniforme tipo ClickUp em vez de colorido por tópico.
+const SPACE_COLOR = '#6a11cb'
 
 // ─── TaskCard ─────────────────────────────────────────────────────────────────
 
@@ -124,7 +127,6 @@ function SpaceNav({
   const [foldersExpanded, setFoldersExpanded] = useState<Record<string, boolean>>({})
   const [creating, setCreating] = useState<{ type: 'space' | 'folder' | 'list'; parentId?: string } | null>(null)
   const [nameInput, setNameInput] = useState('')
-  const [colorPick, setColorPick] = useState(SPACE_COLORS[0])
   const [hover, setHover] = useState<string | null>(null)
   const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
 
@@ -140,7 +142,7 @@ function SpaceNav({
 
   async function createSpace() {
     if (!nameInput.trim()) return
-    await fetch('/api/tasks/spaces', { method: 'POST', headers: h, body: JSON.stringify({ name: nameInput.trim(), color: colorPick }) })
+    await fetch('/api/tasks/spaces', { method: 'POST', headers: h, body: JSON.stringify({ name: nameInput.trim(), color: SPACE_COLOR }) })
     setCreating(null); setNameInput(''); onRefresh()
   }
 
@@ -152,7 +154,7 @@ function SpaceNav({
 
   async function createList(spaceId: string, folderId?: string) {
     if (!nameInput.trim()) return
-    await fetch('/api/tasks/projects', { method: 'POST', headers: h, body: JSON.stringify({ name: nameInput.trim(), color: colorPick, spaceId, folderId: folderId ?? null }) })
+    await fetch('/api/tasks/projects', { method: 'POST', headers: h, body: JSON.stringify({ name: nameInput.trim(), color: SPACE_COLOR, spaceId, folderId: folderId ?? null }) })
     setCreating(null); setNameInput(''); onRefresh()
   }
 
@@ -184,15 +186,6 @@ function SpaceNav({
           onChange={e => setNameInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') onSubmit(); if (e.key === 'Escape') onCancel() }}
         />
-        {(creating?.type === 'space' || creating?.type === 'list') && (
-          <div className="flex gap-1 mb-2">
-            {SPACE_COLORS.map(c => (
-              <button key={c} onClick={() => setColorPick(c)}
-                className="w-4 h-4 rounded-full transition-all"
-                style={{ background: c, outline: colorPick === c ? `2px solid ${c}` : 'none', outlineOffset: 2 }} />
-            ))}
-          </div>
-        )}
         <div className="flex gap-1">
           <button onClick={onSubmit}
             className="text-[10px] px-2 py-1 rounded font-medium text-white"
@@ -243,7 +236,10 @@ function SpaceNav({
               {/* Space row */}
               <div className="group flex items-center gap-1.5 px-2 py-1.5 hover:bg-white/[0.03] rounded-lg mx-1 cursor-pointer"
                 onMouseEnter={() => setHover(space.id)} onMouseLeave={() => setHover(null)}
-                onClick={() => setExpanded(prev => ({ ...prev, [space.id]: !prev[space.id] }))}>
+                onClick={() => {
+                  setExpanded(prev => ({ ...prev, [space.id]: true }))
+                  onSelectList(null, space.id)
+                }}>
                 <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: space.color }} />
                 <span className={`text-xs font-semibold flex-1 truncate ${hasActive ? 'text-white' : 'text-slate-400'}`}>{space.name}</span>
                 {isExpanded ? <ChevronDown className="w-3 h-3 text-slate-600" /> : <ChevronRight className="w-3 h-3 text-slate-600" />}

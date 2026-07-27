@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Plus, Sparkles, Loader2, Trash2, Globe, Share2 } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
@@ -32,6 +32,7 @@ type StudioItem =
 export default function ContentStudioPage() {
   const { token, currentWorkspace } = useAuthStore()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [items, setItems] = useState<StudioItem[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -58,6 +59,14 @@ export default function ContentStudioPage() {
   }
 
   useEffect(load, [token])
+
+  // Vindo de Tarefas > Criação > Tipos (Site/Design) — já abre o wizard certo em vez de
+  // deixar o admin ter que clicar em "Criar novo" de novo.
+  useEffect(() => {
+    const want = searchParams.get('new')
+    if (want === 'site') { router.replace('/content-studio'); handleOpenSiteWizard() }
+    else if (want === 'carousel') { router.replace('/content-studio'); setCarouselModalOpen(true) }
+  }, [searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleOpenSiteWizard() {
     setTypeModalOpen(false)
@@ -88,13 +97,13 @@ export default function ContentStudioPage() {
   return (
     <div className="flex flex-col h-full">
       <Toaster position="top-right" />
-      <TopBar title="Content Studio" />
+      <TopBar title="Estúdio de Criação" />
       <main className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-base font-bold text-white flex items-center gap-2">
               <Sparkles className="w-4 h-4" style={{ color: '#F5A314' }} />
-              Content Studio
+              Estúdio de Criação
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">Crie carrosséis e sites com geração por IA</p>
           </div>

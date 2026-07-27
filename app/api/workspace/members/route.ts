@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
 
   const members = await db.workspaceMember.findMany({
     where: { workspaceId: auth.workspaceId },
-    include: { user: { select: { id: true, name: true, email: true } } },
+    include: { user: { select: { id: true, name: true, email: true, avatarUrl: true } } },
     orderBy: { user: { name: 'asc' } },
   })
 
@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
       id: m.user.id,
       name: m.user.name,
       email: m.user.email,
+      avatarUrl: m.user.avatarUrl,
       role: m.role,
     })),
   })
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (auth.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const { name, email, password, role } = await req.json()
+  const { name, email, password, role, spaceIds } = await req.json()
   if (!name || !email || !password) {
     return NextResponse.json({ error: 'name, email e password são obrigatórios' }, { status: 400 })
   }
@@ -64,6 +65,19 @@ export async function POST(req: NextRequest) {
       where: { workspaceId_userId: { workspaceId: ws.id, userId: user.id } },
       update: { role: memberRole },
       create: { workspaceId: ws.id, userId: user.id, role: memberRole },
+    })
+  }
+
+  // Seleção de Espaço — só faz sentido pra role viewer, que é a única restrita por
+  // TaskSpaceMember (ver lib/auth.ts:getAccessibleTaskSpaceIds).
+  if (memberRole === 'viewer' && Array.isArray(spaceIds) && spaceIds.length > 0) {
+    const validSpaces = await db.taskSpace.findMany({
+      where: { workspaceId: auth.workspaceId, id: { in: spaceIds } },
+      select: { id: true },
+    })
+    await db.taskSpaceMember.createMany({
+      data: validSpaces.map(s => ({ userId: user.id, taskSpaceId: s.id })),
+      skipDuplicates: true,
     })
   }
 

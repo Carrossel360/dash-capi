@@ -30,7 +30,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
   }
 
-  const { name, color, order, triggerCapiEvent } = await req.json()
+  const { name, color, order, triggerCapiEvent, isMeetingStage } = await req.json()
   if (!name) return NextResponse.json({ error: 'name obrigatório' }, { status: 400 })
 
   const stage = await prisma.pipelineStage.create({
@@ -40,6 +40,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       color: color || '#6a11cb',
       order: order ?? 0,
       triggerCapiEvent: triggerCapiEvent || 'none',
+      isMeetingStage: isMeetingStage ?? false,
     },
   })
 

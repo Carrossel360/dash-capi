@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   TrendingUp, TrendingDown, DollarSign, Users, ShoppingCart, Zap,
@@ -11,6 +12,7 @@ import { RefreshCw, History } from 'lucide-react'
 import TopBar from '@/components/TopBar'
 import PeriodSelector, { type Period } from '@/components/PeriodSelector'
 import LockedServiceModal from '@/components/LockedServiceModal'
+import GoogleLocalPanel from '@/components/GoogleLocalPanel'
 import { useAuthStore } from '@/lib/store/auth'
 
 const currencySymbol = (c?: string) => c === 'USD' ? 'US$' : 'R$'
@@ -531,6 +533,7 @@ function VisualFunnel({ keys, kpiMap, currency, palette = FC }: {
 }
 
 export default function TrafegoPagoPage() {
+  const searchParams = useSearchParams()
   const { currentWorkspace, token } = useAuthStore()
   const currency    = currentWorkspace?.currency ?? 'BRL'
   const funnelKeys       = currentWorkspace?.funnelMetrics       ?? defaultFunnelMeta
@@ -545,9 +548,14 @@ export default function TrafegoPagoPage() {
   const services = currentWorkspace?.services
   const metaLocked   = !isAgency && isViewer && !(services?.metaAds ?? false)
   const googleLocked = !isAgency && isViewer && !(services?.googleAds ?? false)
+  const localLocked  = !isAgency && isViewer && !(services?.googleLocal ?? false)
 
-  const [tab, setTab] = useState<'meta' | 'google'>(() => (metaLocked && !googleLocked) ? 'google' : 'meta')
-  const [lockedTab, setLockedTab] = useState<'meta' | 'google' | null>(null)
+  const [tab, setTab] = useState<'meta' | 'google' | 'local'>(() => {
+    const fromUrl = searchParams.get('tab')
+    if (fromUrl === 'meta' || fromUrl === 'google' || fromUrl === 'local') return fromUrl
+    return (metaLocked && !googleLocked) ? 'google' : 'meta'
+  })
+  const [lockedTab, setLockedTab] = useState<'meta' | 'google' | 'local' | null>(null)
   const [period, setPeriod]   = useState<Period>('this_month')
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null)
   const [syncing, setSyncing] = useState(false)
@@ -768,7 +776,7 @@ export default function TrafegoPagoPage() {
       )}
 
       {lockedTab && (
-        <LockedServiceModal label={lockedTab === 'meta' ? 'Meta Ads' : 'Google Ads'} onClose={() => setLockedTab(null)} />
+        <LockedServiceModal label={lockedTab === 'meta' ? 'Meta Ads' : lockedTab === 'google' ? 'Google Ads' : 'Google Local Service'} onClose={() => setLockedTab(null)} />
       )}
 
       {selectedCreative && (
@@ -788,46 +796,57 @@ export default function TrafegoPagoPage() {
           {/* Platform tabs + Period */}
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex gap-2">
-              {(['meta', 'google'] as const).map((p) => {
-                const locked = p === 'meta' ? metaLocked : googleLocked
+              {(['meta', 'google', 'local'] as const).map((p) => {
+                const locked = p === 'meta' ? metaLocked : p === 'google' ? googleLocked : localLocked
+                const color = p === 'meta' ? '#6a11cb' : p === 'google' ? '#ea4335' : '#4285f4'
+                const label = p === 'meta' ? 'Meta Ads' : p === 'google' ? 'Google Ads' : 'Google Local'
+                const glyph = p === 'meta' ? 'f' : p === 'google' ? 'G' : '★'
                 return (
                   <button key={p} onClick={() => locked ? setLockedTab(p) : setTab(p)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${tab === p && !locked ? 'text-white border-transparent' : 'bg-transparent text-slate-400 border-[#1e1635] hover:text-white'}`}
-                    style={tab === p && !locked ? { background: p === 'meta' ? '#6a11cb' : '#ea4335', boxShadow: `0 4px 16px ${p === 'meta' ? 'rgba(106,17,203,0.3)' : 'rgba(234,67,53,0.3)'}` } : {}}
+                    style={tab === p && !locked ? { background: color, boxShadow: `0 4px 16px ${color}4d` } : {}}
                   >
-                    <span className="text-base font-bold">{p === 'meta' ? 'f' : 'G'}</span>
-                    {p === 'meta' ? 'Meta Ads' : 'Google Ads'}
+                    <span className="text-base font-bold">{glyph}</span>
+                    {label}
                     {locked && <Lock className="w-3 h-3 text-slate-600" />}
                   </button>
                 )
               })}
             </div>
             <div className="w-px h-5 bg-[#1e1635]" />
-            <PeriodSelector
-              value={period}
-              onChange={p => { setPeriod(p); if (p !== 'custom') setCustomRange(null) }}
-              onCustomChange={(from, to) => setCustomRange({ from, to })}
-            />
-            <button
-              onClick={handleSyncNow}
-              disabled={syncing}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 border border-[#1e1635] hover:text-white hover:border-[#6a11cb] transition-all disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-              Atualizar agora
-            </button>
-            {period !== 'all' && (
-              <button
-                onClick={handleBackfill}
-                disabled={backfilling}
-                title="Refaz a sincronização do período selecionado direto na API — útil quando a conta foi vinculada há pouco tempo e o sync automático (janela de 30 dias) não alcançou dias mais antigos."
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 border border-[#1e1635] hover:text-white hover:border-[#6a11cb] transition-all disabled:opacity-50"
-              >
-                {backfilling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <History className="w-3.5 h-3.5" />}
-                Buscar histórico
-              </button>
+            {tab !== 'local' && (
+              <>
+                <PeriodSelector
+                  value={period}
+                  onChange={p => { setPeriod(p); if (p !== 'custom') setCustomRange(null) }}
+                  onCustomChange={(from, to) => setCustomRange({ from, to })}
+                />
+                <button
+                  onClick={handleSyncNow}
+                  disabled={syncing}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 border border-[#1e1635] hover:text-white hover:border-[#6a11cb] transition-all disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+                  Atualizar agora
+                </button>
+                {period !== 'all' && (
+                  <button
+                    onClick={handleBackfill}
+                    disabled={backfilling}
+                    title="Refaz a sincronização do período selecionado direto na API — útil quando a conta foi vinculada há pouco tempo e o sync automático (janela de 30 dias) não alcançou dias mais antigos."
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 border border-[#1e1635] hover:text-white hover:border-[#6a11cb] transition-all disabled:opacity-50"
+                  >
+                    {backfilling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <History className="w-3.5 h-3.5" />}
+                    Buscar histórico
+                  </button>
+                )}
+              </>
             )}
           </div>
+
+          {tab === 'local' && <GoogleLocalPanel />}
+
+          {tab !== 'local' && <>
 
           {/* Análise de Criativos (Meta) — logo abaixo das abas, antes das métricas: sessão
               própria da Meta (como um "subtítulo"), não escondida no fim da página. */}
@@ -1079,6 +1098,8 @@ export default function TrafegoPagoPage() {
               <p className="text-slate-600 text-xs mt-1">Tente selecionar "Todo período" ou verifique se os dados foram importados.</p>
             </div>
           )}
+
+          </>}
 
         </main>
       </div>

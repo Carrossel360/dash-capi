@@ -41,6 +41,7 @@ async function openNotification(params: {
   severity: 'critical' | 'warning'
   title: string
   message: string
+  link?: string
   metadata?: Record<string, unknown>
   dedupeKey: string
 }) {
@@ -54,6 +55,7 @@ async function openNotification(params: {
       severity: params.severity,
       title: params.title,
       message: params.message,
+      link: params.link,
       metadata: params.metadata as Prisma.InputJsonValue | undefined,
       dedupeKey: params.dedupeKey,
     },
@@ -88,6 +90,7 @@ export async function checkMetaAdsHealth(workspace: MonitorWorkspace): Promise<v
         severity: 'critical',
         title: 'Conta de anúncio Meta bloqueada',
         message: `A conta de anúncio Meta Ads de ${workspace.name} não está mais ativa (status ${account.accountStatus}${account.disableReason ? `, motivo ${account.disableReason}` : ''}).`,
+        link: '/trafego-pago?tab=meta',
         metadata: { accountStatus: account.accountStatus, disableReason: account.disableReason },
         dedupeKey: accountDedupeKey,
       })
@@ -109,6 +112,7 @@ export async function checkMetaAdsHealth(workspace: MonitorWorkspace): Promise<v
         severity: 'warning',
         title: 'Campanha Meta Ads parou de rodar',
         message: `A campanha "${campaign.name}" (${workspace.name}) mudou para ${campaign.effectiveStatus}.`,
+        link: '/trafego-pago?tab=meta',
         metadata: { campaignId: campaign.id, effectiveStatus: campaign.effectiveStatus },
         dedupeKey,
       })
@@ -135,6 +139,7 @@ export async function checkGoogleAdsHealth(workspace: MonitorWorkspace): Promise
         severity: 'critical',
         title: 'Conta Google Ads suspensa ou cancelada',
         message: `A conta Google Ads de ${workspace.name} mudou para ${customerStatus}.`,
+        link: '/trafego-pago?tab=google',
         metadata: { customerStatus },
         dedupeKey: accountDedupeKey,
       })
@@ -155,6 +160,7 @@ export async function checkGoogleAdsHealth(workspace: MonitorWorkspace): Promise
         severity: 'warning',
         title: 'Campanha Google Ads parou de rodar',
         message: `A campanha "${campaign.name}" (${workspace.name}) mudou para ${campaign.status}.`,
+        link: '/trafego-pago?tab=google',
         metadata: { campaignId: campaign.id, status: campaign.status },
         dedupeKey,
       })
@@ -187,6 +193,7 @@ export async function checkWhatsappHealth(workspace: MonitorWorkspace, adminToke
       severity: 'critical',
       title: 'WhatsApp desconectado',
       message: `A instância de WhatsApp de ${workspace.name} caiu — novos leads não estão sendo capturados no CRM.`,
+      link: '/conversas',
       dedupeKey,
     })
   } else {

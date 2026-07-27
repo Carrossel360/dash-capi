@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthPayload } from '@/lib/auth'
+import { getAuthPayload, isAgencyStaff } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
 export async function GET(req: NextRequest) {
   const auth = await getAuthPayload(req)
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const ws = await prisma.workspace.findUnique({ where: { id: auth.workspaceId }, select: { isAgency: true } })
-  const isAgencyManager = ws?.isAgency === true && ['admin', 'manager'].includes(auth.role)
+  // Independe do workspace selecionado no momento — quem é da agência vê alerta de
+  // qualquer cliente mesmo enquanto está com um cliente específico aberto no seletor.
+  const isAgencyManager = await isAgencyStaff(auth.userId)
   const unreadOnly = req.nextUrl.searchParams.get('unreadOnly') === 'true'
 
   const notifications = await prisma.notification.findMany({

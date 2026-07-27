@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthPayload } from '@/lib/auth'
+import { getAuthPayload, getAccessibleTaskSpaceIds } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
 // Returns full hierarchy: spaces → folders → lists (with task counts)
@@ -7,8 +7,10 @@ export async function GET(req: NextRequest) {
   const auth = await getAuthPayload(req)
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const spaceIds = await getAccessibleTaskSpaceIds(auth)
+
   const spaces = await prisma.taskSpace.findMany({
-    where: { workspaceId: auth.workspaceId },
+    where: { workspaceId: auth.workspaceId, ...(spaceIds ? { id: { in: spaceIds } } : {}) },
     include: {
       folders: {
         orderBy: { position: 'asc' },

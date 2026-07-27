@@ -1,11 +1,12 @@
 'use client'
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, Loader2, FileArchive, FileCode, AlertTriangle } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
 import { useAuthStore } from '@/lib/store/auth'
+import { switchToAgency } from '@/lib/switchToAgency'
 import { buildPreviewDocument, listHtmlPages } from '@/lib/site-generator/preview'
 import type { SiteFile } from '@/lib/site-generator/types'
 import SiteChatPanel, { type SiteMessage } from '@/components/content-studio/SiteChatPanel'
@@ -21,8 +22,21 @@ interface SiteProjectDoc {
 
 export default function SiteEditorPage() {
   const { id } = useParams<{ id: string }>()
-  const { token } = useAuthStore()
+  const { token, accessibleWorkspaces, switchWorkspace } = useAuthStore()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  // Chegou por Tarefas > Criação (ver openEditor) — "voltar" devolve pro hub da agência em
+  // vez de deixar o admin preso na área do cliente que só foi acessada pra editar este site.
+  const fromAgency = searchParams.get('fromAgency') === '1'
+  const returnClient = searchParams.get('client')
+  async function handleBack() {
+    if (fromAgency) {
+      await switchToAgency(token, accessibleWorkspaces, switchWorkspace)
+      router.push(`/tarefas/criacao?client=${returnClient ?? ''}&view=tipos`)
+      return
+    }
+    router.push('/content-studio')
+  }
   const [project, setProject] = useState<SiteProjectDoc | null>(null)
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
@@ -126,7 +140,7 @@ export default function SiteEditorPage() {
       <Toaster position="top-right" />
       <header className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0" style={{ borderColor: '#1e1635', background: '#0a0818' }}>
         <div className="flex items-center gap-3 min-w-0">
-          <button onClick={() => router.push('/content-studio')} className="text-slate-400 hover:text-white transition-colors flex-shrink-0">
+          <button onClick={handleBack} className="text-slate-400 hover:text-white transition-colors flex-shrink-0">
             <ArrowLeft className="w-4 h-4" />
           </button>
           <h1 className="text-sm font-semibold text-white truncate">{project.title}</h1>

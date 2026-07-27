@@ -16,11 +16,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     include: {
       members: { include: { user: { select: { id: true, name: true, email: true } } } },
       stages: { orderBy: { order: 'asc' } },
+      extraServices: { select: { key: true } },
       _count: { select: { leads: true, capiEvents: true, campaigns: true } },
     },
   })
+  if (!workspace) return NextResponse.json({ error: 'Cliente não encontrado' }, { status: 404 })
 
-  return NextResponse.json({ workspace })
+  return NextResponse.json({
+    workspace: { ...workspace, extraServices: workspace.extraServices.map(s => s.key) },
+  })
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -37,8 +41,30 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const {
     name, segment, plan, metaPixelId, metaAccessToken, metaAdAccountId, googleAdsCustomerId, localServicesAccountId,
     currency, svcMetaAds, svcGoogleAds, svcSocialMedia, svcGoogleBusiness, svcGoogleLocal, svcContentStudio, svcSiteGenerator,
-    metaVisibleMetrics, googleVisibleMetrics, funnelMetrics, googleFunnelMetrics, whatsappNumber,
+    metaVisibleMetrics, googleVisibleMetrics, funnelMetrics, googleFunnelMetrics, whatsappNumber, isActive, extraServices,
+    isAgencyInternal,
   } = await req.json()
+
+  // Só um cliente pode representar as operações internas da agência por vez — a Visão Geral
+  // da Agência (ver app/api/agency/overview/route.ts) lê Leads/Reuniões/Investimento dele.
+  if (isAgencyInternal === true) {
+    await prisma.workspace.updateMany({
+      where: { isAgency: false, isAgencyInternal: true, id: { not: params.id } },
+      data: { isAgencyInternal: false },
+    })
+  }
+
+  if (extraServices !== undefined) {
+    const keys: string[] = Array.isArray(extraServices) ? extraServices : []
+    await prisma.$transaction([
+      prisma.workspaceService.deleteMany({ where: { workspaceId: params.id, key: { notIn: keys } } }),
+      ...keys.map(key => prisma.workspaceService.upsert({
+        where: { workspaceId_key: { workspaceId: params.id, key } },
+        create: { workspaceId: params.id, key },
+        update: {},
+      })),
+    ])
+  }
 
   const workspace = await prisma.workspace.update({
     where: { id: params.id },
@@ -46,6 +72,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(name && { name }),
       ...(segment !== undefined && { segment }),
       ...(plan && { plan }),
+      ...(isActive !== undefined && { isActive }),
       ...(metaPixelId !== undefined && { metaPixelId }),
       ...(metaAccessToken && { metaAccessToken }),
       ...(metaAdAccountId !== undefined && { metaAdAccountId }),
@@ -64,6 +91,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(googleVisibleMetrics !== undefined && { googleVisibleMetrics }),
       ...(funnelMetrics !== undefined && { funnelMetrics }),
       ...(googleFunnelMetrics !== undefined && { googleFunnelMetrics }),
+      ...(isAgencyInternal !== undefined && { isAgencyInternal }),
     },
   })
 

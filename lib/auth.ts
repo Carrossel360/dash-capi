@@ -22,6 +22,31 @@ export async function verifyToken(token: string): Promise<JWTPayload> {
   return payload as unknown as JWTPayload
 }
 
+// Verdadeiro se o usuário é admin/manager em QUALQUER workspace com isAgency:true —
+// independe de qual workspace está selecionado no momento (auth.workspaceId), diferente de
+// checar `isAgency` do workspace atual. Usado onde a permissão deve seguir a pessoa, não a
+// navegação (ex: ver notificações de todos os clientes mesmo enquanto está olhando um só).
+export async function isAgencyStaff(userId: string): Promise<boolean> {
+  const membership = await prisma.workspaceMember.findFirst({
+    where: { userId, role: { in: ['admin', 'manager'] }, workspace: { isAgency: true } },
+  })
+  return !!membership
+}
+
+// Retorna a lista de TaskSpace que o usuário pode ver, ou null se não há restrição
+// (admin/manager veem tudo, e workspaces de cliente não usam esse escopo). Implementa a
+// "Seleção de Espaço" do nível de acesso Equipe, via TaskSpaceMember.
+export async function getAccessibleTaskSpaceIds(auth: JWTPayload): Promise<string[] | null> {
+  if (['admin', 'manager'].includes(auth.role)) return null
+  const ws = await prisma.workspace.findUnique({ where: { id: auth.workspaceId }, select: { isAgency: true } })
+  if (!ws?.isAgency) return null
+  const memberships = await prisma.taskSpaceMember.findMany({
+    where: { userId: auth.userId, taskSpace: { workspaceId: auth.workspaceId } },
+    select: { taskSpaceId: true },
+  })
+  return memberships.map(m => m.taskSpaceId)
+}
+
 export async function getAuthPayload(req: NextRequest): Promise<JWTPayload | null> {
   try {
     const header = req.headers.get('authorization') || ''

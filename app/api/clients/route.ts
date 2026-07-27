@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
       workspace: {
         include: {
           members: { include: { user: { select: { id: true, name: true, email: true } } } },
+          extraServices: { select: { key: true } },
           _count: { select: { leads: true, capiEvents: true } },
         },
       },
@@ -36,6 +37,14 @@ export async function GET(req: NextRequest) {
       metaPixelId: m.workspace.metaPixelId,
       metaAccessToken: m.workspace.metaAccessToken ? '••••••••' : null,
       googleAdsCustomerId: m.workspace.googleAdsCustomerId,
+      isActive: m.workspace.isActive,
+      isAgencyInternal: m.workspace.isAgencyInternal,
+      svcMetaAds: m.workspace.svcMetaAds,
+      svcGoogleAds: m.workspace.svcGoogleAds,
+      svcGoogleLocal: m.workspace.svcGoogleLocal,
+      svcSocialMedia: m.workspace.svcSocialMedia,
+      svcGoogleBusiness: m.workspace.svcGoogleBusiness,
+      extraServices: m.workspace.extraServices.map(s => s.key),
       createdAt: m.workspace.createdAt,
       role: m.role,
       leadsCount: m.workspace._count.leads,
@@ -56,6 +65,7 @@ export async function POST(req: NextRequest) {
   const {
     name, segment, plan, loginEmail, loginPassword,
     currency, svcMetaAds, svcGoogleAds, svcSocialMedia, svcGoogleBusiness, svcGoogleLocal,
+    extraServices,
   } = await req.json()
   if (!name || !loginEmail || !loginPassword) {
     return NextResponse.json({ error: 'name, loginEmail e loginPassword são obrigatórios' }, { status: 400 })
@@ -116,6 +126,12 @@ export async function POST(req: NextRequest) {
   ]
   for (const s of stages) {
     await prisma.pipelineStage.create({ data: { workspaceId: workspace.id, ...s } })
+  }
+
+  if (Array.isArray(extraServices) && extraServices.length > 0) {
+    await prisma.workspaceService.createMany({
+      data: extraServices.map((key: string) => ({ workspaceId: workspace.id, key })),
+    })
   }
 
   return NextResponse.json({ workspace, loginEmail }, { status: 201 })

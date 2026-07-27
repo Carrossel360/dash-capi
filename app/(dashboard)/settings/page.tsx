@@ -1,9 +1,10 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Save, Plus, Trash2, CheckCircle, Eye, EyeOff,
   Users, Loader2, Smartphone, RefreshCw,
-  Wifi, WifiOff, Zap, ChevronDown, KeyRound, X,
+  Wifi, WifiOff, Zap, ChevronDown, KeyRound, X, Rows3, Camera, Clock,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
@@ -12,7 +13,7 @@ import { OPENAI_TEXT_MODELS, ANTHROPIC_TEXT_MODELS } from '@/lib/ai-models'
 
 interface Member {
   id: string; role: string
-  user: { id: string; name: string; email: string }
+  user: { id: string; name: string; email: string; avatarUrl?: string | null }
 }
 interface WorkspaceData {
   id: string; name: string
@@ -38,6 +39,14 @@ const ROLE_LABELS: Record<string, string> = {
 }
 const ROLE_COLORS: Record<string, string> = {
   admin: '#F5A314', manager: '#8b5cf6', attendant: '#2575fc', viewer: '#64748b',
+}
+// Labels do lado Equipe (interno da agência) — mesmo enum Role, 3 opções em vez de 4
+// (sem "attendant", que só existe do lado Cliente). Ver decisão registrada no plano C1.
+const TEAM_ROLE_LABELS: Record<string, string> = {
+  admin: 'Admin', manager: 'Operador', viewer: 'Visualizador',
+}
+const TEAM_ROLE_COLORS: Record<string, string> = {
+  admin: '#F5A314', manager: '#8b5cf6', viewer: '#64748b',
 }
 
 
@@ -86,8 +95,64 @@ function SaveBtn({ onClick, loading }: { onClick: () => void; loading: boolean }
   )
 }
 
+// Foto de perfil de um membro da equipe — aparece no avatar do TopBar de quem está logado.
+function MemberAvatar({ userId, name, avatarUrl, token, editable, onUploaded }: {
+  userId: string; name: string; avatarUrl?: string | null; token: string | null
+  editable: boolean; onUploaded: (url: string) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+      const res = await fetch(`/api/workspace/members/${userId}/avatar`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ dataUrl }),
+      })
+      const data = await res.json()
+      if (res.ok) { onUploaded(data.avatarUrl); toast.success('Foto atualizada') }
+      else toast.error('Erro ao enviar foto')
+    } catch {
+      toast.error('Erro ao enviar foto')
+    } finally {
+      setUploading(false)
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  return (
+    <div className="relative w-8 h-8 flex-shrink-0 group/avatar">
+      <div
+        onClick={() => editable && inputRef.current?.click()}
+        className={`w-8 h-8 rounded-full gradient-brand flex items-center justify-center text-xs font-bold text-white overflow-hidden ${editable ? 'cursor-pointer' : ''}`}
+      >
+        {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : avatarUrl
+          ? <img src={avatarUrl} alt={name} className="w-full h-full object-cover" />
+          : name[0]?.toUpperCase()}
+      </div>
+      {editable && !uploading && (
+        <div onClick={() => inputRef.current?.click()}
+          className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover/avatar:opacity-100 flex items-center justify-center cursor-pointer transition-opacity">
+          <Camera className="w-3 h-3 text-white" />
+        </div>
+      )}
+      {editable && <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />}
+    </div>
+  )
+}
+
 export default function SettingsPage() {
-  const { token, currentWorkspace, accessibleWorkspaces } = useAuthStore()
+  const { token, currentWorkspace, accessibleWorkspaces, updateUser, user: loggedInUser } = useAuthStore()
   const role = currentWorkspace?.role ?? 'viewer'
   const isAgency = currentWorkspace?.isAgency === true
   const canManage = ['admin', 'manager'].includes(role)
@@ -96,32 +161,33 @@ export default function SettingsPage() {
   // cliente final nunca tem membership no workspace isAgency:true.
   const isAgencyStaff = accessibleWorkspaces.some(w => w.isAgency)
 
-  // Meta CAPI and Contas only visible inside agency's own workspace. Pipeline/Produtos/Rastreio
-  // de cada cliente ficam em Clientes → [cliente] → Configurar (CRM/Produtos/Rastreio) — aqui só
-  // sobram configurações da própria agência, já que esta tela só é acessível com Carrossel 360 selecionado.
-  const ALL_TABS = [
-    { id: 'meta',       label: 'Meta CAPI',          agencyOnly: true,  staffOnly: false },
-    { id: 'contas',     label: 'Contas de Anúncios',  agencyOnly: true,  staffOnly: false },
-    { id: 'equipe',     label: 'Equipe',               agencyOnly: false, staffOnly: false },
-    { id: 'whatsapp',   label: 'WhatsApp',             agencyOnly: false, staffOnly: false },
-    { id: 'alertas',    label: 'Alertas',               agencyOnly: true,  staffOnly: false },
-    { id: 'relatorios-ia', label: 'Relatórios com IA',  agencyOnly: false, staffOnly: true },
-  ]
-  const tabs = ALL_TABS.filter(t => (!t.agencyOnly || isAgency) && (!t.staffOnly || isAgencyStaff))
+  const router = useRouter()
 
-  const [tab, setTab] = useState(() => isAgency ? 'meta' : 'equipe')
+  // Configurações agora só é alcançável a partir do painel da própria agência (Sidebar esconde
+  // o link quando um cliente está selecionado) — tudo que é específico de um cliente (Meta CAPI,
+  // Contas de Anúncios, CRM/Produtos/Rastreio) fica em Clientes → [cliente] → Configurar. Aqui só
+  // sobra o que é geral da agência: Clientes (atalho pra lista), Equipe, WhatsApp/Telegram
+  // (notificações da própria agência) e Relatórios com IA (chaves + prompt padrão).
+  const ALL_TABS = [
+    { id: 'clientes',   label: 'Clientes',              staffOnly: false },
+    { id: 'equipe',     label: 'Equipe',                staffOnly: false },
+    { id: 'whatsapp',   label: 'WhatsApp / Telegram',   staffOnly: false },
+    { id: 'relatorios-ia', label: 'Relatórios com IA',  staffOnly: true },
+  ]
+  const tabs = ALL_TABS.filter(t => !t.staffOnly || isAgencyStaff)
+
+  const [tab, setTab] = useState('equipe')
+
+  function handleTabClick(id: string) {
+    if (id === 'clientes') { router.push('/clientes'); return }
+    setTab(id)
+  }
+
+  useEffect(() => { if (!isAgency) router.push('/dashboard') }, [isAgency, router])
+
   const [ws, setWs] = useState<WorkspaceData | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-
-  // Meta CAPI
-  const [pixelId,   setPixelId]   = useState('')
-  const [capiToken, setCapiToken] = useState('')
-
-  // Contas de Anúncios
-  const [adAccountId,      setAdAccountId]      = useState('')
-  const [igAccountId,      setIgAccountId]      = useState('')
-  const [googleCustomerId, setGoogleCustomerId] = useState('')
 
   // WhatsApp — admin fields
   const [uazapiUrl,          setUazapiUrl]          = useState('')
@@ -159,6 +225,11 @@ export default function SettingsPage() {
   const [accessMode, setAccessMode] = useState<'client' | 'agency'>('client')
   const [clientOptions, setClientOptions] = useState<{ id: string; name: string }[]>([])
   const [selectedClientId, setSelectedClientId] = useState('')
+  const [taskSpaces, setTaskSpaces] = useState<{ id: string; name: string; color: string }[]>([])
+  const [selectedSpaceIds, setSelectedSpaceIds] = useState<string[]>([])
+  const [spacesFor, setSpacesFor] = useState<{ id: string; name: string } | null>(null)
+  const [memberSpaceIds, setMemberSpaceIds] = useState<string[]>([])
+  const [savingSpaces, setSavingSpaces] = useState(false)
   const [resetPwFor, setResetPwFor] = useState<{ id: string; name: string } | null>(null)
   const [newPw, setNewPw] = useState('')
   const [savingPw, setSavingPw] = useState(false)
@@ -173,11 +244,6 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error()
       const data: WorkspaceData = await res.json()
       setWs(data)
-      setPixelId(data.metaPixelId ?? '')
-      setCapiToken(data.metaAccessToken ?? '')
-      setAdAccountId(data.metaAdAccountId ?? '')
-      setIgAccountId(data.instagramAccountId ?? '')
-      setGoogleCustomerId(data.googleAdsCustomerId ?? '')
       setUazapiUrl(data.uazapiUrl ?? '')
       setUazapiAdminToken(data.uazapiAdminToken ?? '')
       setUazapiInstanceName(data.uazapiInstanceName ?? '')
@@ -219,30 +285,6 @@ export default function SettingsPage() {
       fetchQrCode()
     }
   }, [tab, uazapiInstanceName]) // eslint-disable-line
-
-  async function saveMeta() {
-    setSaving(true)
-    try {
-      const res = await fetch('/api/workspace', {
-        method: 'PATCH', headers: h,
-        body: JSON.stringify({ metaPixelId: pixelId, metaAccessToken: capiToken }),
-      })
-      if (!res.ok) throw new Error()
-      toast.success('Meta CAPI salvo!')
-    } catch { toast.error('Erro ao salvar') } finally { setSaving(false) }
-  }
-
-  async function saveContas() {
-    setSaving(true)
-    try {
-      const res = await fetch('/api/workspace', {
-        method: 'PATCH', headers: h,
-        body: JSON.stringify({ metaAdAccountId: adAccountId, instagramAccountId: igAccountId, googleAdsCustomerId: googleCustomerId }),
-      })
-      if (!res.ok) throw new Error()
-      toast.success('Contas salvas!')
-    } catch { toast.error('Erro ao salvar') } finally { setSaving(false) }
-  }
 
   async function saveAlertas() {
     setSaving(true)
@@ -289,6 +331,13 @@ export default function SettingsPage() {
         setClientOptions((data.clients ?? []).map((c: { id: string; name: string }) => ({ id: c.id, name: c.name })))
       } catch { /* dropdown fica vazio, usuário pode tentar de novo */ }
     }
+    if (taskSpaces.length === 0) {
+      try {
+        const res = await fetch('/api/tasks/spaces', { headers: { Authorization: `Bearer ${token}` } })
+        const data = await res.json()
+        setTaskSpaces((data.spaces ?? []).map((s: { id: string; name: string; color: string }) => ({ id: s.id, name: s.name, color: s.color })))
+      } catch { /* lista fica vazia, usuário pode tentar de novo */ }
+    }
   }
 
   function resetAddMemberForm() {
@@ -299,6 +348,7 @@ export default function SettingsPage() {
     setNewMemberRole('viewer')
     setAccessMode('client')
     setSelectedClientId('')
+    setSelectedSpaceIds([])
   }
 
   async function handleAddMember() {
@@ -316,7 +366,10 @@ export default function SettingsPage() {
         : `/api/clients/${selectedClientId}/members`
       const res = await fetch(url, {
         method: 'POST', headers: h,
-        body: JSON.stringify({ name: newMemberName, email: newMemberEmail, password: newMemberPassword, role: newMemberRole }),
+        body: JSON.stringify({
+          name: newMemberName, email: newMemberEmail, password: newMemberPassword, role: newMemberRole,
+          ...(accessMode === 'agency' && newMemberRole === 'viewer' ? { spaceIds: selectedSpaceIds } : {}),
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro ao adicionar membro')
@@ -391,10 +444,6 @@ export default function SettingsPage() {
     ? `${process.env.NEXT_PUBLIC_API_URL ?? ''}/api/webhooks/uazapi/${currentWorkspace.id}`
     : '...'
 
-  const scriptUrl = currentWorkspace
-    ? `${process.env.NEXT_PUBLIC_API_URL ?? ''}/api/t/${currentWorkspace.id}`
-    : '...'
-
   if (loading) {
     return (
       <div className="flex flex-col h-full overflow-hidden">
@@ -421,79 +470,18 @@ export default function SettingsPage() {
           {/* Tabs */}
           <div className="flex gap-1 p-1 bg-[#0f0b1e] rounded-xl border border-[#1e1635] w-fit mb-5 flex-wrap">
             {tabs.map(t => (
-              <button key={t.id} onClick={() => setTab(t.id)}
+              <button key={t.id} onClick={() => handleTabClick(t.id)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${tab === t.id ? 'gradient-brand text-white' : 'text-slate-400 hover:text-white'}`}>
                 {t.label}
               </button>
             ))}
           </div>
 
-          {/* ── Meta CAPI ── */}
-          {tab === 'meta' && (
-            <div className="glass rounded-2xl p-5 space-y-5">
+          {/* ── Telegram (notificações da agência) — parte da aba WhatsApp / Telegram ── */}
+          {tab === 'whatsapp' && (
+            <div className="glass rounded-2xl p-5 space-y-5 mb-4">
               <div>
-                <h2 className="text-sm font-semibold text-white">Meta Conversions API</h2>
-                <p className="text-xs text-slate-500 mt-1">Pixel ID e Access Token para envio de eventos de conversão ao Meta.</p>
-              </div>
-              {pixelId ? (
-                <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-3 py-2 rounded-lg">
-                  <CheckCircle className="w-3.5 h-3.5" /> Pixel conectado — ID: {pixelId}
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-400/10 border border-amber-400/20 px-3 py-2 rounded-lg">
-                  Pixel não configurado
-                </div>
-              )}
-              <div className="space-y-4">
-                <Field label="Pixel ID">
-                  <TextInput value={pixelId} onChange={setPixelId} placeholder="Ex: 1234567890" />
-                </Field>
-                <Field label="Access Token (CAPI)">
-                  <TextInput value={capiToken} onChange={setCapiToken} placeholder="EAAxxxxxxxx..." secret />
-                </Field>
-                <SaveBtn onClick={saveMeta} loading={saving} />
-              </div>
-              <div className="pt-4 border-t border-[#1e1635] space-y-2">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Script de Rastreamento</p>
-                <p className="text-xs text-slate-500">Adicione no &lt;head&gt; do site para capturar eventos automaticamente.</p>
-                <div className="bg-[#080612] border border-[#1e1635] rounded-lg p-3 overflow-x-auto flex items-start justify-between gap-2">
-                  <code className="text-xs text-[#8b5cf6] whitespace-pre">{`<script src="${scriptUrl}" async></script>`}</code>
-                  <button onClick={() => { navigator.clipboard.writeText(`<script src="${scriptUrl}" async></script>`); toast.success('Copiado!') }}
-                    className="text-xs text-slate-500 hover:text-white transition-colors flex-shrink-0">Copiar</button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── Contas de Anúncios ── */}
-          {tab === 'contas' && (
-            <div className="glass rounded-2xl p-5 space-y-5">
-              <div>
-                <h2 className="text-sm font-semibold text-white">Contas de Anúncios</h2>
-                <p className="text-xs text-slate-500 mt-1">IDs das contas para sincronização automática de dados.</p>
-              </div>
-              <div className="space-y-4">
-                <Field label="Ad Account ID (Meta Ads)">
-                  <TextInput value={adAccountId} onChange={setAdAccountId} placeholder="act_123456789" />
-                </Field>
-                <Field label="Instagram Business Account ID">
-                  <TextInput value={igAccountId} onChange={setIgAccountId} placeholder="17841234567890" />
-                </Field>
-                <div className="pt-4 border-t border-[#1e1635]">
-                  <Field label="Customer ID (Google Ads)">
-                    <TextInput value={googleCustomerId} onChange={setGoogleCustomerId} placeholder="123-456-7890" />
-                  </Field>
-                </div>
-                <SaveBtn onClick={saveContas} loading={saving} />
-              </div>
-            </div>
-          )}
-
-          {/* ── Alertas ── */}
-          {tab === 'alertas' && (
-            <div className="glass rounded-2xl p-5 space-y-5">
-              <div>
-                <h2 className="text-sm font-semibold text-white">Alertas via Telegram</h2>
+                <h2 className="text-sm font-semibold text-white">Telegram</h2>
                 <p className="text-xs text-slate-500 mt-1">
                   Bot e grupo do Telegram que recebem os avisos de bloqueio de conta, campanha pausada e WhatsApp desconectado.
                 </p>
@@ -513,31 +501,29 @@ export default function SettingsPage() {
           {/* ── Relatórios com IA ── */}
           {tab === 'relatorios-ia' && (
             <div className="space-y-5">
-              {isAgency && (
-                <div className="glass rounded-2xl p-5 space-y-5">
-                  <div>
-                    <h2 className="text-sm font-semibold text-white">Chaves de API — Provedores de IA</h2>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Usadas por todos os clientes para gerar Relatórios com IA (a chave da OpenAI também alimenta o Content Studio).
-                    </p>
-                  </div>
-                  <div className="space-y-4">
-                    <Field label="OpenAI API Key">
-                      <TextInput value={openaiApiKey} onChange={setOpenaiApiKey} placeholder="sk-..." secret />
-                    </Field>
-                    <Field label="Anthropic API Key">
-                      <TextInput value={anthropicApiKey} onChange={setAnthropicApiKey} placeholder="sk-ant-..." secret />
-                    </Field>
-                    <SaveBtn onClick={saveAiKeys} loading={saving} />
-                  </div>
+              <div className="glass rounded-2xl p-5 space-y-5">
+                <div>
+                  <h2 className="text-sm font-semibold text-white">Chaves de API — Provedores de IA</h2>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Usadas por todos os clientes para gerar Relatórios com IA (a chave da OpenAI também alimenta o Estúdio de Criação).
+                  </p>
                 </div>
-              )}
+                <div className="space-y-4">
+                  <Field label="OpenAI API Key">
+                    <TextInput value={openaiApiKey} onChange={setOpenaiApiKey} placeholder="sk-..." secret />
+                  </Field>
+                  <Field label="Anthropic API Key">
+                    <TextInput value={anthropicApiKey} onChange={setAnthropicApiKey} placeholder="sk-ant-..." secret />
+                  </Field>
+                  <SaveBtn onClick={saveAiKeys} loading={saving} />
+                </div>
+              </div>
 
               <div className="glass rounded-2xl p-5 space-y-5">
                 <div>
-                  <h2 className="text-sm font-semibold text-white">Configuração da Análise</h2>
+                  <h2 className="text-sm font-semibold text-white">Configuração padrão da análise</h2>
                   <p className="text-xs text-slate-500 mt-1">
-                    Provedor de IA e instrução customizada para a análise de Tráfego Pago deste cliente.
+                    Provedor de IA e instrução customizada usados como padrão ao gerar Relatórios com IA para qualquer cliente.
                   </p>
                 </div>
                 {loadingReportConfig ? (
@@ -594,6 +580,14 @@ export default function SettingsPage() {
                   </div>
                 )}
               </div>
+
+              <div className="glass rounded-2xl p-5 flex items-center gap-3 opacity-60">
+                <Clock className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-white">Agendamentos</p>
+                  <p className="text-xs text-slate-500">Envio automático periódico de Relatórios com IA — em breve.</p>
+                </div>
+              </div>
             </div>
           )}
 
@@ -635,7 +629,7 @@ export default function SettingsPage() {
                         onChange={e => setNewMemberRole(e.target.value)}
                         className="w-full px-3 py-2.5 text-sm bg-[#1e1635] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb] transition-colors"
                       >
-                        {Object.entries(ROLE_LABELS).map(([id, label]) => (
+                        {Object.entries(accessMode === 'agency' ? TEAM_ROLE_LABELS : ROLE_LABELS).map(([id, label]) => (
                           <option key={id} value={id}>{label}</option>
                         ))}
                       </select>
@@ -651,12 +645,12 @@ export default function SettingsPage() {
                           : { borderColor: '#2d2550', color: '#94a3b8' }}>
                         Cliente específico
                       </button>
-                      <button type="button" onClick={() => setAccessMode('agency')}
+                      <button type="button" onClick={() => { setAccessMode('agency'); if (newMemberRole === 'attendant') setNewMemberRole('viewer') }}
                         className="flex-1 py-2 rounded-lg text-xs font-semibold border transition-all"
                         style={accessMode === 'agency'
                           ? { background: 'rgba(245,163,20,0.15)', borderColor: '#F5A314', color: '#fff' }
                           : { borderColor: '#2d2550', color: '#94a3b8' }}>
-                        Agência (acesso total)
+                        Agência (equipe interna)
                       </button>
                     </div>
                   </Field>
@@ -673,8 +667,34 @@ export default function SettingsPage() {
                       </select>
                     </Field>
                   )}
-                  {accessMode === 'agency' && (
-                    <p className="text-[11px] text-slate-500">Essa pessoa vai enxergar todos os clientes existentes e os que forem criados no futuro.</p>
+                  {accessMode === 'agency' && newMemberRole !== 'viewer' && (
+                    <p className="text-[11px] text-slate-500">
+                      {newMemberRole === 'admin'
+                        ? 'Admin enxerga e gerencia tudo na agência, incluindo os clientes.'
+                        : 'Operador enxerga e gerencia tudo — todos os Espaços de Tarefas e clientes, sem restrição.'}
+                    </p>
+                  )}
+                  {accessMode === 'agency' && newMemberRole === 'viewer' && (
+                    <Field label="Espaços de Tarefas com acesso">
+                      <div className="flex flex-wrap gap-1.5 p-2.5 rounded-lg border border-[#2d2550] bg-[#1e1635] max-h-32 overflow-y-auto">
+                        {taskSpaces.length === 0 && <p className="text-[11px] text-slate-600 px-1">Nenhum space criado ainda em Tarefas.</p>}
+                        {taskSpaces.map(s => {
+                          const checked = selectedSpaceIds.includes(s.id)
+                          return (
+                            <button key={s.id} type="button"
+                              onClick={() => setSelectedSpaceIds(prev => checked ? prev.filter(id => id !== s.id) : [...prev, s.id])}
+                              className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-medium border transition-all"
+                              style={checked
+                                ? { background: `${s.color}22`, borderColor: s.color, color: '#fff' }
+                                : { borderColor: '#2d2550', color: '#94a3b8' }}>
+                              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: s.color }} />
+                              {s.name}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <p className="text-[10px] text-slate-600 mt-1">Sem nenhum selecionado, essa pessoa não vê nenhum space em Tarefas.</p>
+                    </Field>
                   )}
 
                   <div className="flex items-center gap-2 pt-1">
@@ -693,12 +713,17 @@ export default function SettingsPage() {
 
               <div className="space-y-2">
                 {(ws?.members ?? []).map(m => {
-                  const isSelf = m.user.id === (currentWorkspace as any)?.userId
+                  const isSelf = m.user.id === loggedInUser?.id
                   return (
                     <div key={m.id} className="flex items-center gap-3 p-3 bg-[#0f0b1e] rounded-xl border border-[#1e1635]">
-                      <div className="w-8 h-8 rounded-full gradient-brand flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
-                        {m.user.name[0]}
-                      </div>
+                      <MemberAvatar
+                        userId={m.user.id} name={m.user.name} avatarUrl={m.user.avatarUrl} token={token}
+                        editable={canManage || isSelf}
+                        onUploaded={url => {
+                          setWs(prev => prev ? { ...prev, members: prev.members.map(mm => mm.user.id === m.user.id ? { ...mm, user: { ...mm.user, avatarUrl: url } } : mm) } : prev)
+                          if (isSelf) updateUser({ avatarUrl: url })
+                        }}
+                      />
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold text-white truncate">{m.user.name}</p>
                         <p className="text-[10px] text-slate-500 truncate">{m.user.email}</p>
@@ -722,18 +747,41 @@ export default function SettingsPage() {
                               }}
                               className="appearance-none pl-2 pr-6 py-1 rounded-lg text-[11px] font-semibold border focus:outline-none cursor-pointer"
                               style={{
-                                background: `${ROLE_COLORS[m.role] ?? '#64748b'}18`,
-                                borderColor: `${ROLE_COLORS[m.role] ?? '#64748b'}40`,
-                                color: ROLE_COLORS[m.role] ?? '#64748b',
+                                background: `${(isAgency ? TEAM_ROLE_COLORS : ROLE_COLORS)[m.role] ?? '#64748b'}18`,
+                                borderColor: `${(isAgency ? TEAM_ROLE_COLORS : ROLE_COLORS)[m.role] ?? '#64748b'}40`,
+                                color: (isAgency ? TEAM_ROLE_COLORS : ROLE_COLORS)[m.role] ?? '#64748b',
                               }}
                             >
-                              {Object.entries(ROLE_LABELS).map(([id, label]) => (
+                              {Object.entries(isAgency ? TEAM_ROLE_LABELS : ROLE_LABELS).map(([id, label]) => (
                                 <option key={id} value={id}>{label}</option>
                               ))}
                             </select>
                             <ChevronDown className="w-3 h-3 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none"
-                              style={{ color: ROLE_COLORS[m.role] ?? '#64748b' }} />
+                              style={{ color: (isAgency ? TEAM_ROLE_COLORS : ROLE_COLORS)[m.role] ?? '#64748b' }} />
                           </div>
+                          {isAgency && m.role === 'viewer' && (
+                            <button
+                              onClick={async () => {
+                                setSpacesFor({ id: m.user.id, name: m.user.name })
+                                if (taskSpaces.length === 0) {
+                                  try {
+                                    const res = await fetch('/api/tasks/spaces', { headers: { Authorization: `Bearer ${token}` } })
+                                    const data = await res.json()
+                                    setTaskSpaces((data.spaces ?? []).map((s: { id: string; name: string; color: string }) => ({ id: s.id, name: s.name, color: s.color })))
+                                  } catch { /* lista fica vazia */ }
+                                }
+                                try {
+                                  const res = await fetch(`/api/workspace/members/${m.user.id}/task-spaces`, { headers: { Authorization: `Bearer ${token}` } })
+                                  const data = await res.json()
+                                  setMemberSpaceIds(data.spaceIds ?? [])
+                                } catch { setMemberSpaceIds([]) }
+                              }}
+                              title="Espaços de Tarefas com acesso"
+                              className="w-7 h-7 flex items-center justify-center rounded-lg border border-[#2d2550] text-slate-500 hover:text-white hover:border-[#6a11cb]/50 transition-all"
+                            >
+                              <Rows3 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           <button
                             onClick={() => { setResetPwFor({ id: m.user.id, name: m.user.name }); setNewPw('') }}
                             title="Resetar senha"
@@ -759,8 +807,11 @@ export default function SettingsPage() {
                         </div>
                       ) : (
                         <span className="text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0"
-                          style={{ color: ROLE_COLORS[m.role] ?? '#64748b', background: `${ROLE_COLORS[m.role] ?? '#64748b'}18` }}>
-                          {ROLE_LABELS[m.role] ?? m.role}
+                          style={{
+                            color: (isAgency ? TEAM_ROLE_COLORS : ROLE_COLORS)[m.role] ?? '#64748b',
+                            background: `${(isAgency ? TEAM_ROLE_COLORS : ROLE_COLORS)[m.role] ?? '#64748b'}18`,
+                          }}>
+                          {(isAgency ? TEAM_ROLE_LABELS : ROLE_LABELS)[m.role] ?? m.role}
                         </span>
                       )}
                     </div>
@@ -898,6 +949,60 @@ export default function SettingsPage() {
 
         </div>
       </main>
+
+      {spacesFor && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setSpacesFor(null)} />
+          <div className="relative rounded-2xl w-full max-w-sm shadow-2xl z-10 p-5 space-y-4"
+            style={{ background: '#0d0a1f', border: '1px solid rgba(106,17,203,0.3)' }}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white">Espaços de {spacesFor.name}</h3>
+              <button onClick={() => setSpacesFor(null)} className="text-slate-500 hover:text-white transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5 max-h-56 overflow-y-auto">
+              {taskSpaces.length === 0 && <p className="text-[11px] text-slate-600">Nenhum space criado ainda em Tarefas.</p>}
+              {taskSpaces.map(s => {
+                const checked = memberSpaceIds.includes(s.id)
+                return (
+                  <button key={s.id} type="button"
+                    onClick={() => setMemberSpaceIds(prev => checked ? prev.filter(id => id !== s.id) : [...prev, s.id])}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-medium border transition-all"
+                    style={checked
+                      ? { background: `${s.color}22`, borderColor: s.color, color: '#fff' }
+                      : { borderColor: '#2d2550', color: '#94a3b8' }}>
+                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: s.color }} />
+                    {s.name}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  setSavingSpaces(true)
+                  try {
+                    const res = await fetch(`/api/workspace/members/${spacesFor.id}/task-spaces`, {
+                      method: 'PUT', headers: h, body: JSON.stringify({ spaceIds: memberSpaceIds }),
+                    })
+                    if (res.ok) { toast.success('Espaços atualizados'); setSpacesFor(null) }
+                    else toast.error('Erro ao atualizar espaços')
+                  } finally { setSavingSpaces(false) }
+                }}
+                disabled={savingSpaces}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg gradient-brand text-white text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-all">
+                {savingSpaces ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Rows3 className="w-3.5 h-3.5" />}
+                Salvar
+              </button>
+              <button onClick={() => setSpacesFor(null)}
+                className="px-4 py-2 rounded-lg text-xs font-medium text-slate-400 border border-[#2d2550] hover:text-white transition-all">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {resetPwFor && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">

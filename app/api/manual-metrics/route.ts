@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthPayload } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
-const VALID_SERVICES = ['meta_ads', 'google_ads', 'social_media']
+// 'agencia' — métricas da Visão Geral da Agência sem fonte automática (item 4/12 do pedido):
+// reunioes/cac/ticket_medio_tipo1/qtd_ativos_tipo1/qtd_ativos_tipo2/ltv/churn/csat/nps/
+// mrr/mrr_projetado/custo_csp/custo_mcb — ver app/api/agency/overview/route.ts
+const VALID_SERVICES = ['meta_ads', 'google_ads', 'social_media', 'agencia']
 
 export async function GET(req: NextRequest) {
   const auth = await getAuthPayload(req)

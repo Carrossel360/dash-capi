@@ -1,9 +1,10 @@
 'use client'
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { TrendingUp, Users, DollarSign, Share2, MapPin, ArrowUpRight, Loader2 } from 'lucide-react'
+import { TrendingUp, Users, DollarSign, Share2, MapPin, ArrowUpRight, Loader2, Percent } from 'lucide-react'
 import TopBar from '@/components/TopBar'
 import PeriodSelector, { type Period } from '@/components/PeriodSelector'
+import AgencyOverview from '@/components/AgencyOverview'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/store/auth'
 
@@ -12,7 +13,6 @@ const currencySymbol = (c?: string) => c === 'USD' ? 'US$' : 'R$'
 interface DashData {
   metaSpend: number
   metaLeads: number
-  metaRoas: number
   googSpend: number
   googLeads: number
   crmLeads: number
@@ -30,7 +30,7 @@ interface DashData {
 interface MonthlyChartRow { mes: string; meta: number; google: number }
 
 const empty: DashData = {
-  metaSpend: 0, metaLeads: 0, metaRoas: 0,
+  metaSpend: 0, metaLeads: 0,
   googSpend: 0, googLeads: 0,
   crmLeads: 0, crmDeals: 0,
   igFollowers: null, igReach: 0, igEngagement: 0, hasInstagram: false,
@@ -69,6 +69,10 @@ function lastMonths(n: number): { key: string; label: string }[] {
 
 export default function DashboardPage() {
   const { token, currentWorkspace } = useAuthStore()
+  // Visão Geral da Agência (item 12/vídeo) — só quem administra o workspace da própria
+  // Carrossel (isAgency:true) vê os blocos Comercial/Sucesso/Financeiro em vez do dashboard
+  // de KPIs de cliente. Mesma rota (/dashboard), conteúdo ramifica pelo contexto atual.
+  const isAgencyAdmin = !!currentWorkspace?.isAgency && ['admin', 'manager'].includes(currentWorkspace?.role ?? '')
   const curr = currencySymbol(currentWorkspace?.currency)
   const [data, setData] = useState<DashData>(empty)
   const [monthlyChart, setMonthlyChart] = useState<MonthlyChartRow[]>([])
@@ -76,6 +80,7 @@ export default function DashboardPage() {
   const [period, setPeriod] = useState<Period>('30d')
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null)
   const [specificMonth, setSpecificMonth] = useState('')
+  const [view, setView] = useState<'geral' | 'detalhada'>('geral')
 
   const monthOptions = useMemo(() => lastMonths(12), [])
 
@@ -112,6 +117,7 @@ export default function DashboardPage() {
 
   const load = useCallback(async () => {
     if (!token) return
+    if (isAgencyAdmin) { setLoading(false); return } // AgencyOverview busca os próprios dados
     setLoading(true)
     const h = { Authorization: `Bearer ${token}` }
     const periodQs = period === 'custom' && customRange
@@ -146,7 +152,6 @@ export default function DashboardPage() {
       setData({
         metaSpend: meta?.kpis?.spend ?? 0,
         metaLeads: (meta?.kpis?.results ?? 0) + (meta?.kpis?.messaging_conversations_started ?? 0),
-        metaRoas:  meta?.kpis?.roas ?? 0,
         googSpend: goog?.kpis?.spend ?? 0,
         googLeads: goog?.kpis?.conversions ?? 0,
         crmLeads: leads.length,
@@ -164,23 +169,26 @@ export default function DashboardPage() {
     } catch { /* show zeros */ } finally {
       setLoading(false)
     }
-  }, [token, period, customRange, specificMonth]) // eslint-disable-line
+  }, [token, period, customRange, specificMonth, isAgencyAdmin]) // eslint-disable-line
 
   useEffect(() => { load() }, [load])
 
   const totalSpend = data.metaSpend + data.googSpend
   const totalLeads = data.metaLeads + data.googLeads
+  // ROAS real = faturamento fechado no CRM ÷ investimento em tráfego pago — substitui o campo
+  // manual/legado `metaRoas` (nunca era calculado de verdade, ver lib/trafego-aggregate.ts).
+  const roas = totalSpend > 0 ? data.crmDeals / totalSpend : 0
 
   const kpis = [
-    { label: 'Investimento Total', href: '/trafego-pago', value: `${curr} ${fmt(totalSpend)}`, icon: DollarSign, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)', border: 'rgba(139,92,246,0.25)', sub: `Meta: ${curr}${fmt(data.metaSpend)} · Google: ${curr}${fmt(data.googSpend)}` },
-    { label: 'Leads Gerados', href: '/trafego-pago', value: fmt(totalLeads), icon: Users, color: '#10b981', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.25)', sub: `Meta: ${data.metaLeads} · Google: ${data.googLeads}` },
-    { label: 'Leads CRM', href: '/pipeline', value: String(data.crmLeads), icon: Share2, color: '#2575fc', bg: 'rgba(37,117,252,0.1)', border: 'rgba(37,117,252,0.25)', sub: `${curr} ${fmt(data.crmDeals)} em vendas` },
+    { label: 'Investimento', href: '/trafego-pago', value: `${curr} ${fmt(totalSpend)}`, icon: DollarSign, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)', border: 'rgba(139,92,246,0.25)', sub: `Meta: ${curr}${fmt(data.metaSpend)} · Google: ${curr}${fmt(data.googSpend)}` },
+    { label: 'Leads', href: '/trafego-pago', value: fmt(totalLeads), icon: Users, color: '#10b981', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.25)', sub: `Meta: ${data.metaLeads} · Google: ${data.googLeads}` },
     { label: 'Faturamento', href: '/pipeline', value: `${curr} ${fmt(data.crmDeals)}`, icon: DollarSign, color: '#F5A314', bg: 'rgba(245,163,20,0.1)', border: 'rgba(245,163,20,0.25)', sub: 'Vendas marcadas no CRM' },
+    { label: 'ROAS', href: '/pipeline', value: `${roas.toFixed(1)}x`, icon: Percent, color: '#2575fc', bg: 'rgba(37,117,252,0.1)', border: 'rgba(37,117,252,0.25)', sub: 'Faturamento ÷ Investimento' },
   ]
 
   const channels = [
     { label: 'Tráfego Pago', href: '/trafego-pago', icon: TrendingUp, color: '#8b5cf6', badge: 'Meta + Google',
-      stats: [{ label: 'Gasto', value: `${curr}${fmt(totalSpend)}` }, { label: 'Leads', value: fmt(totalLeads) }, { label: 'ROAS', value: `${(data.metaRoas).toFixed(1)}x` }] },
+      stats: [{ label: 'Gasto', value: `${curr}${fmt(totalSpend)}` }, { label: 'Leads', value: fmt(totalLeads) }, { label: 'ROAS', value: `${roas.toFixed(1)}x` }] },
     { label: 'CRM Pipeline', href: '/pipeline', icon: Users, color: '#10b981', badge: 'Leads e Vendas',
       stats: [{ label: 'Leads', value: String(data.crmLeads) }, { label: 'Vendas', value: `${curr}${fmt(data.crmDeals)}` }, { label: 'CAPI', value: '—' }] },
     { label: 'Social Media', href: '/social-media', icon: Share2, color: '#ec4899', badge: 'Instagram · Facebook',
@@ -197,10 +205,21 @@ export default function DashboardPage() {
       ] },
   ]
 
+  if (isAgencyAdmin) {
+    return (
+      <div className="flex flex-col h-full overflow-hidden">
+        <TopBar title="Visão Geral da Agência" />
+        <main className="flex-1 overflow-y-auto p-5">
+          <AgencyOverview />
+        </main>
+      </div>
+    )
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col h-full overflow-hidden">
-        <TopBar title="Dashboard" />
+        <TopBar title="" />
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="w-6 h-6 text-[#8b5cf6] animate-spin" />
         </div>
@@ -214,16 +233,28 @@ export default function DashboardPage() {
       <main className="flex-1 overflow-y-auto p-5 space-y-5">
 
         {/* Período */}
-        <div className="flex flex-wrap items-center gap-2">
-          <PeriodSelector value={period} onChange={handlePeriodChange} onCustomChange={(from, to) => { setPeriod('custom'); setCustomRange({ from, to }) }} />
-          <select
-            value={specificMonth}
-            onChange={e => handleMonthPick(e.target.value)}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#0f0b1e] border border-[#2d2550] text-white focus:outline-none focus:border-[#6a11cb]"
-          >
-            <option value="">Escolher mês específico…</option>
-            {monthOptions.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
-          </select>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <PeriodSelector value={period} onChange={handlePeriodChange} onCustomChange={(from, to) => { setPeriod('custom'); setCustomRange({ from, to }) }} />
+            <select
+              value={specificMonth}
+              onChange={e => handleMonthPick(e.target.value)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#0f0b1e] border border-[#2d2550] text-white focus:outline-none focus:border-[#6a11cb]"
+            >
+              <option value="">Escolher mês específico…</option>
+              {monthOptions.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+            </select>
+          </div>
+          <div className="flex gap-1 p-1 bg-[#0f0b1e] rounded-xl border border-[#1e1635] w-fit">
+            {([['geral', 'Visão Geral'], ['detalhada', 'Detalhada']] as const).map(([key, label]) => (
+              <button key={key} onClick={() => setView(key)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                style={view === key ? { background: '#6a11cb', color: '#fff' } : { background: 'transparent', color: '#94a3b8' }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* KPIs */}
@@ -243,30 +274,97 @@ export default function DashboardPage() {
         </div>
 
         {/* Channels */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {channels.map(({ label, href, icon: Icon, color, badge, stats }) => (
-            <Link key={href} href={href} className="glass card-hover rounded-xl p-4 block group" style={{ borderColor: `${color}30` }}>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: `${color}15` }}>
-                    <Icon className="w-3.5 h-3.5" style={{ color }} />
+        {view === 'geral' && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {channels.map(({ label, href, icon: Icon, color, badge, stats }) => (
+              <Link key={href} href={href} className="glass card-hover rounded-xl p-4 block group" style={{ borderColor: `${color}30` }}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: `${color}15` }}>
+                      <Icon className="w-3.5 h-3.5" style={{ color }} />
+                    </div>
+                    <span className="text-xs font-semibold text-white">{label}</span>
                   </div>
-                  <span className="text-xs font-semibold text-white">{label}</span>
+                  <ArrowUpRight className="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400 transition-colors" />
                 </div>
-                <ArrowUpRight className="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400 transition-colors" />
+                <span className="text-[10px] text-slate-500 bg-[#1e1635] px-1.5 py-0.5 rounded-full">{badge}</span>
+                <div className="grid grid-cols-3 gap-1 mt-3">
+                  {stats.map((s) => (
+                    <div key={s.label}>
+                      <p className="text-xs font-semibold text-white">{s.value}</p>
+                      <p className="text-[10px] text-slate-600">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+
+        {/* Detalhada — breakdown por canal, mesmos dados já buscados, sem chamada nova à API */}
+        {view === 'detalhada' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="glass rounded-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-[#1e1635]">
+                <h3 className="text-sm font-semibold text-white">Tráfego pago por canal</h3>
               </div>
-              <span className="text-[10px] text-slate-500 bg-[#1e1635] px-1.5 py-0.5 rounded-full">{badge}</span>
-              <div className="grid grid-cols-3 gap-1 mt-3">
-                {stats.map((s) => (
-                  <div key={s.label}>
-                    <p className="text-xs font-semibold text-white">{s.value}</p>
-                    <p className="text-[10px] text-slate-600">{s.label}</p>
-                  </div>
-                ))}
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-[#1e1635]">
+                    {['Canal', 'Investimento', 'Leads'].map(h => (
+                      <th key={h} className="px-4 py-2.5 text-left font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-[#1e1635]/50">
+                    <td className="px-4 py-3 text-white font-medium">Meta Ads</td>
+                    <td className="px-4 py-3 text-slate-300">{curr} {fmt(data.metaSpend)}</td>
+                    <td className="px-4 py-3 text-slate-300">{data.metaLeads}</td>
+                  </tr>
+                  <tr className="border-b border-[#1e1635]/50">
+                    <td className="px-4 py-3 text-white font-medium">Google Ads</td>
+                    <td className="px-4 py-3 text-slate-300">{curr} {fmt(data.googSpend)}</td>
+                    <td className="px-4 py-3 text-slate-300">{data.googLeads}</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 text-white font-semibold">Total</td>
+                    <td className="px-4 py-3 text-white font-semibold">{curr} {fmt(totalSpend)}</td>
+                    <td className="px-4 py-3 text-white font-semibold">{totalLeads}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div className="glass rounded-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-[#1e1635]">
+                <h3 className="text-sm font-semibold text-white">CRM e resultado</h3>
               </div>
-            </Link>
-          ))}
-        </div>
+              <table className="w-full text-xs">
+                <tbody>
+                  <tr className="border-b border-[#1e1635]/50">
+                    <td className="px-4 py-3 text-slate-400">Leads no CRM</td>
+                    <td className="px-4 py-3 text-white font-semibold text-right">{data.crmLeads}</td>
+                  </tr>
+                  <tr className="border-b border-[#1e1635]/50">
+                    <td className="px-4 py-3 text-slate-400">Faturamento (vendas marcadas)</td>
+                    <td className="px-4 py-3 text-white font-semibold text-right">{curr} {fmt(data.crmDeals)}</td>
+                  </tr>
+                  <tr className="border-b border-[#1e1635]/50">
+                    <td className="px-4 py-3 text-slate-400">Ticket médio</td>
+                    <td className="px-4 py-3 text-white font-semibold text-right">
+                      {curr} {fmt(data.crmLeads > 0 ? data.crmDeals / data.crmLeads : 0)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 text-slate-400">ROAS (faturamento ÷ investimento)</td>
+                    <td className="px-4 py-3 text-white font-semibold text-right">{roas.toFixed(1)}x</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Chart — últimos 12 meses, fixo, independente do período escolhido acima */}
         <div className="glass rounded-xl p-4">

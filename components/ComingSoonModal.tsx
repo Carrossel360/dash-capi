@@ -4,7 +4,7 @@ import { Clock, X } from 'lucide-react'
 // Modal "ainda não disponível" — diferente do LockedServiceModal (que é upsell comercial
 // de "serviço não contratado"): aqui a feature simplesmente ainda não existe/não está pronta
 // pro cliente, independente de plano contratado. Usado pelo Sidebar em itens marcados
-// `comingSoon` (Campanhas, Google Local, Content Studio) quando o workspace não é a agência.
+// `comingSoon` (Campanhas, Google Local, Estúdio de Criação) quando o workspace não é a agência.
 export default function ComingSoonModal({ label, onClose }: { label: string; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">

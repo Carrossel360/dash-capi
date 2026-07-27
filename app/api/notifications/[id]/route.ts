@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthPayload } from '@/lib/auth'
+import { getAuthPayload, isAgencyStaff } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -9,8 +9,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const notification = await prisma.notification.findUnique({ where: { id: params.id } })
   if (!notification) return NextResponse.json({ error: 'Não encontrada' }, { status: 404 })
 
-  const ws = await prisma.workspace.findUnique({ where: { id: auth.workspaceId }, select: { isAgency: true } })
-  const isAgencyManager = ws?.isAgency === true && ['admin', 'manager'].includes(auth.role)
+  const isAgencyManager = await isAgencyStaff(auth.userId)
   if (notification.workspaceId !== auth.workspaceId && !isAgencyManager) {
     return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
   }

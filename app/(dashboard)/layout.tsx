@@ -6,7 +6,7 @@ import Sidebar from '@/components/Sidebar'
 import { useAuthStore } from '@/lib/store/auth'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, _hydrated, token, updateCurrentWorkspace, switchWorkspace } = useAuthStore()
+  const { isAuthenticated, _hydrated, token, updateCurrentWorkspace, switchWorkspace, updateUser } = useAuthStore()
   const router = useRouter()
 
   useEffect(() => {
@@ -27,6 +27,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         if (!d?.workspace) return
         if (d.token) switchWorkspace(d.token, d.workspace)
         else updateCurrentWorkspace(d.workspace)
+        if (d.user) updateUser(d.user)
       })
       .catch(() => {})
   }, [_hydrated, isAuthenticated, token]) // eslint-disable-line react-hooks/exhaustive-deps

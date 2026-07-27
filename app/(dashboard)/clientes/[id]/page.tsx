@@ -5,11 +5,12 @@ import {
   ArrowLeft, Save, Eye, EyeOff, Loader2, CheckCircle, Copy, Users, Zap, BarChart2,
   TrendingUp, Share2, MapPin, Star, DollarSign, MessageCircle, Sparkles, Globe,
   UserPlus, Trash2, ChevronDown, Key, Smartphone, Wifi, WifiOff, RefreshCw, Link2, Search,
-  Webhook, AlertTriangle, Plus,
+  Webhook, AlertTriangle, Plus, Calendar, LayoutDashboard, Settings2,
 } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
 import { useAuthStore, type WorkspaceInfo } from '@/lib/store/auth'
+import { EXTRA_SERVICES } from '@/lib/services-catalog'
 
 const TABS = [
   { id: 'geral', label: 'Geral' },
@@ -33,12 +34,12 @@ const PLANS = [
   { id: 'agency', label: 'Agency' },
 ]
 const SERVICES = [
-  { key: 'svcMetaAds', label: 'Meta Ads', icon: TrendingUp, desc: 'Facebook + Instagram Ads' },
-  { key: 'svcGoogleAds', label: 'Google Ads', icon: BarChart2, desc: 'Rede de Pesquisa + Display' },
+  { key: 'svcMetaAds', label: 'Tráfego Meta', icon: TrendingUp, desc: 'Facebook + Instagram Ads' },
+  { key: 'svcGoogleAds', label: 'Tráfego Google Ads', icon: BarChart2, desc: 'Rede de Pesquisa + Display' },
+  { key: 'svcGoogleLocal', label: 'Tráfego GLS', icon: Star, desc: 'Anúncios locais do Google' },
   { key: 'svcSocialMedia', label: 'Social Media', icon: Share2, desc: 'Instagram + Facebook' },
-  { key: 'svcGoogleBusiness', label: 'Google Business Profile', icon: MapPin, desc: 'Perfil no Maps + Avaliações' },
-  { key: 'svcGoogleLocal', label: 'Google Local Service', icon: Star, desc: 'Anúncios locais do Google' },
-  { key: 'svcContentStudio', label: 'Content Studio (IA)', icon: Sparkles, desc: 'Carrosséis gerados com IA' },
+  { key: 'svcGoogleBusiness', label: 'Google Business', icon: MapPin, desc: 'Perfil no Maps + Avaliações' },
+  { key: 'svcContentStudio', label: 'Estúdio de Criação (IA)', icon: Sparkles, desc: 'Carrosséis gerados com IA' },
   { key: 'svcSiteGenerator', label: 'Gerador de Sites (IA)', icon: Globe, desc: 'Sites gerados com IA, código real' },
 ]
 
@@ -92,7 +93,7 @@ const GOOGLE_METRICS = [
   { key: 'search_impression_share', label: 'Parcela de Impr. de Pesquisa' },
 ]
 
-interface Stage { id: string; name: string; color: string; order: number; triggerCapiEvent: string }
+interface Stage { id: string; name: string; color: string; order: number; triggerCapiEvent: string; isMeetingStage?: boolean }
 interface ProductRow { id: string; name: string; price: number; currency: string; description: string }
 
 interface ClientDetail {
@@ -101,9 +102,11 @@ interface ClientDetail {
   metaAdAccountId: string | null
   googleAdsCustomerId: string | null; localServicesAccountId: string | null; createdAt: string
   currency: string
+  isAgencyInternal: boolean
   whatsappNumber: string | null
   svcMetaAds: boolean; svcGoogleAds: boolean; svcSocialMedia: boolean
   svcGoogleBusiness: boolean; svcGoogleLocal: boolean; svcContentStudio: boolean; svcSiteGenerator: boolean
+  extraServices: string[]
   metaVisibleMetrics: string[]; googleVisibleMetrics: string[]; funnelMetrics: string[]; googleFunnelMetrics: string[]
   members: { id: string; role: string; user: { id: string; name: string; email: string } }[]
   stages: Stage[]
@@ -111,7 +114,24 @@ interface ClientDetail {
 }
 
 export default function ClienteDetailPage() {
-  const { token, currentWorkspace, updateCurrentWorkspace } = useAuthStore()
+  const { token, currentWorkspace, updateCurrentWorkspace, switchWorkspace } = useAuthStore()
+  const [enteringClient, setEnteringClient] = useState(false)
+
+  async function enterClientPanel() {
+    setEnteringClient(true)
+    try {
+      const res = await fetch('/api/auth/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ workspaceId: clientId }),
+      })
+      const data = await res.json()
+      if (res.ok) { switchWorkspace(data.token, data.workspace); router.push('/dashboard') }
+      else toast.error('Erro ao entrar no cliente')
+    } finally {
+      setEnteringClient(false)
+    }
+  }
   const params = useParams()
   const router = useRouter()
   const clientId = params.id as string
@@ -151,6 +171,7 @@ export default function ClienteDetailPage() {
   const [segment, setSegment] = useState('')
   const [plan, setPlan] = useState('starter')
   const [currency, setCurrency] = useState('BRL')
+  const [isAgencyInternal, setIsAgencyInternal] = useState(false)
   const [metaPixelId, setMetaPixelId] = useState('')
   const [metaAccessToken, setMetaAccessToken] = useState('')
   const [metaAdAccountId, setMetaAdAccountId] = useState('')
@@ -167,6 +188,7 @@ export default function ClienteDetailPage() {
     svcMetaAds: false, svcGoogleAds: false, svcSocialMedia: false,
     svcGoogleBusiness: false, svcGoogleLocal: false, svcContentStudio: false, svcSiteGenerator: false,
   })
+  const [extraServices, setExtraServices] = useState<string[]>([])
   const [metaVisible, setMetaVisible] = useState<string[]>([])
   const [googleVisible, setGoogleVisible] = useState<string[]>([])
   const [funnelSel, setFunnelSel] = useState<string[]>([])
@@ -202,6 +224,7 @@ export default function ClienteDetailPage() {
         setSegment(w.segment ?? '')
         setPlan(w.plan ?? 'starter')
         setCurrency(w.currency ?? 'BRL')
+        setIsAgencyInternal(w.isAgencyInternal ?? false)
         setMetaPixelId(w.metaPixelId ?? '')
         setMetaAdAccountId(w.metaAdAccountId ?? '')
         setGoogleAdsCustomerId(w.googleAdsCustomerId ?? '')
@@ -217,6 +240,7 @@ export default function ClienteDetailPage() {
           svcContentStudio: w.svcContentStudio ?? false,
           svcSiteGenerator: w.svcSiteGenerator ?? false,
         })
+        setExtraServices(w.extraServices ?? [])
         setMetaVisible(w.metaVisibleMetrics ?? [])
         setGoogleVisible(w.googleVisibleMetrics ?? [])
         setFunnelSel(w.funnelMetrics ?? [])
@@ -228,7 +252,7 @@ export default function ClienteDetailPage() {
   async function handleSave(extra: Record<string, unknown> = {}) {
     setSaving(true)
     try {
-      const body: Record<string, unknown> = { name, segment, plan, currency, ...services, ...extra }
+      const body: Record<string, unknown> = { name, segment, plan, currency, isAgencyInternal, ...services, ...extra }
       if (metaPixelId) body.metaPixelId = metaPixelId
       if (metaAccessToken) body.metaAccessToken = metaAccessToken
       if (metaAdAccountId) body.metaAdAccountId = metaAdAccountId
@@ -379,13 +403,13 @@ export default function ClienteDetailPage() {
           return fetch(`/api/clients/${clientId}/stages`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ name: s.name, color: s.color, order: i, triggerCapiEvent: s.triggerCapiEvent }),
+            body: JSON.stringify({ name: s.name, color: s.color, order: i, triggerCapiEvent: s.triggerCapiEvent, isMeetingStage: s.isMeetingStage }),
           })
         }
         return fetch(`/api/clients/${clientId}/stages/${s.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ name: s.name, color: s.color, order: i, triggerCapiEvent: s.triggerCapiEvent }),
+          body: JSON.stringify({ name: s.name, color: s.color, order: i, triggerCapiEvent: s.triggerCapiEvent, isMeetingStage: s.isMeetingStage }),
         })
       }))
       toast.success('CRM salvo!')
@@ -637,12 +661,20 @@ export default function ClienteDetailPage() {
 
             {/* Back + Stats */}
             <div className="flex items-center justify-between">
-              <button onClick={() => router.push('/clientes')}
-                className="flex items-center gap-2 text-xs text-slate-400 hover:text-white transition-colors"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                Todos os clientes
-              </button>
+              <div className="flex items-center gap-3">
+                <button onClick={() => router.push('/clientes')}
+                  className="flex items-center gap-2 text-xs text-slate-400 hover:text-white transition-colors"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  Todos os clientes
+                </button>
+                <button onClick={enterClientPanel} disabled={enteringClient}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-[#2d2550] text-slate-300 hover:text-white hover:border-[#6a11cb] transition-all disabled:opacity-50"
+                >
+                  {enteringClient ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LayoutDashboard className="w-3.5 h-3.5" />}
+                  Ver painel do cliente
+                </button>
+              </div>
               {client?._count && (
                 <div className="flex items-center gap-4 text-xs text-slate-400">
                   <span className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" />{client._count.leads} leads</span>
@@ -711,6 +743,23 @@ export default function ClienteDetailPage() {
                     ))}
                   </div>
                 </div>
+                <div className="pt-2 border-t border-[#1e1635]">
+                  <button onClick={() => setIsAgencyInternal(v => !v)}
+                    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left transition-all ${
+                      isAgencyInternal ? 'border-[#F5A314]/60 bg-[#F5A314]/8' : 'border-[#1e1635] hover:border-[#2d2550]'
+                    }`}
+                  >
+                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                      isAgencyInternal ? 'border-[#F5A314] bg-[#F5A314]' : 'border-[#2d2550]'
+                    }`}>
+                      {isAgencyInternal && <CheckCircle className="w-3 h-3 text-white" />}
+                    </div>
+                    <div className="flex-1">
+                      <p className={`text-sm font-semibold ${isAgencyInternal ? 'text-white' : 'text-slate-400'}`}>Cliente interno da agência</p>
+                      <p className="text-xs text-slate-600">A Visão Geral da Agência (Leads/Reuniões/Clientes/Investimento) passa a ler os dados deste cliente. Só um cliente pode ter essa marcação por vez.</p>
+                    </div>
+                  </button>
+                </div>
                 <SaveBtn />
               </div>
             )}
@@ -750,7 +799,33 @@ export default function ClienteDetailPage() {
                     )
                   })}
                 </div>
-                <SaveBtn extra={services} />
+
+                <div className="pt-2">
+                  <h2 className="text-sm font-semibold text-white">Outros serviços contratados</h2>
+                  <p className="text-xs text-slate-500 mt-1">Catálogo completo — sem impacto no que o cliente acessa no portal, é só registro de contratação.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {EXTRA_SERVICES.map(({ key, label }) => {
+                    const active = extraServices.includes(key)
+                    return (
+                      <button key={key}
+                        onClick={() => setExtraServices(prev => active ? prev.filter(k => k !== key) : [...prev, key])}
+                        className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-xs font-medium transition-all text-left ${
+                          active ? 'border-[#6a11cb] bg-[#6a11cb]/10 text-white' : 'border-[#2d2550] text-slate-500 hover:border-[#2d2550]/80'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 ${
+                          active ? 'bg-[#6a11cb]' : 'bg-[#1a1230] border border-[#2d2550]'
+                        }`}>
+                          {active && <CheckCircle className="w-3 h-3 text-white" />}
+                        </div>
+                        <span className="truncate">{label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                <SaveBtn extra={{ ...services, extraServices }} />
               </div>
             )}
 
@@ -1111,6 +1186,16 @@ export default function ClienteDetailPage() {
                         <option value="qualified_lead">Lead Qualificado</option>
                         <option value="purchase">Purchase event</option>
                       </select>
+                      <button
+                        onClick={() => setStages(prev => prev.map(s => s.id === stage.id ? { ...s, isMeetingStage: !s.isMeetingStage } : s))}
+                        title={stage.isMeetingStage ? 'Marcado como estágio de reunião — conta pra "Reuniões" na Visão Geral da Agência' : 'Marcar como estágio de reunião'}
+                        className="flex items-center justify-center w-7 h-7 rounded-lg border transition-all flex-shrink-0"
+                        style={stage.isMeetingStage
+                          ? { background: 'rgba(37,117,252,0.15)', borderColor: '#2575fc', color: '#2575fc' }
+                          : { background: 'transparent', borderColor: '#2d2550', color: '#475569' }}
+                      >
+                        <Calendar className="w-3.5 h-3.5" />
+                      </button>
                       <button onClick={() => deleteStage(stage.id)} className="text-slate-600 hover:text-red-400 transition-colors flex-shrink-0">
                         <Trash2 className="w-4 h-4" />
                       </button>

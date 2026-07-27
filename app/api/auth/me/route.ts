@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const [user, ws, membership] = await Promise.all([
-    prisma.user.findUnique({ where: { id: auth.userId }, select: { id: true, name: true, email: true } }),
+    prisma.user.findUnique({ where: { id: auth.userId }, select: { id: true, name: true, email: true, avatarUrl: true } }),
     prisma.workspace.findUnique({ where: { id: auth.workspaceId } }),
     prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId: auth.workspaceId, userId: auth.userId } },

@@ -160,9 +160,12 @@ html, body {
   to   { transform: translateX(0);    opacity: 1; }
 }
 
-/* Light theme — invert + hue-rotate preserves brand colors (purple/orange hue survives the round-trip) */
+/* Light theme — invert + hue-rotate preserves brand colors (purple/orange hue survives the round-trip).
+   contrast(1.15) reforça a separação entre texto secundário (cinza) e fundo — como as duas
+   passagens de invert+hue-rotate no filtro da mídia abaixo se cancelam e voltam à cor original,
+   o contraste extra sobra só pra imagem final renderizada, sem precisar de valor inverso lá. */
 html[data-theme="light"] {
-  filter: invert(1) hue-rotate(180deg);
+  filter: invert(1) hue-rotate(180deg) contrast(1.15);
 }
 
 /* Re-invert media so photos/videos keep natural colors */
@@ -170,4 +173,13 @@ html[data-theme="light"] img,
 html[data-theme="light"] video,
 html[data-theme="light"] iframe {
   filter: invert(1) hue-rotate(180deg);
+}
+
+/* Contraste no modo claro: opacidade não é afetada pelo filtro de inversão acima, então
+   bordas/painéis translúcidos que já eram sutis no escuro (por design) ficam sutis demais
+   também no claro — some a separação entre cards. Reforça só o alfa (sem mexer em matiz/
+   luminosidade, que o filtro acima já resolve), então o valor final continua previsível. */
+html[data-theme="light"] .glass {
+  border-color: rgba(106, 17, 203, 0.55);
+  background: rgba(15, 11, 30, 0.93);
 }

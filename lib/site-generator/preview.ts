@@ -30,3 +30,22 @@ export function buildPreviewDocument(files: SiteFile[], entryPath?: string): str
 export function listHtmlPages(files: SiteFile[]): string[] {
   return files.filter(f => f.path.endsWith('.html')).map(f => f.path)
 }
+
+// Miniatura dos cards de Site (Tarefas > Criação): mesmo documento do preview completo,
+// mas força visível qualquer elemento escondido por padrões de "reveal ao rolar"
+// (opacity:0 até um IntersectionObserver marcar como visível) — a miniatura roda sem JS
+// (allow-same-origin sem allow-scripts, por segurança/performance numa grade com vários
+// cards), então esse conteúdo ficaria em branco. Também esconde tudo depois do primeiro
+// filho de <main> e o <footer>, pra cortar exatamente na seção de topo (hero) em vez de
+// uma fatia arbitrária do documento inteiro, que costuma ser bem mais alto que ela.
+export function buildThumbnailPreviewDocument(files: SiteFile[]): string {
+  const html = buildPreviewDocument(files)
+  const overrideCss = `<style>
+    [class*="reveal"], [class*="fade-in"], [class*="fadein"], [class*="animate-"],
+    [class*="aos-"], [data-aos], [class*="wow"] {
+      opacity: 1 !important; transform: none !important; transition: none !important; animation: none !important;
+    }
+    main > :not(:first-child), footer, .footer { display: none !important; }
+  </style>`
+  return html.includes('</head>') ? html.replace('</head>', `${overrideCss}</head>`) : overrideCss + html
+}

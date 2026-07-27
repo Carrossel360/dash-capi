@@ -2,7 +2,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 
-interface User { id: string; name: string; email: string }
+export interface User { id: string; name: string; email: string; avatarUrl?: string | null }
 
 export interface WorkspaceServices {
   trafeqoPago: boolean // legado — ver metaAds/googleAds
@@ -40,6 +40,7 @@ interface AuthState {
   setAccessibleWorkspaces: (workspaces: WorkspaceInfo[]) => void
   switchWorkspace: (token: string, workspace: WorkspaceInfo) => void
   updateCurrentWorkspace: (updates: Partial<WorkspaceInfo>) => void
+  updateUser: (updates: Partial<User>) => void
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -63,6 +64,10 @@ export const useAuthStore = create<AuthState>()(
       updateCurrentWorkspace: (updates) =>
         set(state => ({
           currentWorkspace: state.currentWorkspace ? { ...state.currentWorkspace, ...updates } : null,
+        })),
+      updateUser: (updates) =>
+        set(state => ({
+          user: state.user ? { ...state.user, ...updates } : null,
         })),
     }),
     {

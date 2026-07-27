@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Dash CAPI',
+  title: 'Sistema Orbital | Carrossel 360',
   description: 'Dashboard de rastreamento e CAPI para agências',
 }
 

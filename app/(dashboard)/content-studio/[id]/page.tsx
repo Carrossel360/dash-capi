@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import {
   DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, closestCorners,
 } from '@dnd-kit/core'
@@ -14,6 +14,7 @@ import toast, { Toaster } from 'react-hot-toast'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
 import { useAuthStore } from '@/lib/store/auth'
+import { switchToAgency } from '@/lib/switchToAgency'
 import type { Slide, CanvasElement, CarouselFormat } from '@/lib/content-studio/types'
 import { FORMAT_DIMENSIONS } from '@/lib/content-studio/types'
 import { buildSlideElements, defaultBackground } from '@/lib/content-studio/layouts'
@@ -55,7 +56,20 @@ function SortableSlideThumb({ slide, index, active, onClick, onDelete }: {
 export default function CarouselEditorPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
-  const { token } = useAuthStore()
+  const searchParams = useSearchParams()
+  const { token, accessibleWorkspaces, switchWorkspace } = useAuthStore()
+  // Chegou por Tarefas > Criação (ver openEditor) — "voltar" devolve pro hub da agência em
+  // vez de deixar o admin preso na área do cliente que só foi acessada pra editar este design.
+  const fromAgency = searchParams.get('fromAgency') === '1'
+  const returnClient = searchParams.get('client')
+  async function handleBack() {
+    if (fromAgency) {
+      await switchToAgency(token, accessibleWorkspaces, switchWorkspace)
+      router.push(`/tarefas/criacao?client=${returnClient ?? ''}&view=tipos`)
+      return
+    }
+    router.push('/content-studio')
+  }
 
   const [carousel, setCarousel] = useState<CarouselDoc | null>(null)
   const [loading, setLoading] = useState(true)
@@ -412,7 +426,7 @@ export default function CarouselEditorPage() {
       {/* Toolbar */}
       <header className="h-13 border-b border-[#1e1635] bg-[#0a0818] flex items-center justify-between px-4 flex-shrink-0 z-30" style={{ minHeight: 52 }}>
         <div className="flex items-center gap-3 min-w-0">
-          <button onClick={() => router.push('/content-studio')} className="text-slate-400 hover:text-white transition-colors flex-shrink-0">
+          <button onClick={handleBack} className="text-slate-400 hover:text-white transition-colors flex-shrink-0">
             <ArrowLeft className="w-4 h-4" />
           </button>
           <input

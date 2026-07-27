@@ -15,9 +15,11 @@ model User {
   email        String            @unique
   name         String
   passwordHash String
+  avatarUrl    String?
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
   memberships  WorkspaceMember[]
+  taskSpaces   TaskSpaceMember[]
 }
 
 model Workspace {
@@ -26,6 +28,12 @@ model Workspace {
   slug                  String               @unique
   plan                  Plan                 @default(starter)
   isAgency              Boolean              @default(false)
+  isActive              Boolean              @default(true) // false = arquivado (contrato encerrado)
+  // Marca qual cliente (workspace isAgency:false) representa as operações internas da própria
+  // Carrossel — a Visão Geral da Agência lê Leads/Reuniões/Clientes/Investimento daqui, não do
+  // workspace de login isAgency:true (que não tem mais Pipeline/Tráfego Pago no menu). No máximo
+  // um workspace deve ter essa flag true por vez.
+  isAgencyInternal      Boolean              @default(false)
   segment               String?
   logoUrl               String?
   primaryColor          String?
@@ -84,6 +92,7 @@ model Workspace {
   conversations         Conversation[]
   supportTags           SupportTag[]
   taskSpaces            TaskSpace[]
+  portfolioAssets       PortfolioAsset[]
   taskProjects          TaskProject[]
   tasks                 Task[]
   customFields          CustomField[]
@@ -94,6 +103,7 @@ model Workspace {
   reportConfigs         ReportConfig[]
   notifications         Notification[]
   monitorStatuses       MonitorStatus[]
+  extraServices         WorkspaceService[]
 }
 
 model ManualMetric {
@@ -147,6 +157,10 @@ model PipelineStage {
   color            String      @default("#6a11cb")
   order            Int         @default(0)
   triggerCapiEvent CAPITrigger @default(none)
+  // Tag estável pra métricas da Visão Geral da Agência (ex: "Reuniões") — não depende do
+  // `name` do estágio, então renomear o estágio não quebra o cálculo. Mesmo padrão do
+  // triggerCapiEvent (que já resolve "Clientes" via valor purchase + Lead.closedAt).
+  isMeetingStage   Boolean     @default(false)
   createdAt        DateTime    @default(now())
   workspace        Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   leads            Lead[]
@@ -613,6 +627,36 @@ model TaskSpace {
   folders      TaskFolder[]
   lists        TaskProject[]
   customFields CustomField[]
+  members      TaskSpaceMember[]
+}
+
+// Tarefas > Criação > Content Studio > Portfólio — "drive" de material por cliente (link
+// externo ou arquivo enviado, via lib/storage.ts:uploadMedia). `category` casa com as 3
+// pastas do mapa mental: id_comunicacao / id_visual / referencias.
+model PortfolioAsset {
+  id        String    @id @default(cuid())
+  clientId  String
+  category  String
+  type      String    @default("link") // 'link' | 'file'
+  label     String
+  url       String
+  createdAt DateTime  @default(now())
+  client    Workspace @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, category])
+}
+
+// "Seleção de Espaço" do lado Equipe (item 12) — só restringe quem é `attendant`/`viewer`
+// no workspace da agência; admin/manager continuam vendo todos os espaços sem essa tabela.
+model TaskSpaceMember {
+  id          String    @id @default(cuid())
+  taskSpaceId String
+  userId      String
+  createdAt   DateTime  @default(now())
+  taskSpace   TaskSpace @relation(fields: [taskSpaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([taskSpaceId, userId])
 }
 
 model TaskFolder {
@@ -745,6 +789,7 @@ model Notification {
   severity       String    @default("warning") // info | warning | critical
   title          String
   message        String
+  link           String?   // rota do dashboard pra abrir ao clicar (ex: /trafego-pago?tab=meta)
   metadata       Json?
   dedupeKey      String
   status         String    @default("open") // open | resolved
@@ -757,6 +802,21 @@ model Notification {
 
   @@index([workspaceId, status])
   @@index([dedupeKey])
+}
+
+// Catálogo completo de serviços da agência (item 11) — serviços "recorrentes" que já têm
+// feature-gate próprio (Meta Ads, Google Ads, Google Local, Social Media, Google Business)
+// continuam nos campos svc* do Workspace; esta tabela cobre o restante do catálogo
+// (ID Visual, Consultoria, Website, etc.), sem gate de acesso no app — é só registro de
+// quais serviços o cliente contratou. A existência da linha = serviço contratado.
+model WorkspaceService {
+  id          String   @id @default(cuid())
+  workspaceId String
+  key         String   // ver lib/services-catalog.ts pra lista de chaves válidas
+  createdAt   DateTime @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, key])
 }
 
 // Último valor observado por checagem (conta Meta/Google, WhatsApp, cada campanha) —
