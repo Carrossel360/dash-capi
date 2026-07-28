@@ -22,6 +22,12 @@ export interface MetaInsightRow {
   frequency?: string
   clicks?: string
   ctr?: string
+  // `clicks`/`ctr` contam TODO clique no anúncio (curtida, comentário, expandir carrossel
+  // etc.), não só o clique que leva ao link — inflam "Cliques no Link"/CTR em relação à
+  // coluna que o Gerenciador de Anúncios mostra por padrão. inline_link_clicks/
+  // inline_link_click_ctr são os campos dedicados que batem com essa métrica de verdade.
+  inline_link_clicks?: string
+  inline_link_click_ctr?: string
   cpc?: string
   actions?: MetaInsightAction[]
 }
@@ -33,6 +39,8 @@ export interface MetaAdInsightRow {
   impressions?: string
   clicks?: string
   ctr?: string
+  inline_link_clicks?: string
+  inline_link_click_ctr?: string
   cpm?: string
   cpc?: string
   actions?: MetaInsightAction[]
@@ -53,7 +61,7 @@ export async function fetchMetaInsights({ adAccountId, accessToken, since, until
     level: 'campaign',
     time_increment: 1,
     time_range: JSON.stringify({ since, until }),
-    fields: 'campaign_id,campaign_name,spend,impressions,reach,frequency,clicks,ctr,cpc,actions',
+    fields: 'campaign_id,campaign_name,spend,impressions,reach,frequency,clicks,ctr,inline_link_clicks,inline_link_click_ctr,cpc,actions',
     limit: 500,
   }
 
@@ -146,7 +154,7 @@ export async function fetchMetaAdCreatives({ adAccountId, accessToken, since, un
       fields: [
         'id,name,status,effective_status',
         'creative{thumbnail_url,image_url,video_id,body,title}',
-        `insights.time_range(${JSON.stringify({ since, until })}){impressions,spend,clicks,ctr,cpm,cpc,actions}`,
+        `insights.time_range(${JSON.stringify({ since, until })}){impressions,spend,clicks,ctr,inline_link_clicks,inline_link_click_ctr,cpm,cpc,actions}`,
       ].join(','),
     },
   })
