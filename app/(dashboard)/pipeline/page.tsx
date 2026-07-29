@@ -9,7 +9,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-
 import { CSS } from '@dnd-kit/utilities'
 import {
   Plus, Phone, Mail, GripVertical, Loader2, X, Check,
-  Clock, Globe, Trash2, ShoppingBag, DollarSign, Calendar, MessageCircle, MessageSquare,
+  Clock, Globe, Trash2, ShoppingBag, DollarSign, Calendar, MessageCircle, MessageSquare, Search,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
@@ -68,6 +68,22 @@ function periodFrom(p: Period): Date | null {
   d.setDate(d.getDate() - days)
   d.setHours(0, 0, 0, 0)
   return d
+}
+
+// Cor do badge de origem por família de canal — reconhece pelo texto (não por um enum fixo,
+// já que "source" é string livre vinda de vários lugares: frases de rastreio, webhooks etc).
+function sourceBadgeStyle(source: string): { bg: string; text: string; border: string } {
+  const s = source.toLowerCase()
+  if (s.includes('formulário') || s.includes('formulario')) {
+    return { bg: 'rgba(37,117,252,0.12)', text: '#60a5fa', border: 'rgba(37,117,252,0.3)' } // Meta Formulário — azul
+  }
+  if (s.includes('whatsapp')) {
+    return { bg: 'rgba(16,185,129,0.12)', text: '#34d399', border: 'rgba(16,185,129,0.3)' } // WhatsApp — verde
+  }
+  if (s.includes('google')) {
+    return { bg: 'rgba(239,68,68,0.12)', text: '#f87171', border: 'rgba(239,68,68,0.3)' } // Google — vermelho
+  }
+  return { bg: '#1e1635', text: '#94a3b8', border: 'transparent' }
 }
 
 // ── Deal popup ────────────────────────────────────────────────────────────────
@@ -490,27 +506,32 @@ function LeadCard({ lead, onClick, isDragging }: { lead: Lead; onClick: () => vo
         <span>{new Date(lead.createdAt).toLocaleDateString('pt-BR')}</span>
       </div>
 
-      <div className="flex items-center justify-between">
-        {lead.dealValue ? (
-          <div className="flex items-center gap-1 text-xs text-emerald-400 font-medium">
-            <DollarSign className="w-3 h-3" />
-            {lead.dealValue.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
-          </div>
-        ) : <span />}
-        <div className="flex items-center gap-1">
-          {lead.ctwaClid && (
-            <span className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20">
-              <MessageCircle className="w-2.5 h-2.5" />
-              WA
-            </span>
-          )}
-          {(lead.source || lead.utmSource) && (
-            <span className="text-xs px-1.5 py-0.5 rounded bg-[#1e1635] text-slate-400 truncate max-w-[80px]">
-              {lead.source || lead.utmSource}
-            </span>
-          )}
+      {lead.dealValue ? (
+        <div className="flex items-center gap-1 text-xs text-emerald-400 font-medium">
+          <DollarSign className="w-3 h-3" />
+          {lead.dealValue.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
         </div>
-      </div>
+      ) : null}
+      {(lead.source || lead.utmSource) && (() => {
+        const label = lead.source || lead.utmSource || ''
+        const c = sourceBadgeStyle(label)
+        return (
+          <div className="flex flex-wrap items-center gap-1">
+            {lead.ctwaClid && (
+              <span className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20 flex-shrink-0">
+                <MessageCircle className="w-2.5 h-2.5" />
+                WA
+              </span>
+            )}
+            <span
+              className="text-xs px-1.5 py-0.5 rounded border font-medium leading-tight"
+              style={{ background: c.bg, color: c.text, borderColor: c.border }}
+            >
+              {label}
+            </span>
+          </div>
+        )
+      })()}
     </div>
   )
 }
@@ -707,6 +728,9 @@ export default function PipelinePage() {
   const [period, setPeriod]   = useState<Period>('all')
   const [activeId, setActiveId] = useState<string | null>(null)
 
+  const [nameFilter, setNameFilter] = useState('')
+  const [sourceFilter, setSourceFilter] = useState('all')
+
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [dealPending, setDealPending] = useState<{ lead: Lead; stageId: string } | null>(null)
   const [showNewLead, setShowNewLead] = useState(false)
@@ -855,8 +879,17 @@ export default function PipelinePage() {
 
   const activeLead = activeId ? leads.find(l => l.id === activeId) : null
 
-  const totalLeads = leads.length
-  const totalValue = leads.reduce((s, l) => s + (l.dealValue ?? 0), 0)
+  const availableSources = Array.from(new Set(leads.map(l => l.source || l.utmSource).filter((s): s is string => !!s))).sort()
+
+  const nameQuery = nameFilter.trim().toLowerCase()
+  const filteredLeads = leads.filter(l => {
+    if (nameQuery && !l.name.toLowerCase().includes(nameQuery)) return false
+    if (sourceFilter !== 'all' && (l.source || l.utmSource || '') !== sourceFilter) return false
+    return true
+  })
+
+  const totalLeads = filteredLeads.length
+  const totalValue = filteredLeads.reduce((s, l) => s + (l.dealValue ?? 0), 0)
 
   if (loading) {
     return (
@@ -910,7 +943,7 @@ export default function PipelinePage() {
 
           {/* Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-1.5 text-xs text-slate-500">
                 <Calendar className="w-3.5 h-3.5" />
                 <span>Período:</span>
@@ -927,6 +960,24 @@ export default function PipelinePage() {
                   </button>
                 ))}
               </div>
+              <div className="w-px h-4 bg-[#1e1635]" />
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+                <input
+                  value={nameFilter}
+                  onChange={e => setNameFilter(e.target.value)}
+                  placeholder="Buscar por nome..."
+                  className="w-44 pl-8 pr-3 py-1.5 text-xs bg-[#0f0b1e] border border-[#1e1635] rounded-lg text-white placeholder-slate-600 focus:outline-none focus:border-[#6a11cb] transition-colors"
+                />
+              </div>
+              <select
+                value={sourceFilter}
+                onChange={e => setSourceFilter(e.target.value)}
+                className="px-3 py-1.5 text-xs bg-[#0f0b1e] border border-[#1e1635] rounded-lg text-white focus:outline-none focus:border-[#6a11cb] transition-colors"
+              >
+                <option value="all">Todas as origens</option>
+                {availableSources.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
               <div className="w-px h-4 bg-[#1e1635]" />
               <span className="text-xs text-slate-500">{totalLeads} leads</span>
               {totalValue > 0 && (
@@ -958,7 +1009,7 @@ export default function PipelinePage() {
                 <Column
                   key={stage.id}
                   stage={stage}
-                  leads={leads.filter(l => l.pipelineStageId === stage.id)}
+                  leads={filteredLeads.filter(l => l.pipelineStageId === stage.id)}
                   onCardClick={setSelectedLead}
                 />
               ))}
