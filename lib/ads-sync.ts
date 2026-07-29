@@ -1,7 +1,10 @@
-import type { Workspace } from '@prisma/client'
+import type { Prisma, Workspace } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { fetchMetaInsights, sumActions, leadCount, MESSAGING_ACTION_TYPES } from '@/lib/meta-ads'
+import { fetchActiveLeadgenForms, fetchFormLeads, fetchPageAccessToken, extractLeadContact } from '@/lib/meta-leads'
 import { fetchGoogleAdsReport, fetchLocalServicesAccountReport, isGoogleAdsConfigured, type GoogleAdsMcc } from '@/lib/google-ads'
+import { enqueueCapiEvent } from '@/lib/capi-events'
+import { buildHashedUserData } from '@/lib/utils'
 
 // Janela deslizante: reprocessa os últimos N dias a cada sync (corrige atraso de atribuição
 // e faz upsert de novo em cima de dias já sincronizados). 30 dias garante que o filtro de
@@ -180,6 +183,91 @@ export async function syncWorkspace(workspace: Workspace) {
     syncWorkspaceGoogleAds(workspace),
   ])
   return { meta, google }
+}
+
+// Lead Ads (formulário nativo) — por polling, não webhook: mesmo padrão já usado e validado
+// pela agência num fluxo n8n equivalente (Página > listar formulários ativos > puxar leads de
+// cada um), rodando dentro deste mesmo cron horário em vez de precisar de uma inscrição de
+// webhook separada na Meta (mais simples de configurar — só o Workspace.metaPageId).
+export async function syncWorkspaceMetaLeads(workspace: Workspace): Promise<SyncResult> {
+  if (!workspace.metaPageId) return 'skip'
+  const agencyAccessToken = process.env.META_ADS_ACCESS_TOKEN
+  if (!agencyAccessToken) return 'skip'
+
+  try {
+    const accessToken = await fetchPageAccessToken(workspace.metaPageId, agencyAccessToken)
+    const forms = await fetchActiveLeadgenForms(workspace.metaPageId, accessToken)
+    if (!forms.length) return 'ok'
+
+    const firstStage = await prisma.pipelineStage.findFirst({
+      where: { workspaceId: workspace.id },
+      orderBy: { order: 'asc' },
+      select: { id: true },
+    })
+    if (!firstStage) return 'ok'
+
+    for (const form of forms) {
+      const leads = await fetchFormLeads(form.id, accessToken)
+      for (const lead of leads) {
+        const already = await prisma.lead.findUnique({ where: { id: lead.id }, select: { id: true } })
+        if (already) continue
+
+        const { name, email, phone } = extractLeadContact(lead.fieldData)
+        const phoneFormatted = phone ? `+${phone.replace(/\D/g, '')}` : null
+
+        // Mesmo lead pode já ter chegado por outro caminho (reimportação do CRM antigo, que
+        // também é alimentado pelo mesmo n8n puxando esses formulários; ou até WhatsApp) —
+        // o id da Meta não bate com o desses outros caminhos, então sem checar telefone/e-mail
+        // aqui duplicaria todo mundo que já existe. Mesma lógica que o fluxo n8n já usa.
+        const crossSourceMatch = await prisma.lead.findFirst({
+          where: {
+            workspaceId: workspace.id,
+            OR: [
+              phoneFormatted ? { phone: phoneFormatted } : undefined,
+              email ? { email } : undefined,
+            ].filter(Boolean) as Prisma.LeadWhereInput[],
+          },
+          select: { id: true },
+        })
+        if (crossSourceMatch) continue
+
+        const newLead = await prisma.lead.create({
+          data: {
+            id: lead.id,
+            workspaceId: workspace.id,
+            name: name || 'Lead (formulário Meta)',
+            email,
+            phone: phoneFormatted,
+            source: 'Meta Formulário Nativo',
+            utmSource: 'meta',
+            utmMedium: 'formulario_nativo',
+            pipelineStageId: firstStage.id,
+            createdAt: lead.createdTime ? new Date(lead.createdTime) : undefined,
+            metadata: {
+              formId: lead.formId, formName: form.name,
+              adId: lead.adId, adName: lead.adName,
+              adsetId: lead.adsetId, adsetName: lead.adsetName,
+              campaignId: lead.campaignId, campaignName: lead.campaignName,
+              isOrganic: lead.isOrganic, platform: lead.platform,
+              fieldData: lead.fieldData,
+            } as unknown as Prisma.InputJsonValue,
+          },
+        })
+
+        await enqueueCapiEvent({
+          workspaceId: workspace.id,
+          leadId: newLead.id,
+          eventName: 'Lead',
+          source: 'webhook',
+          userData: buildHashedUserData({ email: email ?? undefined, phone: phoneFormatted ?? undefined }),
+          customData: { formId: lead.formId, adId: lead.adId, campaignId: lead.campaignId },
+        })
+      }
+    }
+    return 'ok'
+  } catch (err: any) {
+    return { error: err?.response?.data?.error?.message || err.message }
+  }
 }
 
 function ymdLocal(y: number, m: number, d: number): string {

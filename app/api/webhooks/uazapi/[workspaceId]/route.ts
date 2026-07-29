@@ -155,7 +155,7 @@ export async function POST(
     let metadata: Record<string, unknown> | undefined
 
     if (isMetaAd) {
-      source = 'meta'
+      source = 'Meta WhatsApp'
       utmSource = 'meta'
       utmMedium = 'whatsapp'
       ctwaClid = (adReply?.['ctwaClid'] as string) ?? null

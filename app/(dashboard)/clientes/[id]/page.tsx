@@ -99,7 +99,7 @@ interface ProductRow { id: string; name: string; price: number; currency: string
 interface ClientDetail {
   id: string; name: string; slug: string; segment: string | null
   plan: string; metaPixelId: string | null; metaAccessToken: string | null
-  metaAdAccountId: string | null
+  metaAdAccountId: string | null; metaPageId: string | null
   googleAdsCustomerId: string | null; localServicesAccountId: string | null; createdAt: string
   currency: string
   isAgencyInternal: boolean
@@ -175,6 +175,7 @@ export default function ClienteDetailPage() {
   const [metaPixelId, setMetaPixelId] = useState('')
   const [metaAccessToken, setMetaAccessToken] = useState('')
   const [metaAdAccountId, setMetaAdAccountId] = useState('')
+  const [metaPageId, setMetaPageId] = useState('')
   const [metaAdAccounts, setMetaAdAccounts] = useState<{ id: string; name: string; account_status: number }[]>([])
   const [adAccountsLoaded, setAdAccountsLoaded] = useState(false)
   const [adAccountsLoading, setAdAccountsLoading] = useState(false)
@@ -227,6 +228,7 @@ export default function ClienteDetailPage() {
         setIsAgencyInternal(w.isAgencyInternal ?? false)
         setMetaPixelId(w.metaPixelId ?? '')
         setMetaAdAccountId(w.metaAdAccountId ?? '')
+        setMetaPageId(w.metaPageId ?? '')
         setGoogleAdsCustomerId(w.googleAdsCustomerId ?? '')
         setLocalServicesAccountId(w.localServicesAccountId ?? '')
         setWhatsappNumber(w.whatsappNumber ?? '')
@@ -256,6 +258,7 @@ export default function ClienteDetailPage() {
       if (metaPixelId) body.metaPixelId = metaPixelId
       if (metaAccessToken) body.metaAccessToken = metaAccessToken
       if (metaAdAccountId) body.metaAdAccountId = metaAdAccountId
+      if (metaPageId) body.metaPageId = metaPageId
       if (googleAdsCustomerId) body.googleAdsCustomerId = googleAdsCustomerId
       if (localServicesAccountId) body.localServicesAccountId = localServicesAccountId
 
@@ -1051,6 +1054,16 @@ export default function ClienteDetailPage() {
                       </div>
                     )}
                   </div>
+                </div>
+                <div className="pt-3 border-t border-[#1e1635] space-y-2">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Lead Ads (formulário nativo)</p>
+                    <p className="text-xs text-slate-500 mt-1">ID da Página do Facebook deste cliente — usado pra reconhecer os leads de formulário instantâneo que chegam pelo webhook e trazer pro CRM automaticamente com origem "Meta Formulário Nativo".</p>
+                  </div>
+                  <input value={metaPageId} onChange={e => setMetaPageId(e.target.value)}
+                    placeholder="Ex: 123456789012345"
+                    className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb] transition-all"
+                  />
                 </div>
                 <div className="pt-3 border-t border-[#1e1635] space-y-2">
                   <div className="flex items-center justify-between">
