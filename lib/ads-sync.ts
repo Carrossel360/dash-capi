@@ -238,9 +238,9 @@ export async function syncWorkspaceMetaLeads(workspace: Workspace): Promise<Sync
             name: name || 'Lead (formulário Meta)',
             email,
             phone: phoneFormatted,
-            source: 'Meta Formulário Nativo',
+            source: 'Meta',
             utmSource: 'meta',
-            utmMedium: 'formulario_nativo',
+            utmMedium: 'Formulário Nativo',
             pipelineStageId: firstStage.id,
             createdAt: lead.createdTime ? new Date(lead.createdTime) : undefined,
             metadata: {

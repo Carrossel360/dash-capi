@@ -147,7 +147,10 @@ export async function POST(
       || contextInfo?.['entryPointConversionSource'] === 'ctwa_ad'
       || adReply?.['sourceType'] === 'ad'
 
-    let source = 'whatsapp'
+    // source = plataforma/campanha de origem (Meta, Google Ads, Site...); utmMedium = canal
+    // de entrega específico (WhatsApp, Formulário Nativo...) — dois badges separados na UI
+    // em vez de misturar tudo num texto só (ex: não "Meta WhatsApp", e sim "Meta" + "WhatsApp").
+    let source = 'WhatsApp'
     let utmSource: string | null = null
     let utmMedium: string | null = null
     let utmCampaign: string | null = null
@@ -155,9 +158,9 @@ export async function POST(
     let metadata: Record<string, unknown> | undefined
 
     if (isMetaAd) {
-      source = 'Meta WhatsApp'
+      source = 'Meta'
       utmSource = 'meta'
-      utmMedium = 'whatsapp'
+      utmMedium = 'WhatsApp'
       ctwaClid = (adReply?.['ctwaClid'] as string) ?? null
       utmCampaign = (adReply?.['title'] as string) ?? (adReply?.['sourceID'] as string) ?? null
       metadata = {
@@ -173,7 +176,7 @@ export async function POST(
       const matched = phrases.find(p => lower.includes(p.phrase.toLowerCase()))
       if (matched) {
         source = matched.source
-        utmMedium = 'whatsapp'
+        utmMedium = 'WhatsApp'
         utmCampaign = matched.campaign ?? null
       }
     }

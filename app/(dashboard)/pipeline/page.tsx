@@ -70,21 +70,39 @@ function periodFrom(p: Period): Date | null {
   return d
 }
 
-// Cor do badge de origem por família de canal — reconhece pelo texto (não por um enum fixo,
-// já que "source" é string livre vinda de vários lugares: frases de rastreio, webhooks etc).
+// Origem (campanha/plataforma) e canal (como a mensagem chegou) são dois badges separados —
+// "Meta" fica sempre "Meta" independente de ter vindo por WhatsApp ou Formulário Nativo, o
+// canal específico é quem entra no segundo badge (utmMedium). Cor reconhecida pelo texto (não
+// por um enum fixo, já que ambos os campos são string livre vinda de vários lugares).
 function sourceBadgeStyle(source: string): { bg: string; text: string; border: string } {
   const s = source.toLowerCase()
-  if (s.includes('formulário') || s.includes('formulario')) {
-    return { bg: 'rgba(37,117,252,0.12)', text: '#60a5fa', border: 'rgba(37,117,252,0.3)' } // Meta Formulário — azul
-  }
-  if (s.includes('whatsapp')) {
-    return { bg: 'rgba(16,185,129,0.12)', text: '#34d399', border: 'rgba(16,185,129,0.3)' } // WhatsApp — verde
+  if (s.includes('meta')) {
+    return { bg: 'rgba(37,117,252,0.12)', text: '#60a5fa', border: 'rgba(37,117,252,0.3)' } // Meta — azul
   }
   if (s.includes('google')) {
     return { bg: 'rgba(239,68,68,0.12)', text: '#f87171', border: 'rgba(239,68,68,0.3)' } // Google — vermelho
   }
   return { bg: '#1e1635', text: '#94a3b8', border: 'transparent' }
 }
+
+function mediumBadgeStyle(medium: string): { bg: string; text: string; border: string } {
+  const m = medium.toLowerCase()
+  if (m.includes('whatsapp')) {
+    return { bg: 'rgba(16,185,129,0.12)', text: '#34d399', border: 'rgba(16,185,129,0.3)' } // WhatsApp — verde
+  }
+  if (m.includes('formulário') || m.includes('formulario')) {
+    return { bg: 'rgba(148,163,184,0.12)', text: '#cbd5e1', border: 'rgba(148,163,184,0.3)' } // Formulário Nativo — cinza
+  }
+  return { bg: '#1e1635', text: '#94a3b8', border: 'transparent' }
+}
+
+// Sugestões pro campo de Origem — igual ao badge do card, é texto livre (não um enum), pra
+// aceitar tanto os valores que os webhooks/importações já preenchem (Meta, Google Ads...)
+// quanto os antigos "Tipo de Cliente" que já existiam aqui, sem perder nenhum dos dois.
+const SOURCE_SUGGESTIONS = [
+  'Meta', 'Google Ads', 'Google Business', 'Site', 'Indefinido',
+  'Cliente Novo', 'Cliente Ativo', 'Cliente Recuperado', 'Visitante',
+]
 
 // ── Deal popup ────────────────────────────────────────────────────────────────
 
@@ -306,15 +324,13 @@ function LeadModal({ lead, stages, token, onClose, onSaved, onDeleted, onRequest
           {/* Produto + Email */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400">Tipo de Cliente</label>
-              <select value={form.source} onChange={e => set('source', e.target.value)}
-                className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb]">
-                <option value="">Selecione...</option>
-                <option value="Cliente Novo">Cliente Novo</option>
-                <option value="Cliente Ativo">Cliente Ativo</option>
-                <option value="Cliente Recuperado">Cliente Recuperado</option>
-                <option value="Visitante">Visitante</option>
-              </select>
+              <label className="text-xs font-medium text-slate-400">Origem</label>
+              <input list="source-suggestions" value={form.source} onChange={e => set('source', e.target.value)}
+                placeholder="Ex: Meta, Google Ads, Site..."
+                className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white placeholder-slate-600 focus:outline-none focus:border-[#6a11cb]" />
+              <datalist id="source-suggestions">
+                {SOURCE_SUGGESTIONS.map(s => <option key={s} value={s} />)}
+              </datalist>
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-slate-400 flex items-center gap-1"><Mail className="w-3 h-3" /> Email</label>
@@ -512,9 +528,10 @@ function LeadCard({ lead, onClick, isDragging }: { lead: Lead; onClick: () => vo
           {lead.dealValue.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
         </div>
       ) : null}
-      {(lead.source || lead.utmSource) && (() => {
-        const label = lead.source || lead.utmSource || ''
-        const c = sourceBadgeStyle(label)
+      {(lead.source || lead.utmSource || lead.utmMedium) && (() => {
+        const sourceLabel = lead.source || lead.utmSource || ''
+        const sc = sourceLabel ? sourceBadgeStyle(sourceLabel) : null
+        const mc = lead.utmMedium ? mediumBadgeStyle(lead.utmMedium) : null
         return (
           <div className="flex flex-wrap items-center gap-1">
             {lead.ctwaClid && (
@@ -523,12 +540,22 @@ function LeadCard({ lead, onClick, isDragging }: { lead: Lead; onClick: () => vo
                 WA
               </span>
             )}
-            <span
-              className="text-xs px-1.5 py-0.5 rounded border font-medium leading-tight"
-              style={{ background: c.bg, color: c.text, borderColor: c.border }}
-            >
-              {label}
-            </span>
+            {sc && (
+              <span
+                className="text-xs px-1.5 py-0.5 rounded border font-medium leading-tight"
+                style={{ background: sc.bg, color: sc.text, borderColor: sc.border }}
+              >
+                {sourceLabel}
+              </span>
+            )}
+            {mc && (
+              <span
+                className="text-xs px-1.5 py-0.5 rounded border font-medium leading-tight"
+                style={{ background: mc.bg, color: mc.text, borderColor: mc.border }}
+              >
+                {lead.utmMedium}
+              </span>
+            )}
           </div>
         )
       })()}
@@ -674,15 +701,13 @@ function NewLeadModal({ stages, token, onClose, onCreated }: {
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400">Tipo de Cliente</label>
-              <select value={form.source} onChange={e => set('source', e.target.value)}
-                className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb]">
-                <option value="">Selecione...</option>
-                <option value="Cliente Novo">Cliente Novo</option>
-                <option value="Cliente Ativo">Cliente Ativo</option>
-                <option value="Cliente Recuperado">Cliente Recuperado</option>
-                <option value="Visitante">Visitante</option>
-              </select>
+              <label className="text-xs font-medium text-slate-400">Origem</label>
+              <input list="source-suggestions" value={form.source} onChange={e => set('source', e.target.value)}
+                placeholder="Ex: Meta, Google Ads, Site..."
+                className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white placeholder-slate-600 focus:outline-none focus:border-[#6a11cb]" />
+              <datalist id="source-suggestions">
+                {SOURCE_SUGGESTIONS.map(s => <option key={s} value={s} />)}
+              </datalist>
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-slate-400 flex items-center gap-1"><Mail className="w-3 h-3" /> Email</label>
