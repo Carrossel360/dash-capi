@@ -82,6 +82,11 @@ function sourceBadgeStyle(source: string): { bg: string; text: string; border: s
   if (s.includes('google')) {
     return { bg: 'rgba(239,68,68,0.12)', text: '#f87171', border: 'rgba(239,68,68,0.3)' } // Google — vermelho
   }
+  // WhatsApp sem atribuição de campanha (mensagem manual, sem ctwa_clid) — mesma cor de
+  // quando aparece como canal ao lado do Meta, pra manter "WhatsApp" sempre verde.
+  if (s.includes('whatsapp')) {
+    return { bg: 'rgba(16,185,129,0.12)', text: '#34d399', border: 'rgba(16,185,129,0.3)' }
+  }
   return { bg: '#1e1635', text: '#94a3b8', border: 'transparent' }
 }
 
