@@ -165,7 +165,7 @@ html, body {
    passagens de invert+hue-rotate no filtro da mídia abaixo se cancelam e voltam à cor original,
    o contraste extra sobra só pra imagem final renderizada, sem precisar de valor inverso lá. */
 html[data-theme="light"] {
-  filter: invert(1) hue-rotate(180deg) contrast(1.15);
+  filter: invert(1) hue-rotate(180deg) contrast(1.25);
 }
 
 /* Re-invert media so photos/videos keep natural colors */
@@ -182,4 +182,13 @@ html[data-theme="light"] iframe {
 html[data-theme="light"] .glass {
   border-color: rgba(106, 17, 203, 0.55);
   background: rgba(15, 11, 30, 0.93);
+}
+
+/* Modais — mesmo truque do <img>/<video> acima: contra-inverte a própria camada do modal
+   (fundo + painel + tudo dentro) pra cancelar a inversão herdada do <html> e voltar a
+   renderizar com as cores originais do tema escuro, que já têm o contraste bom testado.
+   Alternativa a desenhar uma paleta clara própria pra cada modal — reaproveita o contraste
+   já validado em vez de arriscar um novo (evita o mesmo problema que já apareceu 2x aqui). */
+html[data-theme="light"] .theme-locked-modal {
+  filter: invert(1) hue-rotate(180deg);
 }

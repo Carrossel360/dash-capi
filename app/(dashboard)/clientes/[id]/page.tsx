@@ -1018,7 +1018,7 @@ export default function ClienteDetailPage() {
                         </button>
 
                         {acctPickerOpen && (
-                          <div className="absolute top-full left-0 mt-1.5 w-full rounded-xl border border-[#2d2550] shadow-2xl z-[200] overflow-hidden"
+                          <div className="absolute top-full left-0 mt-1.5 w-full rounded-xl border border-[#2d2550] shadow-2xl z-[200] overflow-hidden theme-locked-modal"
                             style={{ background: '#0d0a1f' }}
                           >
                             <div className="px-3 pt-2.5 pb-2 border-b border-[#1e1635]">

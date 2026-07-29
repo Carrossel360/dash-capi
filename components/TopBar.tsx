@@ -197,7 +197,7 @@ export default function TopBar({ title, hideWorkspaceSwitcher }: { title: string
           </button>
 
           {notifOpen && (
-            <div className="absolute top-full right-0 mt-1.5 w-80 rounded-xl border border-[#2d2550] shadow-2xl z-[200] overflow-hidden"
+            <div className="absolute top-full right-0 mt-1.5 w-80 rounded-xl border border-[#2d2550] shadow-2xl z-[200] overflow-hidden theme-locked-modal"
               style={{ background: '#0d0a1f' }}
             >
               <div className="px-3.5 py-2.5 border-b border-[#1e1635]">
@@ -247,7 +247,7 @@ export default function TopBar({ title, hideWorkspaceSwitcher }: { title: string
           </button>
 
           {profileOpen && (
-            <div className="absolute top-full right-0 mt-1.5 w-64 rounded-xl border border-[#2d2550] shadow-2xl z-[200] overflow-hidden p-4"
+            <div className="absolute top-full right-0 mt-1.5 w-64 rounded-xl border border-[#2d2550] shadow-2xl z-[200] overflow-hidden p-4 theme-locked-modal"
               style={{ background: '#0d0a1f' }}
             >
               <div className="flex flex-col items-center gap-2 text-center">

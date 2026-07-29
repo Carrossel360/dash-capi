@@ -151,7 +151,7 @@ export default function TaskPanel({
   const totalSubs = task?.subtasks.length ?? 0
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="fixed inset-0 z-40 flex justify-end theme-locked-modal" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="h-full w-full max-w-[520px] border-l border-[#2d2550] flex flex-col overflow-hidden shadow-2xl animate-[slideInRight_0.2s_ease]"
         style={{ background: '#080612' }}>
 

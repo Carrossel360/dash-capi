@@ -93,9 +93,11 @@ export async function POST(req: NextRequest, { params }: { params: { workspaceId
       name,
       email,
       phone,
-      source: 'Site',
+      // source só vira algo além de "Indefinido" se o formulário carregar um utm_source real
+      // (ex: campo oculto lendo o parâmetro da URL) — o canal (Site) é sempre conhecido.
+      source: body.utm_source ?? fields['utm_source']?.value ?? 'Indefinido',
       utmSource: body.utm_source ?? fields['utm_source']?.value ?? null,
-      utmMedium: body.utm_medium ?? fields['utm_medium']?.value ?? null,
+      utmMedium: body.utm_medium ?? fields['utm_medium']?.value ?? 'Site',
       utmCampaign: body.utm_campaign ?? fields['utm_campaign']?.value ?? null,
       metadata: { formName: body.form_name ?? null, raw: body },
       pipelineStageId: firstStage.id,

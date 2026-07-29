@@ -193,7 +193,7 @@ function ManualEditModal({ metric, value, currency, onSave, onClose }: {
 }) {
   const [val, setVal] = useState(value)
   return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 theme-locked-modal">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div className="relative rounded-2xl p-5 w-full max-w-xs shadow-2xl z-10"
         style={{ background: '#0d0a1f', border: '1px solid rgba(106,17,203,0.3)' }}>
@@ -256,7 +256,7 @@ function CreativeModal({ creative, adAccountId, currency, token, onClose }: {
   ]
 
   return (
-    <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 theme-locked-modal">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div className="relative rounded-2xl w-full max-w-3xl shadow-2xl z-10 overflow-y-auto max-h-[90vh]"
         style={{ background: '#0d0a1f', border: '1px solid rgba(106,17,203,0.3)' }}>

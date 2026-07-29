@@ -951,7 +951,7 @@ export default function SettingsPage() {
       </main>
 
       {spacesFor && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 theme-locked-modal">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setSpacesFor(null)} />
           <div className="relative rounded-2xl w-full max-w-sm shadow-2xl z-10 p-5 space-y-4"
             style={{ background: '#0d0a1f', border: '1px solid rgba(106,17,203,0.3)' }}>
@@ -1005,7 +1005,7 @@ export default function SettingsPage() {
       )}
 
       {resetPwFor && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 theme-locked-modal">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setResetPwFor(null)} />
           <div className="relative rounded-2xl w-full max-w-sm shadow-2xl z-10 p-5 space-y-4"
             style={{ background: '#0d0a1f', border: '1px solid rgba(106,17,203,0.3)' }}>

@@ -71,7 +71,7 @@ export default function CarouselCreateModal({ open, onClose, overrideToken, onCr
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 theme-locked-modal">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => !generating && onClose()} />
       <div className="relative rounded-2xl p-6 w-full max-w-md shadow-2xl z-10"
         style={{ background: '#0d0a1f', border: '1px solid rgba(106,17,203,0.3)' }}

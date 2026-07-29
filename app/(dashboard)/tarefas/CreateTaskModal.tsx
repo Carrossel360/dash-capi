@@ -165,7 +165,7 @@ export default function CreateTaskModal({
   ])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.75)' }}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 theme-locked-modal" style={{ background: 'rgba(0,0,0,0.75)' }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="w-full max-w-2xl max-h-[92vh] rounded-2xl border border-[#2d2550] flex flex-col overflow-hidden shadow-2xl"
         style={{ background: '#0a0818' }}>

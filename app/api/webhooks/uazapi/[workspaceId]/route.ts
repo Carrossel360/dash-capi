@@ -147,12 +147,12 @@ export async function POST(
       || contextInfo?.['entryPointConversionSource'] === 'ctwa_ad'
       || adReply?.['sourceType'] === 'ad'
 
-    // source = plataforma/campanha de origem (Meta, Google Ads, Site...); utmMedium = canal
-    // de entrega específico (WhatsApp, Formulário Nativo...) — dois badges separados na UI
-    // em vez de misturar tudo num texto só (ex: não "Meta WhatsApp", e sim "Meta" + "WhatsApp").
-    let source = 'WhatsApp'
+    // source = plataforma/campanha de origem (Meta, Google Ads...) — só recebe um valor real
+    // quando dá pra confirmar de verdade; sem confirmação, fica "Indefinido" (nunca herda o
+    // canal). utmMedium = canal de entrega (sempre conhecido — toda mensagem daqui é WhatsApp).
+    let source = 'Indefinido'
     let utmSource: string | null = null
-    let utmMedium: string | null = null
+    const utmMedium = 'WhatsApp'
     let utmCampaign: string | null = null
     let ctwaClid: string | null = null
     let metadata: Record<string, unknown> | undefined
@@ -160,7 +160,6 @@ export async function POST(
     if (isMetaAd) {
       source = 'Meta'
       utmSource = 'meta'
-      utmMedium = 'WhatsApp'
       ctwaClid = (adReply?.['ctwaClid'] as string) ?? null
       utmCampaign = (adReply?.['title'] as string) ?? (adReply?.['sourceID'] as string) ?? null
       metadata = {
@@ -176,7 +175,6 @@ export async function POST(
       const matched = phrases.find(p => lower.includes(p.phrase.toLowerCase()))
       if (matched) {
         source = matched.source
-        utmMedium = 'WhatsApp'
         utmCampaign = matched.campaign ?? null
       }
     }

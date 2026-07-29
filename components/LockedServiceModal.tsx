@@ -5,7 +5,7 @@ import { Lock, X, Phone } from 'lucide-react'
 // telas que bloqueiam uma sub-aba interna (ex: trafego-pago/page.tsx, Meta vs Google Ads).
 export default function LockedServiceModal({ label, onClose }: { label: string; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 theme-locked-modal">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div className="relative rounded-2xl p-6 w-full max-w-sm shadow-2xl z-10 text-center"
         style={{ background: '#0d0a1f', border: '1px solid rgba(106,17,203,0.3)' }}
