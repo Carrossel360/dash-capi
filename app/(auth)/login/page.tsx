@@ -82,7 +82,7 @@ export default function LoginPage() {
             <Image src="/logo-c360.png" alt="Carrossel 360" width={112} height={112}
               className="w-full h-full object-cover" priority />
           </div>
-          <p className="text-xs text-slate-400 font-medium tracking-widest uppercase">Central do Cliente</p>
+          <p className="text-xs text-slate-400 font-medium tracking-widest uppercase">Sistema Orbital</p>
           <h1 className="text-2xl font-black tracking-wider mt-1" style={{ color: '#F5A314' }}>
             CARROSSEL 360
           </h1>

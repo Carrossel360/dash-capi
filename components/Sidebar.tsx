@@ -201,7 +201,7 @@ export default function Sidebar() {
           </div>
           {!collapsed && (
             <div className="leading-tight">
-              <p className="text-[10px] text-slate-400 font-medium">Central do Cliente</p>
+              <p className="text-[10px] text-slate-400 font-medium">Sistema Orbital</p>
               <p className="text-xs font-bold" style={{ color: '#F5A314' }}>CARROSSEL 360</p>
             </div>
           )}
