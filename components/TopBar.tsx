@@ -1,11 +1,13 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Bell, Search, Sun, Moon, AlertTriangle, AlertCircle, Menu, Settings2, Camera, Loader2 } from 'lucide-react'
+import { useRouter, usePathname } from 'next/navigation'
+import { Bell, Search, ChevronDown, Check, Sun, Moon, AlertTriangle, AlertCircle, Menu, Settings2, Camera, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/lib/store/auth'
 import { useUIStore } from '@/lib/store/ui'
 import { useTheme } from '@/lib/hooks/useTheme'
+import type { WorkspaceInfo } from '@/lib/store/auth'
+import { defaultRouteForRole, ATTENDANT_ALLOWED_HREFS } from '@/lib/roleAccess'
 
 interface NotificationRow {
   id: string
@@ -23,10 +25,38 @@ function getInitials(name: string) {
   return name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
 }
 
+function WorkspaceRow({ ws, isCurrent, loading, onSwitch }: {
+  ws: WorkspaceInfo; isCurrent: boolean; loading: boolean; onSwitch: (id: string) => void
+}) {
+  const ini = getInitials(ws.name)
+  return (
+    <button onClick={() => onSwitch(ws.id)} disabled={loading}
+      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-all hover:bg-white/[0.04]"
+      style={isCurrent ? { background: 'rgba(245,163,20,0.06)' } : {}}
+    >
+      <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0"
+        style={{ background: isCurrent ? 'linear-gradient(135deg, #6a11cb, #F5A314)' : ws.isAgency ? 'rgba(245,163,20,0.25)' : 'rgba(106,17,203,0.4)' }}
+      >
+        {ini}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className={`text-xs font-medium truncate ${isCurrent ? 'text-white' : 'text-slate-300'}`}>{ws.name}</p>
+        <p className="text-[10px] text-slate-500">{ws.isAgency ? 'Agência' : (ws.segment ?? '')}</p>
+      </div>
+      {isCurrent && <Check className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#F5A314' }} />}
+    </button>
+  )
+}
+
 export default function TopBar({ title, hideWorkspaceSwitcher }: { title: string; hideWorkspaceSwitcher?: boolean }) {
   const { user, token, currentWorkspace, accessibleWorkspaces, setAccessibleWorkspaces, switchWorkspace, updateUser } = useAuthStore()
   const { toggleMobileNav } = useUIStore()
+  const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [switching, setSwitching] = useState(false)
+  const [switcherSearch, setSwitcherSearch] = useState('')
+  const switcherRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
+  const pathname = usePathname()
   const { theme, toggle } = useTheme()
 
   const [notifications, setNotifications] = useState<NotificationRow[]>([])
@@ -89,6 +119,32 @@ export default function TopBar({ title, hideWorkspaceSwitcher }: { title: string
     return () => clearInterval(interval)
   }, [token])
 
+  async function handleSwitch(workspaceId: string) {
+    if (workspaceId === currentWorkspace?.id) { setSwitcherOpen(false); setSwitcherSearch(''); return }
+    setSwitching(true)
+    try {
+      const res = await fetch('/api/auth/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ workspaceId }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        switchWorkspace(data.token, data.workspace)
+        setSwitcherOpen(false)
+        setSwitcherSearch('')
+        // Atendente só vê CRM Pipeline/Conversas no menu — se a página atual não é uma
+        // dessas duas rotas, manda pra rota permitida em vez de deixar numa tela órfã do menu.
+        const isRestrictedAttendant = !data.workspace?.isAgency && data.workspace?.role === 'attendant'
+        if (isRestrictedAttendant && !ATTENDANT_ALLOWED_HREFS.includes(pathname)) {
+          router.push(defaultRouteForRole(data.workspace))
+        } else {
+          router.refresh()
+        }
+      }
+    } finally { setSwitching(false) }
+  }
+
   async function markNotificationRead(id: string) {
     try {
       await fetch(`/api/notifications/${id}`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}` } })
@@ -119,6 +175,7 @@ export default function TopBar({ title, hideWorkspaceSwitcher }: { title: string
 
   useEffect(() => {
     function handler(e: MouseEvent) {
+      if (switcherRef.current && !switcherRef.current.contains(e.target as Node)) { setSwitcherOpen(false); setSwitcherSearch('') }
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) { setNotifOpen(false) }
       if (profileRef.current && !profileRef.current.contains(e.target as Node)) { setProfileOpen(false) }
     }
@@ -128,10 +185,18 @@ export default function TopBar({ title, hideWorkspaceSwitcher }: { title: string
 
   const isAgencyStaffUser = accessibleWorkspaces.some(w => w.isAgency)
   const initials = currentWorkspace ? getInitials(currentWorkspace.name) : '?'
-  // "Modo cliente" (currentWorkspace.isAgency === false) mostra só o nome do cliente, sem
-  // seletor — trocar de cliente é feito pela Sidebar (Clientes), não por aqui. O ícone de
+  const agencyWorkspace = accessibleWorkspaces.find(w => w.isAgency)
+  const clientWorkspaces = accessibleWorkspaces.filter(w => !w.isAgency)
+  const switcherQuery = switcherSearch.toLowerCase()
+  const filteredClientWorkspaces = switcherQuery
+    ? clientWorkspaces.filter(w => w.name.toLowerCase().includes(switcherQuery) || w.segment?.toLowerCase().includes(switcherQuery))
+    : clientWorkspaces
+  // "Modo cliente" (currentWorkspace.isAgency === false) mostra o nome do cliente — no painel
+  // da própria agência fica escondido. O seletor (dropdown pra trocar de cliente sem passar
+  // pela Sidebar) só aparece se houver outros clientes acessíveis pra essa pessoa; o ícone de
   // engrenagem (atalho pras configurações daquele cliente) continua só pra equipe da agência.
   const inClientContext = !hideWorkspaceSwitcher && currentWorkspace?.isAgency === false
+  const showSwitcher = inClientContext && clientWorkspaces.length > 0
 
   return (
     <header className="h-13 border-b border-[#1e1635] bg-[#0a0818] flex items-center justify-between px-4 flex-shrink-0 z-30 relative" style={{ minHeight: 52 }}>
@@ -145,12 +210,74 @@ export default function TopBar({ title, hideWorkspaceSwitcher }: { title: string
         </button>
         {inClientContext ? (
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
-              style={{ background: 'linear-gradient(135deg, #6a11cb, #F5A314)' }}
-            >
-              {initials}
-            </div>
-            <h1 className="text-sm font-semibold text-white">{currentWorkspace?.name}</h1>
+            {showSwitcher ? (
+              <div ref={switcherRef} className="relative">
+                <button
+                  onClick={() => setSwitcherOpen(o => !o)}
+                  className="flex items-center gap-2 px-2 py-1 -ml-2 rounded-lg transition-all hover:bg-white/[0.04]"
+                >
+                  <div className="w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
+                    style={{ background: 'linear-gradient(135deg, #6a11cb, #F5A314)' }}
+                  >
+                    {initials}
+                  </div>
+                  <h1 className="text-sm font-semibold text-white">{currentWorkspace?.name}</h1>
+                  <ChevronDown className={`w-3.5 h-3.5 text-slate-500 transition-transform flex-shrink-0 ${switcherOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {switcherOpen && (
+                  <div className="absolute top-full left-0 mt-1.5 w-72 rounded-xl border border-[#2d2550] shadow-2xl z-[200] overflow-hidden theme-locked-modal"
+                    style={{ background: '#0d0a1f' }}
+                  >
+                    <div className="px-3 pt-2.5 pb-2 border-b border-[#1e1635]">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+                        <input
+                          autoFocus
+                          value={switcherSearch}
+                          onChange={e => setSwitcherSearch(e.target.value)}
+                          placeholder="Buscar cliente..."
+                          className="w-full pl-8 pr-3 py-1.5 text-xs bg-[#1a1230] border border-[#2d2550] rounded-lg text-white placeholder-slate-600 focus:outline-none focus:border-[#6a11cb] transition-colors"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="overflow-y-auto" style={{ maxHeight: 320 }}>
+                      {agencyWorkspace && (!switcherQuery || agencyWorkspace.name.toLowerCase().includes(switcherQuery)) && (
+                        <>
+                          <div className="px-3 pt-2 pb-1">
+                            <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider">Agência</p>
+                          </div>
+                          <WorkspaceRow ws={agencyWorkspace} isCurrent={agencyWorkspace.id === currentWorkspace?.id} loading={switching} onSwitch={handleSwitch} />
+                          {filteredClientWorkspaces.length > 0 && (
+                            <div className="px-3 pt-2 pb-1 border-t border-[#1e1635] mt-1">
+                              <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider">Clientes</p>
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      {filteredClientWorkspaces.length === 0 && switcherSearch ? (
+                        <p className="text-xs text-slate-500 text-center py-6">Nenhum resultado para "{switcherSearch}"</p>
+                      ) : (
+                        filteredClientWorkspaces.map(ws => (
+                          <WorkspaceRow key={ws.id} ws={ws} isCurrent={ws.id === currentWorkspace?.id} loading={switching} onSwitch={handleSwitch} />
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
+                  style={{ background: 'linear-gradient(135deg, #6a11cb, #F5A314)' }}
+                >
+                  {initials}
+                </div>
+                <h1 className="text-sm font-semibold text-white">{currentWorkspace?.name}</h1>
+              </div>
+            )}
             {isAgencyStaffUser && currentWorkspace?.id && (
               <button onClick={() => router.push(`/clientes/${currentWorkspace.id}`)}
                 title="Configurações deste cliente"
