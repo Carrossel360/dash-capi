@@ -609,7 +609,7 @@ function Column({ stage, leads, onCardClick }: { stage: Stage; leads: Lead[]; on
       </div>
 
       <div ref={setNodeRef}
-        className={`flex-1 glass rounded-xl p-2 space-y-2 min-h-[200px] transition-colors ${isOver ? 'ring-2 ring-[#6a11cb]/60' : ''}`}
+        className={`flex-1 glass rounded-xl p-2 space-y-2 min-h-[200px] overflow-y-auto transition-colors ${isOver ? 'ring-2 ring-[#6a11cb]/60' : ''}`}
       >
         <SortableContext items={leads.map(l => l.id)} strategy={verticalListSortingStrategy}>
           {leads.map(lead => (
