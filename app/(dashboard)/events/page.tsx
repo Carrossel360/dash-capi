@@ -168,7 +168,7 @@ export default function EventsPage() {
                     return (
                       <tr key={event.id} className="border-b border-[#1e1635]/50 hover:bg-white/[0.02] transition-colors">
                         <td className="px-4 py-3 whitespace-nowrap">
-                          <span className="text-xs font-semibold px-2 py-0.5 rounded" style={{ color: eventColor, background: `${eventColor}18` }}>
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded theme-locked-accent" style={{ color: eventColor, background: `${eventColor}18` }}>
                             {event.eventName}
                           </span>
                         </td>

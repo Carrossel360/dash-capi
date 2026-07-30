@@ -10,7 +10,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter()
 
   useEffect(() => {
-    if (_hydrated && !isAuthenticated) router.push('/login')
+    if (_hydrated && !isAuthenticated) {
+      document.documentElement.removeAttribute('data-theme') // login é sempre escuro
+      router.push('/login')
+    }
   }, [isAuthenticated, _hydrated, router])
 
   // Refresca currentWorkspace do banco ao carregar o app — sem isso, mudanças feitas pelo

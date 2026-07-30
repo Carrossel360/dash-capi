@@ -82,7 +82,7 @@ function MetricCard({ label, value, icon: Icon, color, onEdit, metricKey, pct }:
           <Edit3 className="w-3 h-3" />
         </button>
       )}
-      <div className="w-8 h-8 rounded-lg mb-3 flex items-center justify-center" style={{ background: `${color}15` }}>
+      <div className="w-8 h-8 rounded-lg mb-3 flex items-center justify-center theme-locked-accent" style={{ background: `${color}15` }}>
         <Icon className="w-4 h-4" style={{ color }} />
       </div>
       <p className="text-xl font-bold text-white">{value}</p>

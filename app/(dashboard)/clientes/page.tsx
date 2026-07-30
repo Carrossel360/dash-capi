@@ -412,7 +412,7 @@ export default function ClientesPage() {
               { label: 'Eventos CAPI', value: clients.reduce((a, c) => a + c.eventsCount, 0), icon: Zap, color: '#6a11cb' },
             ].map(({ label, value, icon: Icon, color }) => (
               <div key={label} className="glass rounded-xl p-4 flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: `${color}15` }}>
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 theme-locked-accent" style={{ background: `${color}15` }}>
                   <Icon className="w-4 h-4" style={{ color }} />
                 </div>
                 <div>
@@ -497,7 +497,7 @@ export default function ClientesPage() {
                                 Interno
                               </span>
                             )}
-                            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium theme-locked-accent"
                               style={{ color: planColor, background: `${planColor}18` }}
                             >
                               {PLANS.find(p => p.id === client.plan)?.label ?? client.plan}

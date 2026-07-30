@@ -357,7 +357,7 @@ export default function SocialMediaPage() {
                       className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-slate-600 hover:text-[#6a11cb]">
                       <Edit3 className="w-3 h-3" />
                     </button>
-                    <div className="w-8 h-8 rounded-lg mb-3 flex items-center justify-center" style={{ background: `${color}15` }}>
+                    <div className="w-8 h-8 rounded-lg mb-3 flex items-center justify-center theme-locked-accent" style={{ background: `${color}15` }}>
                       <Icon className="w-4 h-4" style={{ color }} />
                     </div>
                     {manualOverrides[key] !== undefined && (
@@ -430,7 +430,7 @@ export default function SocialMediaPage() {
                 <div className="grid grid-cols-2 gap-3">
                   {interactionDefs.map(({ key, label, icon: Icon, color }) => (
                     <div key={key} className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${color}15` }}>
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 theme-locked-accent" style={{ background: `${color}15` }}>
                         <Icon className="w-3.5 h-3.5" style={{ color }} />
                       </div>
                       <div className="min-w-0">

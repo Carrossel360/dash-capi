@@ -595,7 +595,7 @@ export default function ConversasPage() {
               >
                 <div className="flex items-start gap-3">
                   <div className="relative flex-shrink-0">
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white"
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white theme-locked-accent"
                       style={{ background: 'linear-gradient(135deg, #6a11cb, #2575fc)' }}>
                       {initials(conv.customerName, conv.customerPhone)}
                     </div>
@@ -730,7 +730,7 @@ export default function ConversasPage() {
             {/* Chat header */}
             <div className="px-5 py-4 border-b border-[#1e1635] bg-[#0f0b1e]/60 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white"
+                <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white theme-locked-accent"
                   style={{ background: 'linear-gradient(135deg, #6a11cb, #2575fc)' }}>
                   {detail ? initials(detail.customerName, detail.customerPhone) : '…'}
                 </div>
@@ -748,7 +748,7 @@ export default function ConversasPage() {
                     {detail?.lead && (
                       <div className="relative">
                         <button onClick={() => setShowStagePanel(s => !s)}
-                          className="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded transition-colors"
+                          className="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded transition-colors theme-locked-accent"
                           style={{
                             color: detail.lead.stage?.color ?? '#94a3b8',
                             background: `${detail.lead.stage?.color ?? '#94a3b8'}1a`,
@@ -931,7 +931,7 @@ export default function ConversasPage() {
 
                       <div className={`${isEditing ? 'w-72' : 'max-w-[65%]'} min-w-0 px-4 py-2.5 rounded-xl text-sm ${
                         isOutbound
-                          ? 'text-white rounded-br-sm'
+                          ? 'text-white rounded-br-sm theme-locked-accent'
                           : 'bg-[#0f0b1e] border border-[#1e1635] text-slate-200 rounded-bl-sm'
                       }`} style={isOutbound ? { background: 'linear-gradient(135deg, #6a11cb, #2575fc)' } : {}}>
                         {msg.senderName && isOutbound && (
@@ -1030,7 +1030,7 @@ export default function ConversasPage() {
                       <Mic className="w-4 h-4" />
                     </button>
                     <button onClick={sendMessage} disabled={sending || !input.trim()}
-                      className="w-9 h-9 rounded-xl flex items-center justify-center text-white disabled:opacity-40 transition-all"
+                      className="w-9 h-9 rounded-xl flex items-center justify-center text-white disabled:opacity-40 transition-all theme-locked-accent"
                       style={{ background: 'linear-gradient(135deg, #6a11cb, #2575fc)' }}>
                       {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                     </button>

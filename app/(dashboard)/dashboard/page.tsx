@@ -280,7 +280,7 @@ export default function DashboardPage() {
               <Link key={href} href={href} className="glass card-hover rounded-xl p-4 block group" style={{ borderColor: `${color}30` }}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: `${color}15` }}>
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center theme-locked-accent" style={{ background: `${color}15` }}>
                       <Icon className="w-3.5 h-3.5" style={{ color }} />
                     </div>
                     <span className="text-xs font-semibold text-white">{label}</span>

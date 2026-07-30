@@ -683,7 +683,7 @@ export default function SettingsPage() {
                           return (
                             <button key={s.id} type="button"
                               onClick={() => setSelectedSpaceIds(prev => checked ? prev.filter(id => id !== s.id) : [...prev, s.id])}
-                              className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-medium border transition-all"
+                              className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-medium border transition-all ${checked ? 'theme-locked-accent' : ''}`}
                               style={checked
                                 ? { background: `${s.color}22`, borderColor: s.color, color: '#fff' }
                                 : { borderColor: '#2d2550', color: '#94a3b8' }}>
@@ -745,7 +745,7 @@ export default function SettingsPage() {
                                   load()
                                 } else toast.error('Erro ao atualizar')
                               }}
-                              className="appearance-none pl-2 pr-6 py-1 rounded-lg text-[11px] font-semibold border focus:outline-none cursor-pointer"
+                              className="appearance-none pl-2 pr-6 py-1 rounded-lg text-[11px] font-semibold border focus:outline-none cursor-pointer theme-locked-accent"
                               style={{
                                 background: `${(isAgency ? TEAM_ROLE_COLORS : ROLE_COLORS)[m.role] ?? '#64748b'}18`,
                                 borderColor: `${(isAgency ? TEAM_ROLE_COLORS : ROLE_COLORS)[m.role] ?? '#64748b'}40`,
@@ -806,7 +806,7 @@ export default function SettingsPage() {
                           )}
                         </div>
                       ) : (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0"
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 theme-locked-accent"
                           style={{
                             color: (isAgency ? TEAM_ROLE_COLORS : ROLE_COLORS)[m.role] ?? '#64748b',
                             background: `${(isAgency ? TEAM_ROLE_COLORS : ROLE_COLORS)[m.role] ?? '#64748b'}18`,
@@ -968,7 +968,7 @@ export default function SettingsPage() {
                 return (
                   <button key={s.id} type="button"
                     onClick={() => setMemberSpaceIds(prev => checked ? prev.filter(id => id !== s.id) : [...prev, s.id])}
-                    className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-medium border transition-all"
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-medium border transition-all ${checked ? 'theme-locked-accent' : ''}`}
                     style={checked
                       ? { background: `${s.color}22`, borderColor: s.color, color: '#fff' }
                       : { borderColor: '#2d2550', color: '#94a3b8' }}>

@@ -116,7 +116,11 @@ export default function Sidebar() {
   // Clear optimistic active when pathname settles
   useEffect(() => { setPendingHref(null) }, [pathname])
 
-  function handleLogout() { logout(); router.push('/login') }
+  function handleLogout() {
+    logout()
+    document.documentElement.removeAttribute('data-theme') // login é sempre escuro
+    router.push('/login')
+  }
 
   // Clicar no logo/nome da agência volta pro painel dela — mesmo mecanismo do switcher do
   // TopBar (POST /api/auth/switch), só que sempre alvo o workspace isAgency:true da pessoa.

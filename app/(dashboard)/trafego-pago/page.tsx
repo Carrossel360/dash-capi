@@ -964,7 +964,7 @@ export default function TrafegoPagoPage() {
                     <Edit3 className="w-3 h-3" />
                   </button>
                   <div className="flex items-start justify-between mb-3">
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: `${color}15` }}>
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center theme-locked-accent" style={{ background: `${color}15` }}>
                       <Icon className="w-4 h-4" style={{ color }} />
                     </div>
                   </div>

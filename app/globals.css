@@ -179,8 +179,13 @@ html[data-theme="light"] iframe {
    bordas/painéis translúcidos que já eram sutis no escuro (por design) ficam sutis demais
    também no claro — some a separação entre cards. Reforça só o alfa (sem mexer em matiz/
    luminosidade, que o filtro acima já resolve), então o valor final continua previsível. */
+/* Borda do .glass usa a cor "pré-imagem" do roxo da marca, não o roxo em si: como o filtro
+   invert+hue-rotate acima estoura (clipa) os canais RGB de cores saturadas, alimentar o roxo
+   real nele produz rosa lavado. #ffadff é o valor que, depois do mesmo filtro, volta a
+   renderizar como roxo visível (mesmo princípio do .theme-locked-accent, mas pra uma
+   propriedade isolada — border — que não dá pra contra-inverter sem afetar o card inteiro). */
 html[data-theme="light"] .glass {
-  border-color: rgba(106, 17, 203, 0.55);
+  border-color: rgba(255, 173, 255, 0.65);
   background: rgba(15, 11, 30, 0.93);
 }
 
@@ -190,5 +195,15 @@ html[data-theme="light"] .glass {
    Alternativa a desenhar uma paleta clara própria pra cada modal — reaproveita o contraste
    já validado em vez de arriscar um novo (evita o mesmo problema que já apareceu 2x aqui). */
 html[data-theme="light"] .theme-locked-modal {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+/* Acentos de marca (ícones, gradientes roxo/azul, badges coloridos) — mesmo truque acima,
+   mas em elementos menores. Cores saturadas (roxo/laranja/verde/rosa da marca) estouram os
+   canais RGB ao passar por invert+hue-rotate, e saem como rosa/lavanda em vez da cor real —
+   contra-inverter devolve a cor original. Aplicar só no elemento que carrega a cor
+   diretamente (nunca em pai E filho da mesma cor: a dupla contra-inversão cancela a correção
+   e o rosa volta). */
+html[data-theme="light"] .theme-locked-accent {
   filter: invert(1) hue-rotate(180deg);
 }

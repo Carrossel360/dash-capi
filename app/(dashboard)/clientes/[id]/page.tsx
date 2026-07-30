@@ -1636,7 +1636,7 @@ export default function ClienteDetailPage() {
                                     <select
                                       value={m.role}
                                       onChange={e => handleRoleChange(m.userId, e.target.value)}
-                                      className="appearance-none pl-2 pr-6 py-1 rounded-lg text-[11px] font-semibold border focus:outline-none focus:border-[#6a11cb] cursor-pointer"
+                                      className="appearance-none pl-2 pr-6 py-1 rounded-lg text-[11px] font-semibold border focus:outline-none focus:border-[#6a11cb] cursor-pointer theme-locked-accent"
                                       style={{
                                         background: `${roleColor(m.role)}18`,
                                         borderColor: `${roleColor(m.role)}40`,
