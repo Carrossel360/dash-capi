@@ -1,3 +1,16 @@
+// Os 7 serviços com feature-gate/painel próprio no Dash — campos svc* booleanos direto no
+// Workspace. Usado pelo link público de checkup de serviços (app/checkup-servicos/[token]);
+// clientes/[id]/page.tsx mantém sua própria cópia com ícone, que não precisa mudar.
+export const CORE_SERVICES: { key: string; label: string }[] = [
+  { key: 'svcMetaAds', label: 'Tráfego Meta' },
+  { key: 'svcGoogleAds', label: 'Tráfego Google Ads' },
+  { key: 'svcGoogleLocal', label: 'Tráfego GLS' },
+  { key: 'svcSocialMedia', label: 'Social Media' },
+  { key: 'svcGoogleBusiness', label: 'Google Business' },
+  { key: 'svcContentStudio', label: 'Estúdio de Criação (IA)' },
+  { key: 'svcSiteGenerator', label: 'Gerador de Sites (IA)' },
+]
+
 // Serviços do catálogo da agência sem feature-gate próprio no app (ver comentário do model
 // WorkspaceService em prisma/schema.prisma). Os 5 serviços "recorrentes" com painel de
 // acompanhamento no Dash (Meta Ads, Google Ads, Google Local, Social Media, Google Business)

@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import {
   Plus, Search, Users, Zap, Settings2, X, Eye, EyeOff,
   Loader2, CheckCircle, Building2, TrendingUp, BarChart2, Share2, MapPin, Star,
-  DollarSign, Trash2, AlertTriangle, Archive, ArchiveRestore,
+  DollarSign, Trash2, AlertTriangle, Archive, ArchiveRestore, Link2,
 } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
@@ -333,6 +333,27 @@ export default function ClientesPage() {
   const [statusTab, setStatusTab] = useState<'active' | 'archived'>('active')
   const [archiving, setArchiving] = useState<string | null>(null)
   const [entering, setEntering] = useState<string | null>(null)
+  const [generatingLink, setGeneratingLink] = useState(false)
+
+  // Link público (sem login) do checkup de serviços — passa por todos os clientes com
+  // checkboxes, pra mandar pra quem sabe quais serviços cada um tem contratado em vez de
+  // preencher manualmente aqui. Ver app/checkup-servicos/[token] e
+  // app/api/public/services-checkup.
+  async function generateCheckupLink() {
+    setGeneratingLink(true)
+    try {
+      const res = await fetch('/api/clients/checkup-link', { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+      const data = await res.json()
+      if (res.ok && data.url) {
+        try { await navigator.clipboard.writeText(data.url) } catch {}
+        toast.success('Link copiado! Válido por 30 dias.', { duration: 6000 })
+      } else {
+        toast.error('Erro ao gerar link')
+      }
+    } finally {
+      setGeneratingLink(false)
+    }
+  }
 
   // Troca pro workspace do cliente e navega pro dash dele — entrar no "modo cliente" (o
   // seletor do topo só aparece depois disso, ver TopBar.tsx:showSwitcher).
@@ -446,6 +467,13 @@ export default function ClientesPage() {
                 className="w-full pl-8 pr-3 py-2 text-xs bg-[#1e1635] border border-[#2d2550] rounded-lg text-slate-300 placeholder-slate-600 focus:outline-none focus:border-[#F5A314] transition-all"
               />
             </div>
+            <button onClick={generateCheckupLink} disabled={generatingLink}
+              title="Gera um link sem login pra passar cliente por cliente marcando os serviços contratados"
+              className="flex items-center gap-1.5 text-xs px-3.5 py-2 rounded-lg font-semibold border border-[#2d2550] text-slate-300 hover:text-white hover:border-[#6a11cb]/50 transition-all disabled:opacity-60"
+            >
+              {generatingLink ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
+              Link de checkup de serviços
+            </button>
             <button onClick={() => setShowModal(true)}
               className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-lg font-semibold transition-all"
               style={{ background: '#6a11cb', color: '#fff', boxShadow: '0 4px 16px rgba(106,17,203,0.3)' }}
