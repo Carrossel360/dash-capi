@@ -187,14 +187,14 @@ export default function ServicosCheckupPage() {
         </div>
         <button
           onClick={toggleActive}
-          title={current.isActive ? 'Marcar como cliente encerrado/arquivado' : 'Reativar cliente'}
+          title={current.isActive ? 'Marcar este cliente para ser arquivado' : 'Desmarcar — manter/reativar este cliente'}
           className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg border flex-shrink-0 transition-all"
           style={current.isActive
             ? { borderColor: '#2d2550', color: '#94a3b8' }
             : { background: 'rgba(239,68,68,0.12)', borderColor: '#ef4444', color: '#f87171' }}
         >
           <Archive className="w-3 h-3" />
-          {current.isActive ? 'Ativo' : 'Arquivado'}
+          {current.isActive ? 'Arquivar' : 'Reativar'}
         </button>
       </div>
 
