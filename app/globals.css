@@ -179,14 +179,30 @@ html[data-theme="light"] iframe {
    bordas/painéis translúcidos que já eram sutis no escuro (por design) ficam sutis demais
    também no claro — some a separação entre cards. Reforça só o alfa (sem mexer em matiz/
    luminosidade, que o filtro acima já resolve), então o valor final continua previsível. */
-/* Borda do .glass usa a cor "pré-imagem" do roxo da marca, não o roxo em si: como o filtro
-   invert+hue-rotate acima estoura (clipa) os canais RGB de cores saturadas, alimentar o roxo
-   real nele produz rosa lavado. #ffadff é o valor que, depois do mesmo filtro, volta a
-   renderizar como roxo visível (mesmo princípio do .theme-locked-accent, mas pra uma
-   propriedade isolada — border — que não dá pra contra-inverter sem afetar o card inteiro). */
 html[data-theme="light"] .glass {
-  border-color: rgba(255, 173, 255, 0.65);
+  border-color: rgba(106, 17, 203, 0.55);
   background: rgba(15, 11, 30, 0.93);
+}
+
+/* Divisores neutros (#1e1635/#2d2550) somem no tema claro — mesmo tom quase-preto do .glass,
+   mesmo problema. Restrito à página de Conversas por enquanto (era onde estava mais visível),
+   reaproveitando a mesma cor/alfa que já funciona bem no .glass do Pipeline/Tráfego Pago em
+   produção, em vez de uma cor nova. */
+html[data-theme="light"] .conversas-page .border-\[\#1e1635\],
+html[data-theme="light"] .conversas-page .divide-\[\#1e1635\] > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(106, 17, 203, 0.55);
+}
+html[data-theme="light"] .conversas-page .border-\[\#1e1635\]\/40 {
+  border-color: rgba(106, 17, 203, 0.35);
+}
+html[data-theme="light"] .conversas-page .border-\[\#1e1635\]\/50 {
+  border-color: rgba(106, 17, 203, 0.4);
+}
+html[data-theme="light"] .conversas-page .border-\[\#2d2550\] {
+  border-color: rgba(106, 17, 203, 0.55);
+}
+html[data-theme="light"] .conversas-page .border-\[\#2d2550\]\/80 {
+  border-color: rgba(106, 17, 203, 0.5);
 }
 
 /* Modais — mesmo truque do <img>/<video> acima: contra-inverte a própria camada do modal

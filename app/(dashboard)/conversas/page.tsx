@@ -530,7 +530,7 @@ export default function ConversasPage() {
   const totalUnread = conversations.reduce((s, c) => s + c.unreadCount, 0)
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden conversas-page">
       <TopBar title={`Conversas${totalUnread > 0 ? ` (${totalUnread})` : ''}`} />
       <div className="flex flex-1 overflow-hidden">
 
