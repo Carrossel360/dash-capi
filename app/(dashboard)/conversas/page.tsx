@@ -466,6 +466,13 @@ export default function ConversasPage() {
     }
   }
 
+  async function deleteTag(tag: SupportTag) {
+    if (!confirm(`Excluir a tag "${tag.name}"? Ela será removida de todas as conversas.`)) return
+    await fetch(`/api/support/tags/${tag.id}`, { method: 'DELETE', headers: h })
+    setTags(prev => prev.filter(t => t.id !== tag.id))
+    await loadDetail()
+  }
+
   // ── Editar / apagar / reagir a mensagem ───────────────────────────────────────
   function startEdit(msg: Msg) {
     setEditingMessageId(msg.id)
@@ -834,11 +841,17 @@ export default function ConversasPage() {
                       {tags.map(tag => {
                         const has = detail.tags.some(t => t.id === tag.id)
                         return (
-                          <button key={tag.id} onClick={() => toggleTag(tag.id)}
-                            className={`w-full flex items-center gap-2 text-sm px-2 py-1.5 rounded-lg transition-colors ${has ? 'bg-[#6a11cb]/10' : 'hover:bg-[#1e1635]'}`}>
-                            {has ? <CheckCircle2 className="w-4 h-4 text-[#8b5cf6]" /> : <Circle className="w-4 h-4 text-slate-600" />}
-                            <span className="font-medium" style={{ color: tag.color }}>{tag.name}</span>
-                          </button>
+                          <div key={tag.id}
+                            className={`group w-full flex items-center gap-2 text-sm px-2 py-1.5 rounded-lg transition-colors ${has ? 'bg-[#6a11cb]/10' : 'hover:bg-[#1e1635]'}`}>
+                            <button onClick={() => toggleTag(tag.id)} className="flex-1 flex items-center gap-2 min-w-0">
+                              {has ? <CheckCircle2 className="w-4 h-4 text-[#8b5cf6] flex-shrink-0" /> : <Circle className="w-4 h-4 text-slate-600 flex-shrink-0" />}
+                              <span className="font-medium truncate" style={{ color: tag.color }}>{tag.name}</span>
+                            </button>
+                            <button onClick={() => deleteTag(tag)}
+                              className="flex-shrink-0 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-opacity">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         )
                       })}
                       <div className="flex gap-1 pt-1 border-t border-[#1e1635]">
@@ -855,11 +868,6 @@ export default function ConversasPage() {
                     </div>
                   )}
                 </div>
-
-                <button onClick={() => setActiveId(null)}
-                  className="w-9 h-9 rounded-lg bg-[#1e1635] flex items-center justify-center text-slate-500 hover:text-red-400 transition-colors">
-                  <X className="w-4 h-4" />
-                </button>
               </div>
             </div>
 
