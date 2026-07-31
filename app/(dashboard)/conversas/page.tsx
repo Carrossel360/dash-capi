@@ -450,7 +450,10 @@ export default function ConversasPage() {
         method: 'POST', headers: h, body: JSON.stringify({ tagId }),
       })
     }
+    // Atualiza o painel da conversa aberta E a lista à esquerda na hora — sem o loadList()
+    // aqui, a tag só apareceria na lista no próximo ciclo do polling (até 5s de atraso).
     await loadDetail()
+    loadList()
   }
 
   async function createTag() {
@@ -471,6 +474,7 @@ export default function ConversasPage() {
     await fetch(`/api/support/tags/${tag.id}`, { method: 'DELETE', headers: h })
     setTags(prev => prev.filter(t => t.id !== tag.id))
     await loadDetail()
+    loadList()
   }
 
   // ── Editar / apagar / reagir a mensagem ───────────────────────────────────────
