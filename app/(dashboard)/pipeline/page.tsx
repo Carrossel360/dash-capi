@@ -111,31 +111,49 @@ const SOURCE_SUGGESTIONS = [
 
 // ── Deal popup ────────────────────────────────────────────────────────────────
 
-function DealPopup({ lead, stageId, products, currency, token, onConfirm, onCancel }: {
+function DealPopup({ lead, stageId, products, currency, token, onConfirm, onSkip, onCancel }: {
   lead: Lead
   stageId: string
   products: Product[]
   currency: string
   token: string
-  onConfirm: (lead: Lead, stageId: string, value: number) => void
+  onConfirm: (lead: Lead) => void
+  onSkip: () => Promise<void>
   onCancel: () => void
 }) {
-  const [productId, setProductId] = useState(products[0]?.id ?? '')
-  const [value, setValue] = useState(String(products[0]?.price ?? ''))
+  const [selected, setSelected] = useState<Record<string, boolean>>({})
+  const [productValues, setProductValues] = useState<Record<string, string>>(
+    Object.fromEntries(products.map(p => [p.id, String(p.price)]))
+  )
+  const [manualValue, setManualValue] = useState('')
   const [saving, setSaving] = useState(false)
+  const [skipping, setSkipping] = useState(false)
 
   const cs = currency === 'USD' ? 'US$' : 'R$'
 
+  function toggleProduct(id: string) {
+    setSelected(prev => ({ ...prev, [id]: !prev[id] }))
+  }
+
+  const hasProductsSelected = Object.values(selected).some(Boolean)
+  const total = hasProductsSelected
+    ? products.reduce((s, p) => s + (selected[p.id] ? (parseFloat(productValues[p.id]) || 0) : 0), 0)
+    : (parseFloat(manualValue) || 0)
+
   async function handleConfirm() {
+    if (total <= 0) return
     setSaving(true)
     try {
+      const items = hasProductsSelected
+        ? products.filter(p => selected[p.id]).map(p => ({ productId: p.id, value: parseFloat(productValues[p.id]) || 0 }))
+        : [{ productId: null, value: parseFloat(manualValue) || 0 }]
       const res = await fetch('/api/deals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ leadId: lead.id, productId: productId || null, value: parseFloat(value) || 0, stageId }),
+        body: JSON.stringify({ leadId: lead.id, stageId, items }),
       })
       if (!res.ok) throw new Error()
-      onConfirm({ ...lead, pipelineStageId: stageId, dealValue: parseFloat(value) || 0 }, stageId, parseFloat(value) || 0)
+      onConfirm({ ...lead, pipelineStageId: stageId, dealValue: total })
       toast.success('Venda registrada!')
     } catch {
       toast.error('Erro ao registrar venda')
@@ -144,60 +162,84 @@ function DealPopup({ lead, stageId, products, currency, token, onConfirm, onCanc
     }
   }
 
+  async function handleSkip() {
+    setSkipping(true)
+    try { await onSkip() } finally { setSkipping(false) }
+  }
+
   return (
     <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 theme-locked-modal">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onCancel} />
-      <div className="relative rounded-2xl p-6 w-full max-w-sm shadow-2xl z-10"
+      <div className="relative rounded-2xl w-full max-w-sm shadow-2xl z-10"
         style={{ background: '#0d0a1f', border: '1px solid rgba(16,185,129,0.3)' }}>
-        <div className="flex items-center gap-3 mb-5">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(16,185,129,0.1)' }}>
-            <ShoppingBag className="w-5 h-5 text-emerald-400" />
+        <div className="flex items-center justify-between px-6 pt-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(16,185,129,0.1)' }}>
+              <ShoppingBag className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white">Registrar Venda</h3>
+              <p className="text-xs text-slate-500">{lead.name}</p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-sm font-bold text-white">Registrar Venda</h3>
-            <p className="text-xs text-slate-500">{lead.name}</p>
-          </div>
+          <button onClick={onCancel} className="text-slate-500 hover:text-white transition-colors flex-shrink-0">
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
-        <div className="space-y-3">
+        <p className="px-6 pt-4 text-xs text-slate-400">
+          Parabéns! Selecione os produtos ou serviços vendidos pra registrar o faturamento.
+        </p>
+
+        <div className="px-6 pt-4">
           {products.length > 0 && (
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400">Produto</label>
-              <select
-                value={productId}
-                onChange={e => {
-                  setProductId(e.target.value)
-                  const p = products.find(p => p.id === e.target.value)
-                  if (p) setValue(String(p.price))
-                }}
-                className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-emerald-500"
-              >
-                <option value="">Sem produto específico</option>
+            <>
+              <label className="text-xs font-medium text-slate-400">Produtos/Serviços</label>
+              <div className="mt-1.5 space-y-1.5 max-h-48 overflow-y-auto pr-1">
                 {products.map(p => (
-                  <option key={p.id} value={p.id}>{p.name} — {cs} {p.price.toLocaleString('pt-BR')}</option>
+                  <div key={p.id} className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-[#2d2550] bg-[#1a1230]">
+                    <button type="button" onClick={() => toggleProduct(p.id)}
+                      className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border transition-all"
+                      style={selected[p.id] ? { background: '#10b981', borderColor: '#10b981' } : { borderColor: '#2d2550' }}
+                    >
+                      {selected[p.id] && <Check className="w-3 h-3 text-white" />}
+                    </button>
+                    <span className="flex-1 text-xs text-slate-200 truncate">{p.name}</span>
+                    <span className="text-xs text-slate-500 flex-shrink-0">{cs}</span>
+                    <input type="number" value={productValues[p.id] ?? ''}
+                      onChange={e => setProductValues(prev => ({ ...prev, [p.id]: e.target.value }))}
+                      onFocus={() => { if (!selected[p.id]) toggleProduct(p.id) }}
+                      className="w-20 px-2 py-1 text-xs bg-[#0f0b1e] border border-[#2d2550] rounded text-white text-right focus:outline-none focus:border-emerald-500 flex-shrink-0"
+                    />
+                  </div>
                 ))}
-              </select>
-            </div>
+              </div>
+            </>
           )}
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-slate-400">Valor da venda ({cs})</label>
-            <input
-              type="number"
-              value={value}
-              onChange={e => setValue(e.target.value)}
-              placeholder="0,00"
-              className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-emerald-500"
-            />
+          <div className={products.length > 0 ? 'mt-4 pt-4 border-t border-[#1e1635]' : ''}>
+            <label className="text-xs font-medium text-slate-400">
+              {products.length > 0 ? 'OU Valor Manual (sem produto específico)' : `Valor da venda (${cs})`}
+            </label>
+            <div className="mt-1.5 relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">{cs}</span>
+              <input type="number" value={manualValue}
+                onChange={e => setManualValue(e.target.value)}
+                disabled={hasProductsSelected}
+                placeholder="0,00"
+                className="w-full pl-9 pr-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-emerald-500 disabled:opacity-40"
+              />
+            </div>
           </div>
         </div>
 
-        <div className="flex gap-2 mt-5">
-          <button onClick={onCancel} className="flex-1 py-2.5 rounded-lg border border-[#2d2550] text-slate-400 text-xs hover:text-white transition-colors">
-            Cancelar
+        <div className="flex gap-2 px-6 py-5 mt-2">
+          <button onClick={handleSkip} disabled={skipping || saving}
+            className="flex-1 py-2.5 rounded-lg border border-[#2d2550] text-slate-400 text-xs hover:text-white transition-colors disabled:opacity-50">
+            {skipping ? 'Movendo...' : 'Pular'}
           </button>
-          <button onClick={handleConfirm} disabled={saving}
-            className="flex-1 py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50 transition-all"
+          <button onClick={handleConfirm} disabled={saving || skipping || total <= 0}
+            className="flex-1 py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-40 transition-all"
             style={{ background: '#10b981', color: '#fff' }}
           >
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
@@ -895,6 +937,26 @@ export default function PipelinePage() {
     setDealPending(null)
   }
 
+  // "Pular" no popup de venda — move o lead pro estágio sem registrar produto/valor
+  // (mesmo caminho que um estágio comum, que já dispara o evento CAPI se configurado).
+  async function handleDealSkip() {
+    if (!dealPending) return
+    const { lead, stageId } = dealPending
+    try {
+      const res = await fetch(`/api/leads/${lead.id}/stage`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ stageId }),
+      })
+      if (!res.ok) throw new Error()
+      setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, pipelineStageId: stageId } : l))
+    } catch {
+      toast.error('Erro ao mover lead')
+    } finally {
+      setDealPending(null)
+    }
+  }
+
   function handleLeadSaved(updated: Lead) {
     setLeads(prev => prev.map(l => l.id === updated.id ? { ...l, ...updated } : l))
   }
@@ -954,6 +1016,7 @@ export default function PipelinePage() {
           currency={currency}
           token={token!}
           onConfirm={handleDealConfirm}
+          onSkip={handleDealSkip}
           onCancel={() => setDealPending(null)}
         />
       )}
