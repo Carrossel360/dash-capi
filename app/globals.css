@@ -190,12 +190,13 @@ html[data-theme="light"] .glass {
    o card, igual ao CRM antigo) resolve — mas precisa ser a cor pré-imagem certa: um hex "óbvio"
    tipo #eceaf2 (cinza claro de olho) sai como PRETO depois do invert+hue-rotate+contrast do
    tema claro (contrast empurra qualquer valor já escuro após o invert ainda mais pra 0). O
-   valor abaixo foi calculado de trás pra frente pra render final ficar num cinza-lavanda
-   visível — mesmo princípio da borda do .glass acima, só que pra um alvo claro em vez de
-   saturado. Cards com pouco conteúdo (ex: coluna quase vazia) deixavam isso mais óbvio, mas o
-   preto acontecia em toda coluna, só ficava escondido atrás dos cards nas colunas cheias. */
+   valor abaixo foi calculado de trás pra frente pra render final ficar num cinza bem sutil
+   (2ª rodada de ajuste, mais claro que a primeira) — mesmo princípio da borda do .glass acima,
+   só que pra um alvo claro em vez de saturado. Sem borda aqui (transparent) — só o tom de fundo
+   já separa as colunas, a linha ficava chamativa demais. */
 html[data-theme="light"] .glass.stage-tint {
-  background: rgb(52, 50, 58);
+  border-color: transparent;
+  background: rgb(39, 38, 41);
 }
 
 /* Divisores neutros (#1e1635/#2d2550) somem no tema claro — mesmo tom quase-preto do .glass,

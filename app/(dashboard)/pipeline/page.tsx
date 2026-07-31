@@ -141,6 +141,30 @@ function DealPopup({ lead, stageId, products, currency, token, mode = 'create', 
 
   const cs = currency === 'USD' ? 'US$' : 'R$'
 
+  // Tentei deixar esse popup acompanhando o tema (ao vivo, no navegador) em vez de sempre
+  // escuro como os outros modais — mas mesmo com a matemática do filtro de inversão batendo
+  // (branco autoral deveria voltar a branco depois das duas passagens), o Chrome não compõe
+  // os dois filtros do jeito esperado aqui e renderiza tudo preto. Mantido travado no escuro
+  // (.theme-locked-modal), igual todos os outros modais do app — comportamento já confiável.
+  const t = {
+    cardBg: '#0d0a1f',
+    cardBorder: 'rgba(16,185,129,0.3)',
+    iconBg: 'rgba(16,185,129,0.1)',
+    title: '#fff',
+    sub: '#64748b',
+    close: '#64748b',
+    label: '#94a3b8',
+    intro: '#94a3b8',
+    rowBg: '#1a1230',
+    rowBorder: '#2d2550',
+    rowText: '#e2e8f0',
+    inputBg: '#0f0b1e',
+    inputBorder: '#2d2550',
+    inputText: '#fff',
+    checkboxBorder: '#2d2550',
+    divider: '#1e1635',
+  }
+
   function toggleProduct(id: string) {
     setSelected(prev => ({ ...prev, [id]: !prev[id] }))
   }
@@ -195,23 +219,23 @@ function DealPopup({ lead, stageId, products, currency, token, mode = 'create', 
     <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 theme-locked-modal">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onCancel} />
       <div className="relative rounded-2xl w-full max-w-sm shadow-2xl z-10"
-        style={{ background: '#0d0a1f', border: '1px solid rgba(16,185,129,0.3)' }}>
+        style={{ background: t.cardBg, border: `1px solid ${t.cardBorder}` }}>
         <div className="flex items-center justify-between px-6 pt-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(16,185,129,0.1)' }}>
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: t.iconBg }}>
               <ShoppingBag className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white">{mode === 'edit' ? 'Editar Venda' : 'Registrar Venda'}</h3>
-              <p className="text-xs text-slate-500">{lead.name}</p>
+              <h3 className="text-sm font-bold" style={{ color: t.title }}>{mode === 'edit' ? 'Editar Venda' : 'Registrar Venda'}</h3>
+              <p className="text-xs" style={{ color: t.sub }}>{lead.name}</p>
             </div>
           </div>
-          <button onClick={onCancel} className="text-slate-500 hover:text-white transition-colors flex-shrink-0">
+          <button onClick={onCancel} className="hover:opacity-70 transition-opacity flex-shrink-0" style={{ color: t.close }}>
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <p className="px-6 pt-4 text-xs text-slate-400">
+        <p className="px-6 pt-4 text-xs" style={{ color: t.intro }}>
           {mode === 'edit'
             ? 'Ajuste os produtos/serviços ou o valor dessa venda.'
             : 'Parabéns! Selecione os produtos ou serviços vendidos pra registrar o faturamento.'}
@@ -220,22 +244,23 @@ function DealPopup({ lead, stageId, products, currency, token, mode = 'create', 
         <div className="px-6 pt-4">
           {products.length > 0 && (
             <>
-              <label className="text-xs font-medium text-slate-400">Produtos/Serviços</label>
+              <label className="text-xs font-medium" style={{ color: t.label }}>Produtos/Serviços</label>
               <div className="mt-1.5 space-y-1.5 max-h-48 overflow-y-auto pr-1">
                 {products.map(p => (
-                  <div key={p.id} className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-[#2d2550] bg-[#1a1230]">
+                  <div key={p.id} className="flex items-center gap-2.5 px-3 py-2 rounded-lg border" style={{ borderColor: t.rowBorder, background: t.rowBg }}>
                     <button type="button" onClick={() => toggleProduct(p.id)}
                       className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border transition-all"
-                      style={selected[p.id] ? { background: '#10b981', borderColor: '#10b981' } : { borderColor: '#2d2550' }}
+                      style={selected[p.id] ? { background: '#10b981', borderColor: '#10b981' } : { borderColor: t.checkboxBorder }}
                     >
                       {selected[p.id] && <Check className="w-3 h-3 text-white" />}
                     </button>
-                    <span className="flex-1 text-xs text-slate-200 truncate">{p.name}</span>
-                    <span className="text-xs text-slate-500 flex-shrink-0">{cs}</span>
+                    <span className="flex-1 text-xs truncate" style={{ color: t.rowText }}>{p.name}</span>
+                    <span className="text-xs flex-shrink-0" style={{ color: t.sub }}>{cs}</span>
                     <input type="number" value={productValues[p.id] ?? ''}
                       onChange={e => setProductValues(prev => ({ ...prev, [p.id]: e.target.value }))}
                       onFocus={() => { if (!selected[p.id]) toggleProduct(p.id) }}
-                      className="w-20 px-2 py-1 text-xs bg-[#0f0b1e] border border-[#2d2550] rounded text-white text-right focus:outline-none focus:border-emerald-500 flex-shrink-0"
+                      className="w-20 px-2 py-1 text-xs rounded border text-right focus:outline-none focus:border-emerald-500 flex-shrink-0"
+                      style={{ background: t.inputBg, borderColor: t.inputBorder, color: t.inputText }}
                     />
                   </div>
                 ))}
@@ -243,17 +268,18 @@ function DealPopup({ lead, stageId, products, currency, token, mode = 'create', 
             </>
           )}
 
-          <div className={products.length > 0 ? 'mt-4 pt-4 border-t border-[#1e1635]' : ''}>
-            <label className="text-xs font-medium text-slate-400">
+          <div className={products.length > 0 ? 'mt-4 pt-4 border-t' : ''} style={products.length > 0 ? { borderColor: t.divider } : undefined}>
+            <label className="text-xs font-medium" style={{ color: t.label }}>
               {products.length > 0 ? 'OU Valor Manual (sem produto específico)' : `Valor da venda (${cs})`}
             </label>
             <div className="mt-1.5 relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">{cs}</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs" style={{ color: t.sub }}>{cs}</span>
               <input type="number" value={manualValue}
                 onChange={e => setManualValue(e.target.value)}
                 disabled={hasProductsSelected}
                 placeholder="0,00"
-                className="w-full pl-9 pr-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-emerald-500 disabled:opacity-40"
+                className="w-full pl-9 pr-3 py-2.5 text-sm rounded-lg border focus:outline-none focus:border-emerald-500 disabled:opacity-40"
+                style={{ background: t.inputBg, borderColor: t.inputBorder, color: t.inputText }}
               />
             </div>
           </div>
@@ -262,13 +288,15 @@ function DealPopup({ lead, stageId, products, currency, token, mode = 'create', 
         <div className="flex gap-2 px-6 py-5 mt-2">
           {mode === 'create' && (
             <button onClick={handleSkip} disabled={skipping || saving}
-              className="flex-1 py-2.5 rounded-lg border border-[#2d2550] text-slate-400 text-xs hover:text-white transition-colors disabled:opacity-50">
+              className="flex-1 py-2.5 rounded-lg border text-xs transition-colors disabled:opacity-50"
+              style={{ borderColor: t.inputBorder, color: t.label }}>
               {skipping ? 'Movendo...' : 'Pular'}
             </button>
           )}
           {mode === 'edit' && (
             <button onClick={onCancel} disabled={saving}
-              className="flex-1 py-2.5 rounded-lg border border-[#2d2550] text-slate-400 text-xs hover:text-white transition-colors disabled:opacity-50">
+              className="flex-1 py-2.5 rounded-lg border text-xs transition-colors disabled:opacity-50"
+              style={{ borderColor: t.inputBorder, color: t.label }}>
               Cancelar
             </button>
           )}
@@ -287,16 +315,16 @@ function DealPopup({ lead, stageId, products, currency, token, mode = 'create', 
 
 // ── Lead Modal ────────────────────────────────────────────────────────────────
 
-function LeadModal({ lead, stages, products, currency, token, onClose, onSaved, onDeleted, onRequestDeal }: {
+function LeadModal({ lead, stages, currency, token, onClose, onSaved, onDeleted, onRequestDeal, onRequestEditDeal }: {
   lead: Lead
   stages: Stage[]
-  products: Product[]
   currency: string
   token: string
   onClose: () => void
   onSaved: (lead: Lead) => void
   onDeleted: (id: string) => void
   onRequestDeal: (lead: Lead, stageId: string) => void
+  onRequestEditDeal: (lead: Lead) => void
 }) {
   const [form, setForm] = useState({
     name: lead.name,
@@ -308,8 +336,6 @@ function LeadModal({ lead, stages, products, currency, token, onClose, onSaved, 
   })
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [editingDeal, setEditingDeal] = useState(false)
-  const [currentLead, setCurrentLead] = useState(lead)
 
   const cs = currency === 'USD' ? 'US$' : 'R$'
 
@@ -495,25 +521,25 @@ function LeadModal({ lead, stages, products, currency, token, onClose, onSaved, 
           )}
 
           {/* Deal value if exists */}
-          {currentLead.dealValue ? (
+          {lead.dealValue ? (
             <>
               <div className="rounded-xl p-4 border border-emerald-500/20 bg-emerald-500/5 flex items-start gap-3">
                 <DollarSign className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
                 <div>
                   <p className="text-xs font-semibold text-emerald-400">Detalhes da Venda</p>
                   <p className="text-sm text-white mt-0.5 font-semibold">
-                    {cs} {currentLead.dealValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    {cs} {lead.dealValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   </p>
-                  {(currentLead.deals ?? []).some(d => d.product) && (
+                  {(lead.deals ?? []).some(d => d.product) && (
                     <p className="text-xs text-slate-400 mt-1">
-                      {(currentLead.deals ?? []).filter(d => d.product).map(d => d.product!.name).join(', ')}
+                      {(lead.deals ?? []).filter(d => d.product).map(d => d.product!.name).join(', ')}
                     </p>
                   )}
                 </div>
               </div>
               <div className="rounded-xl p-4 border border-emerald-500/20 bg-emerald-500/[0.03] flex items-center justify-between gap-3">
                 <p className="text-xs font-semibold text-emerald-400">Venda</p>
-                <button onClick={() => setEditingDeal(true)}
+                <button onClick={() => onRequestEditDeal(lead)}
                   className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all"
                   style={{ background: '#6a11cb', color: '#fff' }}
                 >
@@ -523,22 +549,6 @@ function LeadModal({ lead, stages, products, currency, token, onClose, onSaved, 
             </>
           ) : null}
         </div>
-
-        {editingDeal && (
-          <DealPopup
-            lead={currentLead}
-            products={products}
-            currency={currency}
-            token={token}
-            mode="edit"
-            onConfirm={updated => {
-              setCurrentLead(updated)
-              onSaved(updated)
-              setEditingDeal(false)
-            }}
-            onCancel={() => setEditingDeal(false)}
-          />
-        )}
 
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-[#1e1635]">
@@ -703,8 +713,6 @@ const dropAnimation: DropAnimation = {
 }
 
 function Column({ stage, leads, currency, onCardClick }: { stage: Stage; leads: Lead[]; currency: string; onCardClick: (lead: Lead) => void }) {
-  const total = leads.reduce((s, l) => s + (l.dealValue ?? 0), 0)
-  const cs = currency === 'USD' ? 'US$' : 'R$'
   // A coluna inteira precisa ser um droppable próprio — sem isso, só os cards (via
   // useSortable) contam como alvo de drop, então soltar em espaço vazio (coluna vazia ou
   // abaixo do último card) não move o lead pra essa etapa.
@@ -717,18 +725,11 @@ function Column({ stage, leads, currency, onCardClick }: { stage: Stage; leads: 
           <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider">{stage.name}</span>
           <span className="text-xs text-slate-600 bg-[#1e1635] px-1.5 py-0.5 rounded-full">{leads.length}</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          {total > 0 && (
-            <span className="text-xs text-emerald-400 font-medium">
-              {cs} {total.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
-            </span>
-          )}
-          {stage.triggerCapiEvent !== 'none' && (
-            <span className="text-xs text-[#8b5cf6] bg-[#6a11cb]/10 border border-[#6a11cb]/20 px-1.5 py-0.5 rounded">
-              CAPI
-            </span>
-          )}
-        </div>
+        {stage.triggerCapiEvent !== 'none' && (
+          <span className="text-xs text-[#8b5cf6] bg-[#6a11cb]/10 border border-[#6a11cb]/20 px-1.5 py-0.5 rounded flex-shrink-0">
+            CAPI
+          </span>
+        )}
       </div>
 
       <div ref={setNodeRef}
@@ -886,6 +887,7 @@ export default function PipelinePage() {
 
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [dealPending, setDealPending] = useState<{ lead: Lead; stageId: string } | null>(null)
+  const [editDealFor, setEditDealFor] = useState<Lead | null>(null)
   const [showNewLead, setShowNewLead] = useState(false)
   // Estágio do lead antes do drag começar — guardado num ref (não state) porque só serve pra
   // decidir, no drop, se precisa persistir (handleDragOver já vai ter mudado leads[].pipelineStageId
@@ -1040,6 +1042,7 @@ export default function PipelinePage() {
 
   function handleLeadSaved(updated: Lead) {
     setLeads(prev => prev.map(l => l.id === updated.id ? { ...l, ...updated } : l))
+    setSelectedLead(prev => prev && prev.id === updated.id ? { ...prev, ...updated } : prev)
   }
 
   function handleLeadDeleted(id: string) {
@@ -1081,13 +1084,25 @@ export default function PipelinePage() {
         <LeadModal
           lead={selectedLead}
           stages={stages}
-          products={products}
           currency={currency}
           token={token!}
           onClose={() => setSelectedLead(null)}
           onSaved={handleLeadSaved}
           onDeleted={handleLeadDeleted}
           onRequestDeal={(lead, stageId) => { setSelectedLead(null); setDealPending({ lead, stageId }) }}
+          onRequestEditDeal={setEditDealFor}
+        />
+      )}
+
+      {editDealFor && (
+        <DealPopup
+          lead={editDealFor}
+          products={products}
+          currency={currency}
+          token={token!}
+          mode="edit"
+          onConfirm={updated => { handleLeadSaved(updated); setEditDealFor(null) }}
+          onCancel={() => setEditDealFor(null)}
         />
       )}
 
