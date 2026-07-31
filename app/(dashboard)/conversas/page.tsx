@@ -85,6 +85,10 @@ const STATUS_LABELS: Record<string, string> = {
   closed:      'Fechado',
 }
 
+// Paleta fixa pras tags — evita cor livre (hard de garantir contraste legível em cima do
+// fundo escuro) e mantém as cores existentes (roxo/azul da marca etc.) sempre selecionáveis.
+const TAG_COLORS = ['#6a11cb', '#2575fc', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#94a3b8']
+
 function initials(name: string | null, phone: string) {
   if (name) return name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
   return phone.slice(-2)
@@ -174,6 +178,10 @@ export default function ConversasPage() {
   const [showTagPanel, setShowTagPanel]   = useState(false)
   const [showAssign, setShowAssign]       = useState(false)
   const [newTagName, setNewTagName]       = useState('')
+  const [newTagColor, setNewTagColor]     = useState(TAG_COLORS[0])
+  const [editingTagId, setEditingTagId]   = useState<string | null>(null)
+  const [editTagName, setEditTagName]     = useState('')
+  const [editTagColor, setEditTagColor]   = useState('')
   const [noConvPhone, setNoConvPhone]     = useState<string | null>(null)
   const [startMsg, setStartMsg]           = useState('')
   const [startingSend, setStartingSend]   = useState(false)
@@ -460,12 +468,13 @@ export default function ConversasPage() {
     if (!newTagName.trim()) return
     const res = await fetch('/api/support/tags', {
       method: 'POST', headers: h,
-      body: JSON.stringify({ name: newTagName.trim(), color: '#6a11cb' }),
+      body: JSON.stringify({ name: newTagName.trim(), color: newTagColor }),
     })
     if (res.ok) {
       const tag = await res.json()
       setTags(prev => [...prev, tag])
       setNewTagName('')
+      setNewTagColor(TAG_COLORS[0])
     }
   }
 
@@ -475,6 +484,27 @@ export default function ConversasPage() {
     setTags(prev => prev.filter(t => t.id !== tag.id))
     await loadDetail()
     loadList()
+  }
+
+  function startEditTag(tag: SupportTag) {
+    setEditingTagId(tag.id)
+    setEditTagName(tag.name)
+    setEditTagColor(tag.color)
+  }
+
+  async function saveEditTag() {
+    if (!editingTagId || !editTagName.trim()) return
+    const res = await fetch(`/api/support/tags/${editingTagId}`, {
+      method: 'PATCH', headers: h,
+      body: JSON.stringify({ name: editTagName.trim(), color: editTagColor }),
+    })
+    if (res.ok) {
+      const updated = await res.json()
+      setTags(prev => prev.map(t => t.id === updated.id ? updated : t))
+      setEditingTagId(null)
+      await loadDetail()
+      loadList()
+    }
   }
 
   // ── Editar / apagar / reagir a mensagem ───────────────────────────────────────
@@ -835,21 +865,56 @@ export default function ConversasPage() {
 
                 {/* Tags */}
                 <div className="relative">
-                  <button onClick={() => setShowTagPanel(s => !s)}
+                  <button onClick={() => { setShowTagPanel(s => !s); setEditingTagId(null) }}
                     className="w-9 h-9 rounded-lg bg-[#1e1635] flex items-center justify-center text-slate-500 hover:text-white transition-colors">
                     <Tag className="w-4 h-4" />
                   </button>
                   {showTagPanel && detail && (
-                    <div className="absolute right-0 top-11 z-50 w-56 bg-[#0f0b1e] border border-[#2d2550] rounded-xl shadow-2xl p-3 space-y-2">
+                    <div className="absolute right-0 top-11 z-50 w-60 bg-[#0f0b1e] border border-[#2d2550] rounded-xl shadow-2xl p-3 space-y-2">
                       <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Tags</p>
                       {tags.map(tag => {
                         const has = detail.tags.some(t => t.id === tag.id)
+                        if (editingTagId === tag.id) {
+                          return (
+                            <div key={tag.id} className="space-y-1.5 px-2 py-1.5 rounded-lg bg-[#1e1635]">
+                              <input value={editTagName} onChange={e => setEditTagName(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && saveEditTag()}
+                                autoFocus
+                                className="w-full text-sm bg-[#0f0b1e] border border-[#2d2550] rounded px-2 py-1 text-white focus:outline-none focus:border-[#6a11cb]" />
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {TAG_COLORS.map(c => (
+                                  <button key={c} type="button" onClick={() => setEditTagColor(c)}
+                                    className="w-5 h-5 rounded-full flex-shrink-0 transition-transform"
+                                    style={{
+                                      background: c,
+                                      transform: editTagColor === c ? 'scale(1.15)' : 'scale(1)',
+                                      boxShadow: editTagColor === c ? `0 0 0 2px #1e1635, 0 0 0 3.5px ${c}` : 'none',
+                                    }} />
+                                ))}
+                              </div>
+                              <div className="flex gap-1.5 pt-0.5">
+                                <button onClick={() => setEditingTagId(null)}
+                                  className="flex-1 text-xs py-1 rounded bg-[#2d2550] text-slate-300 hover:text-white transition-colors">
+                                  Cancelar
+                                </button>
+                                <button onClick={saveEditTag}
+                                  className="flex-1 text-xs py-1 rounded bg-[#6a11cb] text-white hover:opacity-90 transition-opacity">
+                                  Salvar
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        }
                         return (
                           <div key={tag.id}
-                            className={`group w-full flex items-center gap-2 text-sm px-2 py-1.5 rounded-lg transition-colors ${has ? 'bg-[#6a11cb]/10' : 'hover:bg-[#1e1635]'}`}>
+                            className={`group w-full flex items-center gap-1 text-sm px-2 py-1.5 rounded-lg transition-colors ${has ? 'bg-[#6a11cb]/10' : 'hover:bg-[#1e1635]'}`}>
                             <button onClick={() => toggleTag(tag.id)} className="flex-1 flex items-center gap-2 min-w-0">
                               {has ? <CheckCircle2 className="w-4 h-4 text-[#8b5cf6] flex-shrink-0" /> : <Circle className="w-4 h-4 text-slate-600 flex-shrink-0" />}
                               <span className="font-medium truncate" style={{ color: tag.color }}>{tag.name}</span>
+                            </button>
+                            <button onClick={() => startEditTag(tag)}
+                              className="flex-shrink-0 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-white transition-opacity">
+                              <Pencil className="w-3.5 h-3.5" />
                             </button>
                             <button onClick={() => deleteTag(tag)}
                               className="flex-shrink-0 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-opacity">
@@ -858,16 +923,29 @@ export default function ConversasPage() {
                           </div>
                         )
                       })}
-                      <div className="flex gap-1 pt-1 border-t border-[#1e1635]">
-                        <input value={newTagName} onChange={e => setNewTagName(e.target.value)}
-                          onKeyDown={e => e.key === 'Enter' && createTag()}
-                          placeholder="Nova tag..."
-                          className="flex-1 text-sm bg-[#1e1635] border border-[#2d2550] rounded px-2 py-1.5 text-white placeholder-slate-600 focus:outline-none focus:border-[#6a11cb]"
-                        />
-                        <button onClick={createTag}
-                          className="w-8 h-8 flex items-center justify-center rounded bg-[#6a11cb] text-white hover:opacity-90">
-                          <Plus className="w-4 h-4" />
-                        </button>
+                      <div className="pt-1.5 border-t border-[#1e1635] space-y-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {TAG_COLORS.map(c => (
+                            <button key={c} type="button" onClick={() => setNewTagColor(c)}
+                              className="w-5 h-5 rounded-full flex-shrink-0 transition-transform"
+                              style={{
+                                background: c,
+                                transform: newTagColor === c ? 'scale(1.15)' : 'scale(1)',
+                                boxShadow: newTagColor === c ? `0 0 0 2px #0f0b1e, 0 0 0 3.5px ${c}` : 'none',
+                              }} />
+                          ))}
+                        </div>
+                        <div className="flex gap-1">
+                          <input value={newTagName} onChange={e => setNewTagName(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && createTag()}
+                            placeholder="Nova tag..."
+                            className="flex-1 text-sm bg-[#1e1635] border border-[#2d2550] rounded px-2 py-1.5 text-white placeholder-slate-600 focus:outline-none focus:border-[#6a11cb]"
+                          />
+                          <button onClick={createTag}
+                            className="w-8 h-8 flex items-center justify-center rounded bg-[#6a11cb] text-white hover:opacity-90">
+                            <Plus className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
