@@ -12,13 +12,18 @@ export async function GET(req: NextRequest) {
   const period  = searchParams.get('period')
   const from    = searchParams.get('from')
   const to      = searchParams.get('to')
+  // dateField=closedAt — pra faturamento por período (quando a venda fechou), não quando o
+  // lead entrou. Sem isso, "últimos 30 dias" de faturamento ficava contando só vendas de leads
+  // que também chegaram nesses 30 dias, ignorando vendas fechadas agora de leads mais antigos
+  // (foi exatamente a causa de "Faturamento" no Dashboard não bater com o CRM antigo).
+  const dateField = searchParams.get('dateField') === 'closedAt' ? 'closedAt' : 'createdAt'
 
   // `period` (this_month/last_month/7d/30d/custom/...) monta um range fechado {gte,lte} via
   // dateRange — mesmo helper usado por Tráfego Pago/Social Media, pra "Visão Geral" respeitar
   // o período selecionado. Sem `period`, mantém o comportamento legado só com `from` (gte aberto),
   // usado pelo Pipeline (que só filtra "a partir de", sem período fechado).
   const range = period ? dateRange(period, from, to) : undefined
-  const dateFilter = range ? { createdAt: range } : from ? { createdAt: { gte: new Date(from) } } : {}
+  const dateFilter = range ? { [dateField]: range } : from ? { [dateField]: { gte: new Date(from) } } : {}
 
   const leads = await prisma.lead.findMany({
     where: {

@@ -126,10 +126,14 @@ export default function DashboardPage() {
     const ym = periodToYearMonth()
     const gbpUrl = ym ? `/api/google-business?period=${ym}` : '/api/google-business'
     try {
-      const [metaRes, googRes, leadsRes, monthlyRes, socialRes, gbpRes] = await Promise.all([
+      const [metaRes, googRes, leadsRes, dealsRes, monthlyRes, socialRes, gbpRes] = await Promise.all([
         fetch(`/api/trafego/meta?${periodQs}`, { headers: h }),
         fetch(`/api/trafego/google?${periodQs}`, { headers: h }),
         fetch(`/api/leads?${periodQs}`, { headers: h }),
+        // Faturamento é contado por quando a VENDA fechou (closedAt), não por quando o lead
+        // entrou (createdAt, usado acima só pra contar leads) — um lead de meses atrás que
+        // fechou agora precisa entrar no faturamento do período, mesmo fora da janela de leads.
+        fetch(`/api/leads?${periodQs}&dateField=closedAt`, { headers: h }),
         fetch('/api/dashboard/leads-by-month', { headers: h }),
         fetch(`/api/social-media?${periodQs}`, { headers: h }),
         fetch(gbpUrl, { headers: h }),
@@ -138,12 +142,14 @@ export default function DashboardPage() {
       const meta = metaRes.ok ? await metaRes.json() : null
       const goog = googRes.ok ? await googRes.json() : null
       const leadsArr = leadsRes.ok ? await leadsRes.json() : []
+      const dealsArr = dealsRes.ok ? await dealsRes.json() : []
       const monthly = monthlyRes.ok ? await monthlyRes.json() : null
       const social = socialRes.ok ? await socialRes.json() : null
       const gbp = gbpRes.ok ? await gbpRes.json() : null
 
       const leads = Array.isArray(leadsArr) ? leadsArr : []
-      const crmDeals = leads.reduce((s: number, l: { dealValue?: number }) => s + (l.dealValue ?? 0), 0)
+      const dealLeads = Array.isArray(dealsArr) ? dealsArr : []
+      const crmDeals = dealLeads.reduce((s: number, l: { dealValue?: number }) => s + (l.dealValue ?? 0), 0)
 
       // Sem `period` explícito, /api/google-business devolve os últimos 12 meses (mais antigo
       // primeiro) — pega o mais recente. Com `period`, devolve um único registro (ou null).
