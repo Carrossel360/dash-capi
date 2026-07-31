@@ -215,6 +215,7 @@ async function migrateCrmDeals(crm: Client) {
   )
 
   let count = 0, processed = 0
+  const touchedLeadIds = new Set<string>()
   for (const r of rows) {
     processed++
     if (processed % 200 === 0) console.log(`  ... ${processed}/${rows.length} avaliados`)
@@ -230,10 +231,46 @@ async function migrateCrmDeals(crm: Client) {
         },
         update: { value: Number(r.value) || 0, status: r.status },
       })
+      touchedLeadIds.add(r.lead_id)
       count++
     } catch (e) { console.log(`  ⚠️  deal ${r.id}: ${e instanceof Error ? e.message : e}`) }
   }
   console.log(`  ✓ ${count} deals sincronizados`)
+
+  // Deal.value é só o registro da venda — quem a Pipeline e o Dashboard realmente somam pro
+  // faturamento é Lead.dealValue, que esse script nunca atualizava (bug real: 176 leads em 4
+  // clientes ficaram com faturamento subestimado/zerado até ser corrigido e recalculado aqui
+  // em 30/07/2026). Recalcula só pros leads tocados nesta rodada, em lote (2 queries) em vez
+  // de um findUnique por lead — essencial dado a latência do pool.
+  console.log('\n💵  Recalculando Lead.dealValue a partir dos deals...')
+  const leadIds = [...touchedLeadIds]
+  const [allDeals, currentLeads] = await Promise.all([
+    prisma.deal.findMany({ where: { leadId: { in: leadIds } }, select: { leadId: true, value: true, createdAt: true } }),
+    prisma.lead.findMany({ where: { id: { in: leadIds } }, select: { id: true, dealValue: true, closedAt: true } }),
+  ])
+  const leadMap = new Map(currentLeads.map(l => [l.id, l]))
+  const dealsByLead = new Map<string, { value: number; createdAt: Date }[]>()
+  for (const d of allDeals) {
+    if (!dealsByLead.has(d.leadId)) dealsByLead.set(d.leadId, [])
+    dealsByLead.get(d.leadId)!.push(d)
+  }
+  let recalculated = 0
+  for (const leadId of leadIds) {
+    const deals = dealsByLead.get(leadId) ?? []
+    const sum = deals.reduce((s, d) => s + d.value, 0)
+    const lead = leadMap.get(leadId)
+    if (!lead) continue
+    const needsClosedAt = sum > 0 && !lead.closedAt
+    if (Math.abs(sum - (lead.dealValue ?? 0)) > 0.01 || needsClosedAt) {
+      const latest = deals.reduce((max, d) => d.createdAt > max ? d.createdAt : max, deals[0]?.createdAt ?? new Date())
+      await prisma.lead.update({
+        where: { id: leadId },
+        data: { dealValue: sum, ...(needsClosedAt ? { closedAt: latest } : {}) },
+      })
+      recalculated++
+    }
+  }
+  console.log(`  ✓ ${recalculated} leads com dealValue recalculado`)
 }
 
 async function main() {
