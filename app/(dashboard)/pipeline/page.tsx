@@ -175,7 +175,10 @@ function DealPopup({ lead, stageId, products, currency, token, mode = 'create', 
     : (parseFloat(manualValue) || 0)
 
   async function handleConfirm() {
-    if (total <= 0) return
+    // Só bloqueia venda vazia no registro inicial (não faz sentido criar uma venda de R$0).
+    // Na edição, reduzir a R$0 é uma correção válida (ex: excluir o único produto vendido) —
+    // o servidor já ignora itens com valor 0 e simplesmente limpa a venda do lead.
+    if (mode === 'create' && total <= 0) return
     setSaving(true)
     try {
       const items = hasProductsSelected
@@ -258,7 +261,6 @@ function DealPopup({ lead, stageId, products, currency, token, mode = 'create', 
                     <span className="text-xs flex-shrink-0" style={{ color: t.sub }}>{cs}</span>
                     <input type="number" value={productValues[p.id] ?? ''}
                       onChange={e => setProductValues(prev => ({ ...prev, [p.id]: e.target.value }))}
-                      onFocus={() => { if (!selected[p.id]) toggleProduct(p.id) }}
                       className="w-20 px-2 py-1 text-xs rounded border text-right focus:outline-none focus:border-emerald-500 flex-shrink-0"
                       style={{ background: t.inputBg, borderColor: t.inputBorder, color: t.inputText }}
                     />
@@ -300,7 +302,7 @@ function DealPopup({ lead, stageId, products, currency, token, mode = 'create', 
               Cancelar
             </button>
           )}
-          <button onClick={handleConfirm} disabled={saving || skipping || total <= 0}
+          <button onClick={handleConfirm} disabled={saving || skipping || (mode === 'create' && total <= 0)}
             className="flex-1 py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-40 transition-all"
             style={{ background: '#10b981', color: '#fff' }}
           >
