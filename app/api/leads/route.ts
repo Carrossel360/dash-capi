@@ -26,7 +26,10 @@ export async function GET(req: NextRequest) {
       ...(stageId ? { pipelineStageId: stageId } : {}),
       ...dateFilter,
     },
-    include: { stage: true },
+    include: {
+      stage: true,
+      deals: { select: { id: true, value: true, product: { select: { id: true, name: true } } } },
+    },
     orderBy: { createdAt: 'desc' },
   })
 

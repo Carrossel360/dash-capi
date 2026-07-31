@@ -41,6 +41,7 @@ interface Lead {
   metadata: { metaAdId?: string; adHeadline?: string } | null
   pipelineStageId: string
   createdAt: string
+  deals?: { id: string; value: number; product: { id: string; name: string } | null }[]
 }
 
 interface Product {
@@ -111,21 +112,30 @@ const SOURCE_SUGGESTIONS = [
 
 // ── Deal popup ────────────────────────────────────────────────────────────────
 
-function DealPopup({ lead, stageId, products, currency, token, onConfirm, onSkip, onCancel }: {
+function DealPopup({ lead, stageId, products, currency, token, mode = 'create', onConfirm, onSkip, onCancel }: {
   lead: Lead
-  stageId: string
+  stageId?: string
   products: Product[]
   currency: string
   token: string
+  mode?: 'create' | 'edit'
   onConfirm: (lead: Lead) => void
-  onSkip: () => Promise<void>
+  onSkip?: () => Promise<void>
   onCancel: () => void
 }) {
-  const [selected, setSelected] = useState<Record<string, boolean>>({})
-  const [productValues, setProductValues] = useState<Record<string, string>>(
-    Object.fromEntries(products.map(p => [p.id, String(p.price)]))
+  const existingDeals = lead.deals ?? []
+  const [selected, setSelected] = useState<Record<string, boolean>>(
+    Object.fromEntries(existingDeals.filter(d => d.product).map(d => [d.product!.id, true]))
   )
-  const [manualValue, setManualValue] = useState('')
+  const [productValues, setProductValues] = useState<Record<string, string>>(
+    Object.fromEntries(products.map(p => {
+      const existing = existingDeals.find(d => d.product?.id === p.id)
+      return [p.id, String(existing?.value ?? p.price)]
+    }))
+  )
+  const [manualValue, setManualValue] = useState(
+    String(existingDeals.find(d => !d.product)?.value ?? '')
+  )
   const [saving, setSaving] = useState(false)
   const [skipping, setSkipping] = useState(false)
 
@@ -147,22 +157,36 @@ function DealPopup({ lead, stageId, products, currency, token, onConfirm, onSkip
       const items = hasProductsSelected
         ? products.filter(p => selected[p.id]).map(p => ({ productId: p.id, value: parseFloat(productValues[p.id]) || 0 }))
         : [{ productId: null, value: parseFloat(manualValue) || 0 }]
-      const res = await fetch('/api/deals', {
-        method: 'POST',
+      const url = mode === 'edit' ? `/api/leads/${lead.id}/deal` : '/api/deals'
+      const body = mode === 'edit'
+        ? { items }
+        : { leadId: lead.id, stageId, items }
+      const res = await fetch(url, {
+        method: mode === 'edit' ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ leadId: lead.id, stageId, items }),
+        body: JSON.stringify(body),
       })
       if (!res.ok) throw new Error()
-      onConfirm({ ...lead, pipelineStageId: stageId, dealValue: total })
-      toast.success('Venda registrada!')
+      onConfirm({
+        ...lead,
+        pipelineStageId: stageId ?? lead.pipelineStageId,
+        dealValue: total,
+        deals: items.map((it, i) => ({
+          id: `local-${i}`,
+          value: it.value,
+          product: it.productId ? { id: it.productId, name: products.find(p => p.id === it.productId)?.name ?? '' } : null,
+        })),
+      })
+      toast.success(mode === 'edit' ? 'Venda atualizada!' : 'Venda registrada!')
     } catch {
-      toast.error('Erro ao registrar venda')
+      toast.error('Erro ao salvar venda')
     } finally {
       setSaving(false)
     }
   }
 
   async function handleSkip() {
+    if (!onSkip) return
     setSkipping(true)
     try { await onSkip() } finally { setSkipping(false) }
   }
@@ -178,7 +202,7 @@ function DealPopup({ lead, stageId, products, currency, token, onConfirm, onSkip
               <ShoppingBag className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white">Registrar Venda</h3>
+              <h3 className="text-sm font-bold text-white">{mode === 'edit' ? 'Editar Venda' : 'Registrar Venda'}</h3>
               <p className="text-xs text-slate-500">{lead.name}</p>
             </div>
           </div>
@@ -188,7 +212,9 @@ function DealPopup({ lead, stageId, products, currency, token, onConfirm, onSkip
         </div>
 
         <p className="px-6 pt-4 text-xs text-slate-400">
-          Parabéns! Selecione os produtos ou serviços vendidos pra registrar o faturamento.
+          {mode === 'edit'
+            ? 'Ajuste os produtos/serviços ou o valor dessa venda.'
+            : 'Parabéns! Selecione os produtos ou serviços vendidos pra registrar o faturamento.'}
         </p>
 
         <div className="px-6 pt-4">
@@ -234,16 +260,24 @@ function DealPopup({ lead, stageId, products, currency, token, onConfirm, onSkip
         </div>
 
         <div className="flex gap-2 px-6 py-5 mt-2">
-          <button onClick={handleSkip} disabled={skipping || saving}
-            className="flex-1 py-2.5 rounded-lg border border-[#2d2550] text-slate-400 text-xs hover:text-white transition-colors disabled:opacity-50">
-            {skipping ? 'Movendo...' : 'Pular'}
-          </button>
+          {mode === 'create' && (
+            <button onClick={handleSkip} disabled={skipping || saving}
+              className="flex-1 py-2.5 rounded-lg border border-[#2d2550] text-slate-400 text-xs hover:text-white transition-colors disabled:opacity-50">
+              {skipping ? 'Movendo...' : 'Pular'}
+            </button>
+          )}
+          {mode === 'edit' && (
+            <button onClick={onCancel} disabled={saving}
+              className="flex-1 py-2.5 rounded-lg border border-[#2d2550] text-slate-400 text-xs hover:text-white transition-colors disabled:opacity-50">
+              Cancelar
+            </button>
+          )}
           <button onClick={handleConfirm} disabled={saving || skipping || total <= 0}
             className="flex-1 py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-40 transition-all"
             style={{ background: '#10b981', color: '#fff' }}
           >
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-            {saving ? 'Salvando...' : 'Confirmar Venda'}
+            {saving ? 'Salvando...' : mode === 'edit' ? 'Salvar Alterações' : 'Confirmar Venda'}
           </button>
         </div>
       </div>
@@ -253,9 +287,11 @@ function DealPopup({ lead, stageId, products, currency, token, onConfirm, onSkip
 
 // ── Lead Modal ────────────────────────────────────────────────────────────────
 
-function LeadModal({ lead, stages, token, onClose, onSaved, onDeleted, onRequestDeal }: {
+function LeadModal({ lead, stages, products, currency, token, onClose, onSaved, onDeleted, onRequestDeal }: {
   lead: Lead
   stages: Stage[]
+  products: Product[]
+  currency: string
   token: string
   onClose: () => void
   onSaved: (lead: Lead) => void
@@ -272,6 +308,10 @@ function LeadModal({ lead, stages, token, onClose, onSaved, onDeleted, onRequest
   })
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [editingDeal, setEditingDeal] = useState(false)
+  const [currentLead, setCurrentLead] = useState(lead)
+
+  const cs = currency === 'USD' ? 'US$' : 'R$'
 
   function set(k: string, v: string) { setForm(p => ({ ...p, [k]: v })) }
 
@@ -455,18 +495,50 @@ function LeadModal({ lead, stages, token, onClose, onSaved, onDeleted, onRequest
           )}
 
           {/* Deal value if exists */}
-          {lead.dealValue && (
-            <div className="rounded-xl p-4 border border-emerald-500/20 bg-emerald-500/5 flex items-center gap-3">
-              <DollarSign className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-              <div>
-                <p className="text-xs font-semibold text-emerald-400">Venda registrada</p>
-                <p className="text-sm text-white mt-0.5">
-                  R$ {lead.dealValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </p>
+          {currentLead.dealValue ? (
+            <>
+              <div className="rounded-xl p-4 border border-emerald-500/20 bg-emerald-500/5 flex items-start gap-3">
+                <DollarSign className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-semibold text-emerald-400">Detalhes da Venda</p>
+                  <p className="text-sm text-white mt-0.5 font-semibold">
+                    {cs} {currentLead.dealValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </p>
+                  {(currentLead.deals ?? []).some(d => d.product) && (
+                    <p className="text-xs text-slate-400 mt-1">
+                      {(currentLead.deals ?? []).filter(d => d.product).map(d => d.product!.name).join(', ')}
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+              <div className="rounded-xl p-4 border border-emerald-500/20 bg-emerald-500/[0.03] flex items-center justify-between gap-3">
+                <p className="text-xs font-semibold text-emerald-400">Venda</p>
+                <button onClick={() => setEditingDeal(true)}
+                  className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all"
+                  style={{ background: '#6a11cb', color: '#fff' }}
+                >
+                  Editar Valor e Produtos
+                </button>
+              </div>
+            </>
+          ) : null}
         </div>
+
+        {editingDeal && (
+          <DealPopup
+            lead={currentLead}
+            products={products}
+            currency={currency}
+            token={token}
+            mode="edit"
+            onConfirm={updated => {
+              setCurrentLead(updated)
+              onSaved(updated)
+              setEditingDeal(false)
+            }}
+            onCancel={() => setEditingDeal(false)}
+          />
+        )}
 
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-[#1e1635]">
@@ -495,8 +567,9 @@ function LeadModal({ lead, stages, token, onClose, onSaved, onDeleted, onRequest
 
 // ── Lead Card ────────────────────────────────────────────────────────────────
 
-function LeadCard({ lead, onClick, isDragging }: { lead: Lead; onClick: () => void; isDragging?: boolean }) {
+function LeadCard({ lead, currency, onClick, isDragging }: { lead: Lead; currency: string; onClick: () => void; isDragging?: boolean }) {
   const router = useRouter()
+  const cs = currency === 'USD' ? 'US$' : 'R$'
   const { attributes, listeners, setNodeRef, transform, transition, isDragging: isSortableDragging } = useSortable({ id: lead.id })
 
   const style = {
@@ -570,9 +643,16 @@ function LeadCard({ lead, onClick, isDragging }: { lead: Lead; onClick: () => vo
       </div>
 
       {lead.dealValue ? (
-        <div className="flex items-center gap-1 text-xs text-emerald-400 font-medium">
-          <DollarSign className="w-3 h-3" />
-          {lead.dealValue.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
+        <div>
+          <div className="flex items-center gap-1 text-xs text-emerald-400 font-medium">
+            <DollarSign className="w-3 h-3" />
+            {cs} {lead.dealValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </div>
+          {(lead.deals ?? []).some(d => d.product) && (
+            <p className="text-[10px] text-slate-500 mt-0.5 truncate">
+              {(lead.deals ?? []).filter(d => d.product).map(d => d.product!.name).join(', ')}
+            </p>
+          )}
         </div>
       ) : null}
       {(lead.source || lead.utmSource || lead.utmMedium) && (() => {
@@ -622,8 +702,9 @@ const dropAnimation: DropAnimation = {
   }),
 }
 
-function Column({ stage, leads, onCardClick }: { stage: Stage; leads: Lead[]; onCardClick: (lead: Lead) => void }) {
+function Column({ stage, leads, currency, onCardClick }: { stage: Stage; leads: Lead[]; currency: string; onCardClick: (lead: Lead) => void }) {
   const total = leads.reduce((s, l) => s + (l.dealValue ?? 0), 0)
+  const cs = currency === 'USD' ? 'US$' : 'R$'
   // A coluna inteira precisa ser um droppable próprio — sem isso, só os cards (via
   // useSortable) contam como alvo de drop, então soltar em espaço vazio (coluna vazia ou
   // abaixo do último card) não move o lead pra essa etapa.
@@ -639,7 +720,7 @@ function Column({ stage, leads, onCardClick }: { stage: Stage; leads: Lead[]; on
         <div className="flex items-center gap-1.5">
           {total > 0 && (
             <span className="text-xs text-emerald-400 font-medium">
-              R$ {total.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+              {cs} {total.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
             </span>
           )}
           {stage.triggerCapiEvent !== 'none' && (
@@ -651,11 +732,11 @@ function Column({ stage, leads, onCardClick }: { stage: Stage; leads: Lead[]; on
       </div>
 
       <div ref={setNodeRef}
-        className={`flex-1 glass rounded-xl p-2 space-y-2 min-h-[200px] overflow-y-auto transition-colors ${isOver ? 'ring-2 ring-[#6a11cb]/60' : ''}`}
+        className={`flex-1 glass stage-tint rounded-xl p-2 space-y-2 min-h-[200px] overflow-y-auto transition-colors ${isOver ? 'ring-2 ring-[#6a11cb]/60' : ''}`}
       >
         <SortableContext items={leads.map(l => l.id)} strategy={verticalListSortingStrategy}>
           {leads.map(lead => (
-            <LeadCard key={lead.id} lead={lead} onClick={() => onCardClick(lead)} />
+            <LeadCard key={lead.id} lead={lead} currency={currency} onClick={() => onCardClick(lead)} />
           ))}
         </SortableContext>
         {leads.length === 0 && (
@@ -1000,6 +1081,8 @@ export default function PipelinePage() {
         <LeadModal
           lead={selectedLead}
           stages={stages}
+          products={products}
+          currency={currency}
           token={token!}
           onClose={() => setSelectedLead(null)}
           onSaved={handleLeadSaved}
@@ -1075,7 +1158,7 @@ export default function PipelinePage() {
               <span className="text-xs text-slate-500">{totalLeads} leads</span>
               {totalValue > 0 && (
                 <span className="text-xs text-emerald-400 font-medium">
-                  R$ {totalValue.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} em vendas
+                  {currency === 'USD' ? 'US$' : 'R$'} {totalValue.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} em vendas
                 </span>
               )}
             </div>
@@ -1103,6 +1186,7 @@ export default function PipelinePage() {
                   key={stage.id}
                   stage={stage}
                   leads={filteredLeads.filter(l => l.pipelineStageId === stage.id)}
+                  currency={currency}
                   onCardClick={setSelectedLead}
                 />
               ))}
@@ -1113,7 +1197,7 @@ export default function PipelinePage() {
               )}
             </div>
             <DragOverlay dropAnimation={dropAnimation}>
-              {activeLead && <LeadCard lead={activeLead} onClick={() => {}} isDragging />}
+              {activeLead && <LeadCard lead={activeLead} currency={currency} onClick={() => {}} isDragging />}
             </DragOverlay>
           </DndContext>
 

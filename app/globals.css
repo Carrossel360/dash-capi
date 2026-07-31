@@ -184,6 +184,20 @@ html[data-theme="light"] .glass {
   background: rgba(15, 11, 30, 0.93);
 }
 
+/* Colunas do Pipeline — no escuro, a cor do estágio (o pontinho no cabeçalho) já dá a
+   separação visual; no claro, com a coluna e os cards usando a mesma base quase-branca do
+   .glass acima, tudo vira uma mancha branca só. Um cinza claro só na coluna (mais escuro que
+   o card, igual ao CRM antigo) resolve — mas precisa ser a cor pré-imagem certa: um hex "óbvio"
+   tipo #eceaf2 (cinza claro de olho) sai como PRETO depois do invert+hue-rotate+contrast do
+   tema claro (contrast empurra qualquer valor já escuro após o invert ainda mais pra 0). O
+   valor abaixo foi calculado de trás pra frente pra render final ficar num cinza-lavanda
+   visível — mesmo princípio da borda do .glass acima, só que pra um alvo claro em vez de
+   saturado. Cards com pouco conteúdo (ex: coluna quase vazia) deixavam isso mais óbvio, mas o
+   preto acontecia em toda coluna, só ficava escondido atrás dos cards nas colunas cheias. */
+html[data-theme="light"] .glass.stage-tint {
+  background: rgb(52, 50, 58);
+}
+
 /* Divisores neutros (#1e1635/#2d2550) somem no tema claro — mesmo tom quase-preto do .glass,
    mesmo problema. Restrito à página de Conversas por enquanto (era onde estava mais visível),
    reaproveitando a mesma cor/alfa que já funciona bem no .glass do Pipeline/Tráfego Pago em
