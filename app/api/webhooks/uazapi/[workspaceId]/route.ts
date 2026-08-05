@@ -117,8 +117,12 @@ export async function POST(
     } catch { /* keep raw url */ }
   }
 
-  const chat         = body['chat'] as Record<string, unknown> | undefined
-  const customerName = (chat?.['name'] as string) ?? senderName ?? null
+  const chat = body['chat'] as Record<string, unknown> | undefined
+  // `??` só cai pro fallback em null/undefined — `chat.name` costuma vir como string vazia
+  // "" na primeira mensagem (antes do WhatsApp "resolver" o contato), o que bloqueava o
+  // fallback pro senderName (que geralmente já vem certo desde a primeira mensagem). Usa `||`
+  // pra tratar vazio igual a ausente.
+  const customerName = (chat?.['name'] as string) || senderName || null
   const rawPhone     = chatid.split('@')[0]!
   const phone        = normalizePhone(rawPhone)
 
@@ -134,7 +138,7 @@ export async function POST(
         { phone: { contains: phone.slice(-8) } },
       ],
     },
-    select: { id: true },
+    select: { id: true, name: true },
   })
 
   // Sem lead ainda + primeira mensagem do cliente: cria o Lead já com a origem identificada.
@@ -198,7 +202,7 @@ export async function POST(
           pipelineStageId: firstStage.id,
           notes: content ? `Primeira mensagem: ${content}` : undefined,
         },
-        select: { id: true },
+        select: { id: true, name: true },
       })
       lead = newLead
 
@@ -214,6 +218,13 @@ export async function POST(
         })
       }
     }
+  } else if (lead && !lead.name && direction === 'inbound' && customerName) {
+    // Lead já existe mas ficou sem nome (primeira mensagem chegou sem chat.name/senderName
+    // resolvido ainda) — diferente da Conversa, que é atualizada a cada mensagem, o nome do
+    // Lead só era gravado na criação e nunca mais. Preenche assim que um nome real aparecer,
+    // sem sobrescrever um nome que a equipe já tenha editado manualmente no CRM.
+    await prisma.lead.update({ where: { id: lead.id }, data: { name: customerName } })
+    lead = { ...lead, name: customerName }
   }
 
   const existing = await prisma.conversation.findUnique({
