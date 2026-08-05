@@ -1,13 +1,14 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Plus, Sparkles, Loader2, Trash2, Globe, Share2 } from 'lucide-react'
+import { Plus, Sparkles, Loader2, Trash2, Globe, Share2, PenLine } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
 import { useAuthStore } from '@/lib/store/auth'
 import type { Slide, CarouselFormat } from '@/lib/content-studio/types'
 import CarouselCreateModal from '@/components/content-studio/CarouselCreateModal'
 import SiteCreateWizard from '@/components/content-studio/SiteCreateWizard'
+import CopyGenerateModal from '@/components/content-studio/CopyGenerateModal'
 import LockedServiceModal from '@/components/LockedServiceModal'
 
 interface CarouselSummary {
@@ -39,6 +40,7 @@ export default function ContentStudioPage() {
   const [typeModalOpen, setTypeModalOpen] = useState(false)
   const [carouselModalOpen, setCarouselModalOpen] = useState(false)
   const [siteWizardOpen, setSiteWizardOpen] = useState(false)
+  const [copyModalOpen, setCopyModalOpen] = useState(false)
   const [lockedLabel, setLockedLabel] = useState<string | null>(null)
 
   function load() {
@@ -232,6 +234,15 @@ export default function ContentStudioPage() {
                 <span className="text-sm font-semibold text-white">Novo Site</span>
                 <span className="text-[10px] text-slate-500">Código real, gerado com IA</span>
               </button>
+              <button
+                onClick={() => { setTypeModalOpen(false); setCopyModalOpen(true) }}
+                className="flex flex-col items-center gap-2 p-5 rounded-xl border text-center transition-all hover:border-[#6a11cb] col-span-2"
+                style={{ borderColor: '#2d2550', background: '#1a1230' }}
+              >
+                <PenLine className="w-6 h-6" style={{ color: '#F5A314' }} />
+                <span className="text-sm font-semibold text-white">Copy para Post</span>
+                <span className="text-[10px] text-slate-500">Legenda + hashtags geradas com IA</span>
+              </button>
             </div>
           </div>
         </div>
@@ -239,6 +250,7 @@ export default function ContentStudioPage() {
 
       <CarouselCreateModal open={carouselModalOpen} onClose={() => setCarouselModalOpen(false)} />
       <SiteCreateWizard open={siteWizardOpen} onClose={() => setSiteWizardOpen(false)} />
+      <CopyGenerateModal open={copyModalOpen} onClose={() => setCopyModalOpen(false)} />
       {lockedLabel && <LockedServiceModal label={lockedLabel} onClose={() => setLockedLabel(null)} />}
     </div>
   )

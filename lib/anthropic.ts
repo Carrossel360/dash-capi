@@ -94,6 +94,42 @@ export async function generateTrafficReportClaude(input: {
   return parsed
 }
 
+// Mesmo formato de saída em todos os 3 provedores (ver lib/gemini.ts/lib/openai.ts).
+export async function generatePostCopyClaude(input: {
+  topic: string
+  platform: string
+  tone?: string
+  model?: string
+}): Promise<{ copy: string; hashtags: string[] }> {
+  const { topic, platform, tone, model } = input
+
+  const response = await (await getClient()).messages.create({
+    model: model || 'claude-sonnet-5',
+    max_tokens: 1024,
+    system:
+      'Você é um copywriter especializado em redes sociais, escrevendo em português do Brasil. ' +
+      'Gere copy persuasivo, natural, sem parecer robótico, com quebras de linha quando fizer sentido. ' +
+      'Sempre responda em JSON válido no formato { "copy": string, "hashtags": string[] } — hashtags sem o "#".',
+    messages: [{
+      role: 'user',
+      content:
+        `Tópico/produto: ${topic}\n` +
+        `Plataforma: ${platform}\n` +
+        (tone ? `Tom de voz: ${tone}\n` : '') +
+        'Gere uma legenda pronta pra publicar (copy) e uma lista de 5 a 10 hashtags relevantes.',
+    }],
+  })
+
+  const block = response.content.find((b): b is Anthropic.TextBlock => b.type === 'text')
+  if (!block?.text) throw new Error('Resposta vazia da Anthropic')
+
+  const parsed = JSON.parse(block.text) as { copy: string; hashtags: string[] }
+  if (typeof parsed.copy !== 'string' || !Array.isArray(parsed.hashtags)) {
+    throw new Error('Formato inesperado na resposta da Anthropic')
+  }
+  return parsed
+}
+
 // Gerar um site completo (múltiplos arquivos) é bem mais verboso que texto de análise
 // — max_tokens bem acima dos 2048 usados nos relatórios.
 export async function generateSiteClaude(input: {

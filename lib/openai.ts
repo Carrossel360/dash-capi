@@ -55,6 +55,48 @@ export async function generateCarouselSlides(input: {
   return parsed.slides
 }
 
+// Copy de post/criativo (legenda pronta pra publicar) — mesmo formato de saída em todos os
+// 3 provedores (ver lib/gemini.ts/lib/anthropic.ts), o componente que chama trata como
+// intercambiável.
+export async function generatePostCopy(input: {
+  topic: string
+  platform: string
+  tone?: string
+}): Promise<{ copy: string; hashtags: string[] }> {
+  const { topic, platform, tone } = input
+
+  const completion = await (await getClient()).chat.completions.create({
+    model: 'gpt-4o',
+    response_format: { type: 'json_object' },
+    messages: [
+      {
+        role: 'system',
+        content:
+          'Você é um copywriter especializado em redes sociais, escrevendo em português do Brasil. ' +
+          'Gere copy persuasivo, natural, sem parecer robótico, com quebras de linha quando fizer sentido. ' +
+          'Sempre responda em JSON válido no formato { "copy": string, "hashtags": string[] } — hashtags sem o "#".',
+      },
+      {
+        role: 'user',
+        content:
+          `Tópico/produto: ${topic}\n` +
+          `Plataforma: ${platform}\n` +
+          (tone ? `Tom de voz: ${tone}\n` : '') +
+          'Gere uma legenda pronta pra publicar (copy) e uma lista de 5 a 10 hashtags relevantes.',
+      },
+    ],
+  })
+
+  const raw = completion.choices[0]?.message?.content
+  if (!raw) throw new Error('Resposta vazia da OpenAI')
+
+  const parsed = JSON.parse(raw) as { copy: string; hashtags: string[] }
+  if (typeof parsed.copy !== 'string' || !Array.isArray(parsed.hashtags)) {
+    throw new Error('Formato inesperado na resposta da OpenAI')
+  }
+  return parsed
+}
+
 export async function generateTrafficReportOpenAI(input: {
   snapshot: unknown
   customPrompt?: string
