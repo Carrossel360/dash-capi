@@ -210,6 +210,8 @@ export default function ClienteDetailPage() {
   const [phrases, setPhrases] = useState<{ id: string; phrase: string; source: string; campaign: string | null }[]>([])
   const [phrasesLoaded, setPhrasesLoaded] = useState(false)
   const [loadingPhrases, setLoadingPhrases] = useState(false)
+  const [trackingLinks, setTrackingLinks] = useState<{ id: string; slug: string; trackingPhraseId: string | null; clickCount: number }[]>([])
+  const [generatingLinkFor, setGeneratingLinkFor] = useState<string | null>(null)
   const [newPhrase, setNewPhrase] = useState('')
   const [newSource, setNewSource] = useState('')
   const [newCampaign, setNewCampaign] = useState('')
@@ -347,6 +349,7 @@ export default function ClienteDetailPage() {
     }
     if (tab === 'rastreio' && !phrasesLoaded) {
       loadPhrases()
+      loadTrackingLinks()
     }
   }, [tab])
 
@@ -356,6 +359,29 @@ export default function ClienteDetailPage() {
       .then(r => r.json())
       .then(d => setPhrases(d.phrases ?? []))
       .finally(() => { setLoadingPhrases(false); setPhrasesLoaded(true) })
+  }
+
+  function loadTrackingLinks() {
+    fetch(`/api/clients/${clientId}/tracking-links`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => setTrackingLinks(d.links ?? []))
+  }
+
+  async function generateTrackingLink(trackingPhraseId: string) {
+    setGeneratingLinkFor(trackingPhraseId)
+    try {
+      const res = await fetch(`/api/clients/${clientId}/tracking-links`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ trackingPhraseId }),
+      })
+      if (res.ok) {
+        loadTrackingLinks()
+      } else {
+        const d = await res.json().catch(() => ({}))
+        toast.error(d.error ?? 'Erro ao gerar link')
+      }
+    } finally { setGeneratingLinkFor(null) }
   }
 
   async function addPhrase() {
@@ -1345,6 +1371,10 @@ export default function ClienteDetailPage() {
                         const waLink = whatsappNumber
                           ? `https://wa.me/${whatsappNumber.replace(/\D/g, '')}?text=${encodeURIComponent(p.phrase)}`
                           : null
+                        const trackingLink = trackingLinks.find(l => l.trackingPhraseId === p.id)
+                        const shortLink = trackingLink
+                          ? `${process.env.NEXT_PUBLIC_API_URL ?? ''}/l/${trackingLink.slug}`
+                          : null
                         return (
                           <div key={p.id} className="p-3 bg-[#0f0b1e] rounded-xl border border-[#1e1635] space-y-2">
                             <div className="flex items-center gap-3">
@@ -1365,6 +1395,24 @@ export default function ClienteDetailPage() {
                                 </button>
                               </div>
                             )}
+                            {/* Link curto rastreável — mesmo destino do wa.me acima, mas passa
+                                por um redirect que conta o clique antes de abrir o WhatsApp. */}
+                            {shortLink ? (
+                              <div className="flex items-center gap-2">
+                                <code className="flex-1 text-[11px] text-[#8b5cf6] bg-[#0a0818] border border-[#1e1635] rounded-lg px-2.5 py-1.5 font-mono truncate">{shortLink}</code>
+                                <span className="text-[11px] text-slate-400 flex-shrink-0 px-1">{trackingLink!.clickCount} clique{trackingLink!.clickCount === 1 ? '' : 's'}</span>
+                                <button onClick={() => { navigator.clipboard.writeText(shortLink); toast.success('Link copiado!') }}
+                                  className="text-[11px] text-slate-500 hover:text-white border border-[#2d2550] px-2 py-1.5 rounded-lg hover:border-[#6a11cb]/50 transition-all flex-shrink-0">
+                                  Copiar
+                                </button>
+                              </div>
+                            ) : waLink ? (
+                              <button onClick={() => generateTrackingLink(p.id)} disabled={generatingLinkFor === p.id}
+                                className="text-[11px] text-[#8b5cf6] hover:text-white border border-[#6a11cb]/30 hover:border-[#6a11cb]/60 px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5">
+                                {generatingLinkFor === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <BarChart2 className="w-3 h-3" />}
+                                Gerar link rastreável (com contador de cliques)
+                              </button>
+                            ) : null}
                           </div>
                         )
                       })}

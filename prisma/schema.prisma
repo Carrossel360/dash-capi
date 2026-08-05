@@ -101,6 +101,7 @@ model Workspace {
   carousels             Carousel[]
   siteProjects          SiteProject[]
   trackingPhrases       TrackingPhrase[]
+  trackingLinks         TrackingLink[]
   reportConfigs         ReportConfig[]
   notifications         Notification[]
   monitorStatuses       MonitorStatus[]
@@ -140,15 +141,33 @@ model WorkspaceMember {
 // de atribuição quando a mensagem não carrega contexto de anúncio Meta (contextInfo) —
 // cobre Google Ads, Site, Instagram Bio, ou qualquer link direto pro WhatsApp.
 model TrackingPhrase {
-  id          String    @id @default(cuid())
-  workspaceId String
-  phrase      String
-  source      String
-  campaign    String?
-  createdAt   DateTime  @default(now())
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  id           String        @id @default(cuid())
+  workspaceId  String
+  phrase       String
+  source       String
+  campaign     String?
+  createdAt    DateTime      @default(now())
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  trackingLink TrackingLink?
 
   @@unique([workspaceId, phrase])
+}
+
+// Link curto rastreável — alternativa ao wa.me direto pra medir clique real (a agência não
+// tinha como saber quantas pessoas efetivamente clicaram num link de bio/site antes disso).
+// `phrase` é uma cópia congelada do texto no momento da criação: TrackingPhrase é imutável
+// (só criar/apagar, sem editar) então isso não diverge, mas o link continua funcionando
+// mesmo se a frase de origem for apagada depois (onDelete: SetNull).
+model TrackingLink {
+  id               String          @id @default(cuid())
+  workspaceId      String
+  slug             String          @unique
+  trackingPhraseId String?         @unique
+  phrase           String
+  clickCount       Int             @default(0)
+  createdAt        DateTime        @default(now())
+  workspace        Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  trackingPhrase   TrackingPhrase? @relation(fields: [trackingPhraseId], references: [id], onDelete: SetNull)
 }
 
 model PipelineStage {
