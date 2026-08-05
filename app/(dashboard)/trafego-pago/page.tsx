@@ -776,7 +776,7 @@ export default function TrafegoPagoPage() {
       )}
 
       {lockedTab && (
-        <LockedServiceModal label={lockedTab === 'meta' ? 'Meta Ads' : lockedTab === 'google' ? 'Google Ads' : 'Google Local Service'} onClose={() => setLockedTab(null)} />
+        <LockedServiceModal label={lockedTab === 'meta' ? 'Meta Ads' : lockedTab === 'google' ? 'Google Ads' : 'Local Service'} onClose={() => setLockedTab(null)} />
       )}
 
       {selectedCreative && (
@@ -799,7 +799,7 @@ export default function TrafegoPagoPage() {
               {(['meta', 'google', 'local'] as const).map((p) => {
                 const locked = p === 'meta' ? metaLocked : p === 'google' ? googleLocked : localLocked
                 const color = p === 'meta' ? '#6a11cb' : p === 'google' ? '#ea4335' : '#4285f4'
-                const label = p === 'meta' ? 'Meta Ads' : p === 'google' ? 'Google Ads' : 'Google Local'
+                const label = p === 'meta' ? 'Meta Ads' : p === 'google' ? 'Google Ads' : 'Local Service'
                 const glyph = p === 'meta' ? 'f' : p === 'google' ? 'G' : '★'
                 return (
                   <button key={p} onClick={() => locked ? setLockedTab(p) : setTab(p)}

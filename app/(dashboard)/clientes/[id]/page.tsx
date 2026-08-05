@@ -1137,11 +1137,11 @@ export default function ClienteDetailPage() {
               </div>
             )}
 
-            {/* ─── Google Local Service Ads ─── */}
+            {/* ─── Local Service Ads ─── */}
             {tab === 'google' && (
               <div className="glass rounded-2xl p-5 space-y-4">
                 <div>
-                  <h2 className="text-sm font-semibold text-white">Google Local Service Ads</h2>
+                  <h2 className="text-sm font-semibold text-white">Local Service Ads</h2>
                   <p className="text-xs text-slate-500 mt-1">
                     ID da conta de Local Services (diferente do Customer ID do Google Ads acima). Reaproveita as mesmas credenciais OAuth do Google Ads configuradas por trás — só habilite pra clientes que realmente contratam Local Services.
                   </p>

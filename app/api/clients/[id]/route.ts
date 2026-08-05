@@ -22,8 +22,19 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   })
   if (!workspace) return NextResponse.json({ error: 'Cliente não encontrado' }, { status: 404 })
 
+  // `findUnique` sem `select` devolve todos os campos escalares do Workspace, incluindo
+  // credenciais sensíveis (tokens da UazAPI, Meta, chaves de IA) — sem essa checagem,
+  // qualquer role (attendant/viewer) que tenha acesso a esse workspace conseguia ler esses
+  // segredos direto pela API, mesmo a UI só mostrando esses campos pra admin/manager.
+  const responseWorkspace = ['admin', 'manager'].includes(membership.role)
+    ? workspace
+    : (() => {
+        const { metaAccessToken, uazapiUrl, uazapiAdminToken, uazapiToken, openaiApiKey, anthropicApiKey, telegramBotToken, ...safe } = workspace
+        return safe
+      })()
+
   return NextResponse.json({
-    workspace: { ...workspace, extraServices: workspace.extraServices.map(s => s.key) },
+    workspace: { ...responseWorkspace, extraServices: workspace.extraServices.map(s => s.key) },
   })
 }
 

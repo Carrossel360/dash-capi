@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, TrendingUp, Share2, MapPin,
   Users, Megaphone, MessageSquare, Zap, Settings, Building2,
-  ChevronLeft, ChevronRight, LogOut, Lock, CheckSquare, Bot, Landmark, Sparkles,
+  ChevronLeft, ChevronRight, LogOut, Lock, CheckSquare, Bot, Landmark, Sparkles, Smartphone,
 } from 'lucide-react'
 import { useAuthStore } from '@/lib/store/auth'
 import { useUIStore } from '@/lib/store/ui'
@@ -84,6 +84,9 @@ const navGroups = [
     context: 'client' as const,
     items: [
       { label: 'Eventos CAPI', href: '/events', icon: Zap, service: null, adminOnly: false, agencyOnly: true, comingSoon: false },
+      // Reconectar/gerar QR Code — visível pro cliente também (não agencyOnly). A tela em si
+      // (app/(dashboard)/whatsapp/page.tsx) só mostra status + botão, nada de config admin.
+      { label: 'WhatsApp', href: '/whatsapp', icon: Smartphone, service: null, adminOnly: false, agencyOnly: false, comingSoon: false },
     ],
   },
 ]
@@ -98,7 +101,7 @@ const SERVICE_LABELS: Record<ServiceKey, string> = {
   trafeqoPago: 'Tráfego Pago',
   socialMedia: 'Social Media',
   googleBusiness: 'Google Business Profile',
-  googleLocal: 'Google Local Service',
+  googleLocal: 'Local Service',
   contentStudio: 'Estúdio de Criação (IA)',
 }
 

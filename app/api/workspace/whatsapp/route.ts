@@ -8,6 +8,16 @@ export async function PATCH(req: NextRequest) {
   const auth = await getAuthPayload(req)
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // Salva credenciais sensíveis (URL/tokens da UazAPI) — sem essa checagem, qualquer membro
+  // do workspace (attendant/viewer) conseguia sobrescrever a config administrativa direto
+  // pela API, mesmo a UI escondendo esses campos. Mesmo padrão de role já usado no POST abaixo.
+  const member = await prisma.workspaceMember.findUnique({
+    where: { workspaceId_userId: { workspaceId: auth.workspaceId, userId: auth.userId } },
+  })
+  if (!member || !['admin', 'manager'].includes(member.role)) {
+    return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+  }
+
   const { uazapiUrl, uazapiAdminToken, uazapiInstanceName, uazapiToken, whatsappNumber } = await req.json()
 
   await prisma.workspace.update({
