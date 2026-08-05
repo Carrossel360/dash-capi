@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { useAuthStore } from '@/lib/store/auth'
@@ -123,6 +124,11 @@ export default function LoginPage() {
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
+              </div>
+              <div className="flex justify-end">
+                <Link href="/esqueci-senha" className="text-xs text-slate-500 hover:text-white transition-colors">
+                  Esqueceu a senha?
+                </Link>
               </div>
             </div>
 
