@@ -9,7 +9,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-
 import { CSS } from '@dnd-kit/utilities'
 import {
   Plus, Phone, Mail, GripVertical, Loader2, X, Check,
-  Clock, Globe, Trash2, ShoppingBag, DollarSign, Calendar, MessageCircle, MessageSquare, Search,
+  Clock, Globe, Trash2, ShoppingBag, DollarSign, Calendar, MessageCircle, MessageSquare, Search, Upload,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
@@ -884,6 +884,150 @@ function NewLeadModal({ stages, token, onClose, onCreated }: {
   )
 }
 
+// ── Import leads modal ───────────────────────────────────────────────────────
+
+interface ParsedRow { name: string; phone: string; email: string }
+
+// Aceita CSV real (cabeçalho ou não) ou linhas coladas com vírgula/tab/ponto-e-vírgula —
+// cobre tanto colar direto de uma planilha (Excel/Sheets copia com tab) quanto um arquivo
+// .csv exportado de outra ferramenta, sem precisar de uma lib de parsing pra 3 colunas fixas.
+function parseImportText(text: string): ParsedRow[] {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+  if (lines.length === 0) return []
+
+  const splitLine = (l: string) => l.split(/\t|;|,/).map(c => c.trim())
+
+  const firstCells = splitLine(lines[0]).map(c => c.toLowerCase())
+  const looksLikeHeader = firstCells.some(c => ['nome', 'name', 'telefone', 'phone', 'email', 'e-mail'].includes(c))
+
+  let nameIdx = 0, phoneIdx = 1, emailIdx = 2
+  let dataLines = lines
+  if (looksLikeHeader) {
+    nameIdx = firstCells.findIndex(c => ['nome', 'name'].includes(c))
+    phoneIdx = firstCells.findIndex(c => ['telefone', 'phone', 'celular', 'whatsapp'].includes(c))
+    emailIdx = firstCells.findIndex(c => ['email', 'e-mail'].includes(c))
+    dataLines = lines.slice(1)
+  }
+
+  return dataLines.map(l => {
+    const cells = splitLine(l)
+    return {
+      name: (nameIdx >= 0 ? cells[nameIdx] : '') ?? '',
+      phone: (phoneIdx >= 0 ? cells[phoneIdx] : '') ?? '',
+      email: (emailIdx >= 0 ? cells[emailIdx] : '') ?? '',
+    }
+  }).filter(r => r.phone || r.email)
+}
+
+function ImportLeadsModal({ stages, token, onClose, onImported }: {
+  stages: Stage[]
+  token: string
+  onClose: () => void
+  onImported: () => void
+}) {
+  const [text, setText] = useState('')
+  const [stageId, setStageId] = useState(stages[0]?.id ?? '')
+  const [source, setSource] = useState('Importação Manual')
+  const [importing, setImporting] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const rows = parseImportText(text)
+
+  function handleFile(file: File) {
+    const reader = new FileReader()
+    reader.onload = () => setText(String(reader.result ?? ''))
+    reader.readAsText(file)
+  }
+
+  async function handleImport() {
+    if (rows.length === 0) {
+      toast.error('Cole ou envie ao menos uma linha com telefone ou e-mail')
+      return
+    }
+    setImporting(true)
+    try {
+      const res = await fetch('/api/leads/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ items: rows, stageId, source }),
+      })
+      if (!res.ok) throw new Error()
+      const result = await res.json()
+      toast.success(`${result.created} lead${result.created === 1 ? '' : 's'} importado${result.created === 1 ? '' : 's'}${result.duplicated ? ` — ${result.duplicated} já existia(m)` : ''}${result.invalid ? ` — ${result.invalid} sem telefone/e-mail` : ''}`)
+      onImported()
+      onClose()
+    } catch {
+      toast.error('Erro ao importar leads')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 theme-locked-modal">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative rounded-2xl w-full max-w-lg shadow-2xl z-10 overflow-y-auto max-h-[90vh]"
+        style={{ background: '#0d0a1f', border: '1px solid rgba(106,17,203,0.3)' }}>
+
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#1e1635]">
+          <h2 className="text-sm font-bold text-white">Importar Leads</h2>
+          <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400">Estágio de entrada</label>
+              <select value={stageId} onChange={e => setStageId(e.target.value)}
+                className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb]">
+                {stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400">Origem</label>
+              <input value={source} onChange={e => setSource(e.target.value)}
+                className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb]" />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-slate-400">Cole nome, telefone e e-mail (um lead por linha)</label>
+              <button onClick={() => fileInputRef.current?.click()}
+                className="text-xs text-[#8b5cf6] hover:text-white transition-colors">
+                Enviar arquivo .csv
+              </button>
+              <input ref={fileInputRef} type="file" accept=".csv,.txt" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
+            </div>
+            <textarea value={text} onChange={e => setText(e.target.value)} rows={8}
+              placeholder={'Nome, Telefone, Email\nMaria Silva, 11988887777, maria@email.com\nJoão, 11999998888,'}
+              className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white placeholder-slate-600 focus:outline-none focus:border-[#6a11cb] font-mono" />
+            <p className="text-xs text-slate-500">
+              {rows.length > 0 ? `${rows.length} lead${rows.length === 1 ? '' : 's'} detectado${rows.length === 1 ? '' : 's'}` : 'Telefone ou e-mail obrigatório em cada linha — nome pode ficar vazio'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-[#1e1635]">
+          <button onClick={onClose}
+            className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white transition-colors">
+            Cancelar
+          </button>
+          <button onClick={handleImport} disabled={importing || rows.length === 0}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg, #6a11cb, #2575fc)' }}>
+            {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+            Importar {rows.length > 0 ? `(${rows.length})` : ''}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function PipelinePage() {
@@ -904,6 +1048,7 @@ export default function PipelinePage() {
   const [dealPending, setDealPending] = useState<{ lead: Lead; stageId: string } | null>(null)
   const [editDealFor, setEditDealFor] = useState<Lead | null>(null)
   const [showNewLead, setShowNewLead] = useState(false)
+  const [showImportLeads, setShowImportLeads] = useState(false)
   // Estágio do lead antes do drag começar — guardado num ref (não state) porque só serve pra
   // decidir, no drop, se precisa persistir (handleDragOver já vai ter mudado leads[].pipelineStageId
   // ao vivo pra o reordenamento visual acontecer durante o arrasto, não só depois de soltar).
@@ -1143,6 +1288,15 @@ export default function PipelinePage() {
         />
       )}
 
+      {showImportLeads && (
+        <ImportLeadsModal
+          stages={stages}
+          token={token!}
+          onClose={() => setShowImportLeads(false)}
+          onImported={load}
+        />
+      )}
+
       <div className="flex flex-col h-full overflow-hidden">
         <TopBar title="Pipeline CRM" />
         <main className="flex-1 overflow-hidden p-5 flex flex-col gap-4">
@@ -1193,13 +1347,21 @@ export default function PipelinePage() {
               )}
             </div>
 
-            <button onClick={() => setShowNewLead(true)}
-              disabled={stages.length === 0}
-              className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-              style={{ background: 'linear-gradient(135deg, #6a11cb, #2575fc)' }}>
-              <Plus className="w-3.5 h-3.5" />
-              Novo Lead
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setShowImportLeads(true)}
+                disabled={stages.length === 0}
+                className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg text-slate-300 font-medium hover:text-white bg-[#1a1230] border border-[#2d2550] transition-colors disabled:opacity-50">
+                <Upload className="w-3.5 h-3.5" />
+                Importar Leads
+              </button>
+              <button onClick={() => setShowNewLead(true)}
+                disabled={stages.length === 0}
+                className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+                style={{ background: 'linear-gradient(135deg, #6a11cb, #2575fc)' }}>
+                <Plus className="w-3.5 h-3.5" />
+                Novo Lead
+              </button>
+            </div>
           </div>
 
           {/* Kanban */}
