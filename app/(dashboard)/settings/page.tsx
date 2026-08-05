@@ -31,6 +31,7 @@ interface WorkspaceData {
   telegramChatId: string | null
   openaiApiKey: string | null
   anthropicApiKey: string | null
+  geminiApiKey: string | null
   members: Member[]
 }
 
@@ -204,6 +205,7 @@ export default function SettingsPage() {
   // Relatórios com IA — chaves globais (só isAgency) + config por cliente
   const [openaiApiKey,    setOpenaiApiKey]    = useState('')
   const [anthropicApiKey, setAnthropicApiKey] = useState('')
+  const [geminiApiKey,    setGeminiApiKey]    = useState('')
   const [reportProvider,     setReportProvider]     = useState('openai')
   const [reportModel,        setReportModel]        = useState('')
   const [reportModelCustom,  setReportModelCustom]  = useState(false)
@@ -253,6 +255,7 @@ export default function SettingsPage() {
       setTelegramChatId(data.telegramChatId ?? '')
       setOpenaiApiKey(data.openaiApiKey ?? '')
       setAnthropicApiKey(data.anthropicApiKey ?? '')
+      setGeminiApiKey(data.geminiApiKey ?? '')
     } catch { toast.error('Erro ao carregar configurações') }
     finally { setLoading(false) }
   }, [token])
@@ -303,7 +306,7 @@ export default function SettingsPage() {
     try {
       const res = await fetch('/api/workspace', {
         method: 'PATCH', headers: h,
-        body: JSON.stringify({ openaiApiKey, anthropicApiKey }),
+        body: JSON.stringify({ openaiApiKey, anthropicApiKey, geminiApiKey }),
       })
       if (!res.ok) throw new Error()
       toast.success('Chaves de API salvas!')
@@ -514,6 +517,9 @@ export default function SettingsPage() {
                   </Field>
                   <Field label="Anthropic API Key">
                     <TextInput value={anthropicApiKey} onChange={setAnthropicApiKey} placeholder="sk-ant-..." secret />
+                  </Field>
+                  <Field label="Gemini API Key">
+                    <TextInput value={geminiApiKey} onChange={setGeminiApiKey} placeholder="AIza..." secret />
                   </Field>
                   <SaveBtn onClick={saveAiKeys} loading={saving} />
                 </div>

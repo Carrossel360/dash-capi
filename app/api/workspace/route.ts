@@ -29,7 +29,7 @@ export async function PATCH(req: NextRequest) {
   const {
     name, metaPixelId, metaAccessToken, metaAdAccountId, instagramAccountId,
     googleAdsCustomerId, googleAdsRefreshToken, telegramBotToken, telegramChatId,
-    openaiApiKey, anthropicApiKey,
+    openaiApiKey, anthropicApiKey, geminiApiKey,
   } = body
 
   const workspace = await prisma.workspace.update({
@@ -46,6 +46,7 @@ export async function PATCH(req: NextRequest) {
       ...(telegramChatId !== undefined && { telegramChatId }),
       ...(openaiApiKey !== undefined && { openaiApiKey }),
       ...(anthropicApiKey !== undefined && { anthropicApiKey }),
+      ...(geminiApiKey !== undefined && { geminiApiKey }),
     },
   })
 

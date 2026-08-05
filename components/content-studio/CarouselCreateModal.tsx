@@ -6,6 +6,13 @@ import toast from 'react-hot-toast'
 import { useAuthStore } from '@/lib/store/auth'
 import { LAYOUTS, type LayoutKey, buildSlideElements, defaultBackground } from '@/lib/content-studio/layouts'
 import { FORMAT_DIMENSIONS, type Slide, type CarouselFormat } from '@/lib/content-studio/types'
+import { OPENAI_TEXT_MODELS, ANTHROPIC_TEXT_MODELS, GEMINI_TEXT_MODELS } from '@/lib/ai-models'
+
+type AiProvider = 'openai' | 'anthropic' | 'gemini'
+const PROVIDER_LABELS: Record<AiProvider, string> = { openai: 'OpenAI (GPT)', anthropic: 'Anthropic (Claude)', gemini: 'Google (Gemini)' }
+const PROVIDER_MODELS: Record<AiProvider, { value: string; label: string }[]> = {
+  openai: OPENAI_TEXT_MODELS, anthropic: ANTHROPIC_TEXT_MODELS, gemini: GEMINI_TEXT_MODELS,
+}
 
 // Extraído de app/(dashboard)/content-studio/page.tsx — mesma lógica, só isolada
 // pra abrir espaço pro seletor de tipo de criação (Carrossel vs Site).
@@ -24,6 +31,8 @@ export default function CarouselCreateModal({ open, onClose, overrideToken, onCr
   const [slideCount, setSlideCount] = useState(7)
   const [format, setFormat] = useState<CarouselFormat>('square')
   const [layout, setLayout] = useState<LayoutKey | 'auto'>('auto')
+  const [aiProvider, setAiProvider] = useState<AiProvider>('openai')
+  const [aiModel, setAiModel] = useState('')
 
   async function handleGenerate() {
     if (!topic.trim()) { toast.error('Descreva o tópico do carrossel'); return }
@@ -32,7 +41,7 @@ export default function CarouselCreateModal({ open, onClose, overrideToken, onCr
       const genRes = await fetch('/api/content-studio/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ topic, slideCount }),
+        body: JSON.stringify({ topic, slideCount, aiProvider, aiModel: aiModel || undefined }),
       })
       const genData = await genRes.json()
       if (!genRes.ok) throw new Error(genData.error || 'Erro ao gerar slides')
@@ -123,6 +132,24 @@ export default function CarouselCreateModal({ open, onClose, overrideToken, onCr
               <option value="auto">IA decide (variado)</option>
               {LAYOUTS.map(l => <option key={l.key} value={l.key}>{l.label}</option>)}
             </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-slate-400 mb-1 block">Modelo de IA</label>
+              <select value={aiProvider} onChange={e => { setAiProvider(e.target.value as AiProvider); setAiModel('') }}
+                className="w-full px-3 py-2 text-xs bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb] transition-colors">
+                {(Object.keys(PROVIDER_LABELS) as AiProvider[]).map(p => <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 mb-1 block">Versão</label>
+              <select value={aiModel} onChange={e => setAiModel(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb] transition-colors">
+                <option value="">Padrão</option>
+                {PROVIDER_MODELS[aiProvider].map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+            </div>
           </div>
         </div>
 

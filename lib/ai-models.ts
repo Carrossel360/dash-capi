@@ -14,3 +14,8 @@ export const ANTHROPIC_TEXT_MODELS = [
   { value: 'claude-sonnet-5', label: 'Claude Sonnet 5 (padrão)' },
   { value: 'claude-opus-4-8', label: 'Claude Opus 4.8 (mais avançado)' },
 ]
+
+export const GEMINI_TEXT_MODELS = [
+  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (padrão)' },
+  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (mais avançado)' },
+]
