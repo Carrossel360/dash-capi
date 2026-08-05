@@ -61,7 +61,7 @@ export async function POST(req: NextRequest, { params }: { params: { workspaceId
   if (!workspace) return NextResponse.json({ ok: true })
 
   const fields = normalizeFields(body)
-  const name = pick(fields, NAME_KEYS, ['text']) || 'Lead (site)'
+  const name = pick(fields, NAME_KEYS, ['text']) || ''
   const email = pick(fields, EMAIL_KEYS, ['email'])
   const phoneRaw = pick(fields, PHONE_KEYS, ['tel'])
   const phone = phoneRaw ? `+${phoneRaw.replace(/\D/g, '')}` : null

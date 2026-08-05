@@ -235,7 +235,7 @@ export async function syncWorkspaceMetaLeads(workspace: Workspace): Promise<Sync
           data: {
             id: lead.id,
             workspaceId: workspace.id,
-            name: name || 'Lead (formulário Meta)',
+            name: name || '',
             email,
             phone: phoneFormatted,
             source: 'Meta',

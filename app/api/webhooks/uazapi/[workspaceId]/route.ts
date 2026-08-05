@@ -189,7 +189,7 @@ export async function POST(
       const newLead = await prisma.lead.create({
         data: {
           workspaceId,
-          name: customerName || phone,
+          name: customerName || '',
           phone: `+55${phone}`,
           source,
           utmSource, utmMedium, utmCampaign,
