@@ -59,6 +59,13 @@ function monthLabel(key: string): string {
   return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
+const SERVICE_OPTIONS = [
+  { key: 'trafego_pago', label: 'Tráfego Pago', descLabel: 'Meta Ads e Google Ads' },
+  { key: 'social_media', label: 'Social Media', descLabel: 'Instagram' },
+  { key: 'google_business', label: 'Google Business', descLabel: 'Google Meu Negócio' },
+] as const
+type ServiceKey = (typeof SERVICE_OPTIONS)[number]['key']
+
 export default function RelatoriosIAPage() {
   const { token, currentWorkspace, accessibleWorkspaces } = useAuthStore()
   const canManage = ['admin', 'manager'].includes(currentWorkspace?.role ?? '')
@@ -66,11 +73,21 @@ export default function RelatoriosIAPage() {
   // membership no workspace isAgency:true) só enxerga o histórico de relatórios.
   const isAgencyStaff = accessibleWorkspaces.some(w => w.isAgency)
 
+  // Quais serviços esse cliente realmente contratou — usado tanto pra desabilitar a aba
+  // quanto pro botão "Gerar todos habilitados".
+  const enabledServices: Record<ServiceKey, boolean> = {
+    trafego_pago: !!(currentWorkspace?.services?.metaAds || currentWorkspace?.services?.googleAds || currentWorkspace?.services?.trafeqoPago),
+    social_media: !!currentWorkspace?.services?.socialMedia,
+    google_business: !!currentWorkspace?.services?.googleBusiness,
+  }
+
+  const [selectedService, setSelectedService] = useState<ServiceKey>('trafego_pago')
   const [config, setConfig] = useState<ReportConfig | null>(null)
   const [insights, setInsights] = useState<InsightRow[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [generating, setGenerating] = useState(false)
+  const [generatingAll, setGeneratingAll] = useState(false)
   const [monthFilter, setMonthFilter] = useState('all')
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
 
@@ -86,15 +103,15 @@ export default function RelatoriosIAPage() {
     if (!token) return
     setLoading(true)
     Promise.all([
-      fetch('/api/reports/config', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
-      fetch('/api/reports/insights', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+      fetch(`/api/reports/config?service=${selectedService}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+      fetch(`/api/reports/insights?service=${selectedService}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
     ])
       .then(([configData, insightsData]) => {
         setConfig(configData.config)
         setInsights(insightsData.insights ?? [])
       })
       .finally(() => setLoading(false))
-  }, [token])
+  }, [token, selectedService])
 
   useEffect(load, [load])
 
@@ -105,7 +122,7 @@ export default function RelatoriosIAPage() {
       const res = await fetch('/api/reports/config', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ frequencyDays: config.frequencyDays, enabled: config.enabled }),
+        body: JSON.stringify({ service: selectedService, frequencyDays: config.frequencyDays, enabled: config.enabled }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro ao salvar')
@@ -134,17 +151,23 @@ export default function RelatoriosIAPage() {
     }
   }
 
+  async function generateOne(service: ServiceKey) {
+    const res = await fetch('/api/reports/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ service }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Erro ao gerar relatório')
+    return data.insight
+  }
+
   async function generateNow() {
     if (!token) return
     setGenerating(true)
     try {
-      const res = await fetch('/api/reports/generate', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Erro ao gerar relatório')
-      setInsights(prev => [data.insight, ...prev])
+      const insight = await generateOne(selectedService)
+      setInsights(prev => [insight, ...prev])
       toast.success('Relatório gerado com sucesso')
       load()
     } catch (err) {
@@ -152,6 +175,29 @@ export default function RelatoriosIAPage() {
     } finally {
       setGenerating(false)
     }
+  }
+
+  // Dispara uma geração por serviço habilitado — várias Insight separadas, não um relatório
+  // combinado único (cada serviço tem seu próprio histórico/aba).
+  async function generateAll() {
+    if (!token) return
+    const services = SERVICE_OPTIONS.filter(s => enabledServices[s.key]).map(s => s.key)
+    if (services.length === 0) { toast.error('Nenhum serviço habilitado pra esse cliente'); return }
+
+    setGeneratingAll(true)
+    let ok = 0, fail = 0
+    for (const service of services) {
+      try {
+        await generateOne(service)
+        ok++
+      } catch {
+        fail++
+      }
+    }
+    setGeneratingAll(false)
+    if (fail > 0) toast.error(`${ok} gerado(s), ${fail} falhou(aram)`)
+    else toast.success(`${ok} relatório(s) gerado(s) com sucesso`)
+    load()
   }
 
   const reportedInsights = insights.filter(i => i.report)
@@ -163,27 +209,53 @@ export default function RelatoriosIAPage() {
       <Toaster position="top-right" />
       <TopBar title="Relatórios com IA" />
       <main className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h2 className="text-base font-bold text-white flex items-center gap-2">
               <Sparkles className="w-4 h-4" style={{ color: '#F5A314' }} />
-              Análise de Tráfego Pago com IA
+              Relatórios com IA
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Resumo, insights e recomendações gerados automaticamente a partir dos dados de Meta Ads e Google Ads.
+              Resumo, insights e recomendações gerados automaticamente a partir dos dados do serviço selecionado.
             </p>
           </div>
           {canManage && isAgencyStaff && (
-            <button
-              onClick={generateNow}
-              disabled={generating}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold text-white transition-all disabled:opacity-60"
-              style={{ background: 'linear-gradient(135deg, #6a11cb, #F5A314)' }}
-            >
-              {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
-              Gerar agora
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={generateAll}
+                disabled={generating || generatingAll}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-white border border-[#2d2550] transition-all disabled:opacity-60"
+              >
+                {generatingAll ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                Gerar todos habilitados
+              </button>
+              <button
+                onClick={generateNow}
+                disabled={generating || generatingAll || !enabledServices[selectedService]}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold text-white transition-all disabled:opacity-60"
+                style={{ background: 'linear-gradient(135deg, #6a11cb, #F5A314)' }}
+              >
+                {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                Gerar agora
+              </button>
+            </div>
           )}
+        </div>
+
+        {/* Seletor de serviço */}
+        <div className="flex items-center gap-2">
+          {SERVICE_OPTIONS.map(opt => (
+            <button key={opt.key}
+              onClick={() => setSelectedService(opt.key)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+              style={selectedService === opt.key
+                ? { background: 'rgba(106,17,203,0.2)', color: '#fff', border: '1px solid rgba(106,17,203,0.5)' }
+                : { background: '#0f0b1e', color: '#94a3b8', border: '1px solid #1e1635' }}
+            >
+              {opt.label}
+              {!enabledServices[opt.key] && <span className="ml-1.5 text-slate-600">· não contratado</span>}
+            </button>
+          ))}
         </div>
 
         {loading ? (

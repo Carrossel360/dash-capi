@@ -318,3 +318,88 @@ export async function buildGoogleTrafficSnapshot(workspaceId: string, period: st
 
   return { kpis, chart, campaigns, comparison, conversionsBreakdown }
 }
+
+const SOCIAL_MEDIA_COMPARISON_KEYS = [
+  'views', 'reach', 'totalInteractions', 'likes', 'comments', 'shares', 'saves', 'replies',
+  'profileVisits', 'websiteClicks', 'accountsEngaged', 'followersNet',
+]
+
+// Extraído de app/api/social-media/route.ts (que agora chama esta função) — reutilizado
+// também por lib/ai-reports.ts, mesmo padrão de buildMetaTrafficSnapshot/buildGoogleTrafficSnapshot.
+export async function buildSocialMediaSnapshot(workspaceId: string, period: string, from?: string | null, to?: string | null) {
+  const range = dateRange(period, from, to)
+  const prevRange = previousRange(period, range)
+
+  const [daily, dailyPrev, ws] = await Promise.all([
+    prisma.socialMediaDailyData.findMany({
+      where: { workspaceId, platform: 'instagram', ...(range ? { date: range } : {}) },
+      orderBy: { date: 'asc' },
+    }),
+    prevRange
+      ? prisma.socialMediaDailyData.findMany({ where: { workspaceId, platform: 'instagram', date: prevRange } })
+      : Promise.resolve([]),
+    prisma.workspace.findUnique({ where: { id: workspaceId }, select: { instagramAccountId: true } }),
+  ])
+
+  const sum = (rows: typeof daily, key: string) => rows.reduce((acc, r) => acc + (Number((r as Record<string, unknown>)[key]) || 0), 0)
+
+  function buildAggregate(rows: typeof daily) {
+    // followersTotal só é gravado no dia em que o sync rodou (snapshot, não histórico) —
+    // pega o mais recente não-nulo da janela em vez de somar (somar não faria sentido).
+    const latestFollowersTotal = [...rows].reverse().find(r => r.followersTotal != null)?.followersTotal ?? null
+    return {
+      views: sum(rows, 'views'), viewsPost: sum(rows, 'viewsPost'), viewsStory: sum(rows, 'viewsStory'),
+      viewsReel: sum(rows, 'viewsReel'), viewsCarousel: sum(rows, 'viewsCarousel'),
+      reach: sum(rows, 'reach'), totalInteractions: sum(rows, 'totalInteractions'),
+      interactionsPost: sum(rows, 'interactionsPost'), interactionsStory: sum(rows, 'interactionsStory'),
+      interactionsReel: sum(rows, 'interactionsReel'), interactionsCarousel: sum(rows, 'interactionsCarousel'),
+      likes: sum(rows, 'likes'), comments: sum(rows, 'comments'), shares: sum(rows, 'shares'),
+      saves: sum(rows, 'saves'), replies: sum(rows, 'replies'),
+      profileVisits: sum(rows, 'profileVisits'), websiteClicks: sum(rows, 'websiteClicks'),
+      accountsEngaged: sum(rows, 'accountsEngaged'), followersNet: sum(rows, 'followersNet'),
+      followersTotal: latestFollowersTotal,
+    }
+  }
+
+  const emptyKpis = {
+    views: 0, viewsPost: 0, viewsStory: 0, viewsReel: 0, viewsCarousel: 0, reach: 0,
+    totalInteractions: 0, interactionsPost: 0, interactionsStory: 0, interactionsReel: 0, interactionsCarousel: 0,
+    likes: 0, comments: 0, shares: 0, saves: 0, replies: 0,
+    profileVisits: 0, websiteClicks: 0, accountsEngaged: 0, followersNet: 0, followersTotal: null as number | null,
+    hasData: false,
+  }
+
+  const kpis = daily.length > 0 ? { ...buildAggregate(daily), hasData: true } : emptyKpis
+
+  const chart = daily.map(r => ({
+    dia: new Date(r.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+    views: Number(r.views) || 0,
+    interactions: Number(r.totalInteractions) || 0,
+    reach: Number(r.reach) || 0,
+  }))
+
+  const comparison = daily.length > 0 && dailyPrev.length > 0
+    ? buildComparison(kpis, buildAggregate(dailyPrev), SOCIAL_MEDIA_COMPARISON_KEYS)
+    : {}
+
+  return { kpis, chart, comparison, hasInstagram: !!ws?.instagramAccountId }
+}
+
+// GoogleBusinessData é lançado manualmente 1x por mês (não diário como Meta/Google Ads) —
+// não tem o que "somar" num período curto, então o snapshot pega o mês mais recente com
+// dado + o anterior pra comparação, igual a UI de Google Business já faz.
+export async function buildGoogleBusinessSnapshot(workspaceId: string) {
+  const rows = await prisma.googleBusinessData.findMany({
+    where: { workspaceId },
+    orderBy: { period: 'desc' },
+    take: 2,
+  })
+
+  const [latest, previous] = rows
+  return {
+    hasData: !!latest,
+    period: latest?.period ?? null,
+    current: latest ?? null,
+    previous: previous ?? null,
+  }
+}

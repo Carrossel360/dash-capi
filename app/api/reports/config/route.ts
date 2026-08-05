@@ -1,20 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthPayload } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { REPORT_SERVICE } from '@/lib/ai-reports'
+import { REPORT_SERVICE, REPORT_SERVICES } from '@/lib/ai-reports'
+
+function resolveService(raw: string | null): string {
+  return raw && raw in REPORT_SERVICES ? raw : REPORT_SERVICE
+}
 
 export async function GET(req: NextRequest) {
   const auth = await getAuthPayload(req)
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const service = resolveService(req.nextUrl.searchParams.get('service'))
+
   const config = await prisma.reportConfig.findUnique({
-    where: { workspaceId_service: { workspaceId: auth.workspaceId, service: REPORT_SERVICE } },
+    where: { workspaceId_service: { workspaceId: auth.workspaceId, service } },
   })
 
   return NextResponse.json({
     config: config ?? {
       workspaceId: auth.workspaceId,
-      service: REPORT_SERVICE,
+      service,
       aiProvider: 'openai',
       aiModel: null,
       customPrompt: null,
@@ -30,16 +36,17 @@ export async function PATCH(req: NextRequest) {
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (!['admin', 'manager'].includes(auth.role)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
-  const { aiProvider, aiModel, customPrompt, frequencyDays, enabled } = await req.json()
+  const { service: rawService, aiProvider, aiModel, customPrompt, frequencyDays, enabled } = await req.json()
+  const service = resolveService(rawService ?? null)
   if (aiProvider && !['openai', 'anthropic'].includes(aiProvider)) {
     return NextResponse.json({ error: 'aiProvider inválido' }, { status: 400 })
   }
 
   const config = await prisma.reportConfig.upsert({
-    where: { workspaceId_service: { workspaceId: auth.workspaceId, service: REPORT_SERVICE } },
+    where: { workspaceId_service: { workspaceId: auth.workspaceId, service } },
     create: {
       workspaceId: auth.workspaceId,
-      service: REPORT_SERVICE,
+      service,
       aiProvider: aiProvider ?? 'openai',
       aiModel: aiModel ?? null,
       customPrompt: customPrompt ?? null,

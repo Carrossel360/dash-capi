@@ -1,9 +1,17 @@
 import { prisma } from '@/lib/db'
-import { buildMetaTrafficSnapshot, buildGoogleTrafficSnapshot } from '@/lib/trafego-aggregate'
+import { buildMetaTrafficSnapshot, buildGoogleTrafficSnapshot, buildSocialMediaSnapshot, buildGoogleBusinessSnapshot } from '@/lib/trafego-aggregate'
 import { generateTrafficReportOpenAI } from '@/lib/openai'
 import { generateTrafficReportClaude } from '@/lib/anthropic'
 
+// Mantido por compatibilidade com quem importava REPORT_SERVICE como o único serviço
+// existente — hoje ReportConfig/Insight.service pode ser qualquer chave de REPORT_SERVICES.
 export const REPORT_SERVICE = 'trafego_pago'
+
+export const REPORT_SERVICES: Record<string, string> = {
+  trafego_pago: 'Tráfego Pago',
+  social_media: 'Social Media',
+  google_business: 'Google Business Profile',
+}
 const REPORT_PERIOD = '30d'
 
 // Tipo compartilhado entre os provedores de IA (OpenAI/Anthropic) — a UI de
@@ -37,6 +45,28 @@ export const REPORT_SYSTEM_PROMPT =
   'ausência delas. A única fonte confiável de vendas reais é o campo "vendasCRM" (fora de meta/google): ' +
   '{ count, value } com os negócios fechados no CRM dentro do período — baseie qualquer comentário sobre ' +
   'conversão em vendas/faturamento só nesse campo.'
+
+export const SOCIAL_MEDIA_SYSTEM_PROMPT =
+  'Você é um analista de social media sênior de uma agência de marketing, escrevendo em português do Brasil. ' +
+  'Analise os dados de Instagram fornecidos (alcance, visualizações, interações, seguidores, visitas ao perfil) ' +
+  'e produza uma análise objetiva e acionável, sem enrolação. Responda sempre em JSON válido no formato ' +
+  '{ "summary": string, "insights": string[], "recommendations": string[] } — ' +
+  '"summary" é um parágrafo curto com o panorama geral do período; "insights" são observações concretas ' +
+  'baseadas nos números (o que subiu/caiu, o que chama atenção — ex: queda de alcance, pico de interação num ' +
+  'tipo de conteúdo específico como Reel/Post/Story); "recommendations" são ações práticas sugeridas pro ' +
+  'próximo período (ex: formato de conteúdo a priorizar, horário, frequência de postagem). ' +
+  'IMPORTANTE: se "hasData" ou "hasInstagram" no snapshot forem false, não invente números — diga claramente ' +
+  'que não há dado suficiente no período pra análise.'
+
+export const GOOGLE_BUSINESS_SYSTEM_PROMPT =
+  'Você é um analista de marketing local sênior de uma agência, escrevendo em português do Brasil. ' +
+  'Analise os dados do perfil Google Business (Google Meu Negócio) fornecidos — visualizações, ligações, ' +
+  'solicitações de rota, avaliações, posição média de busca/mapa — e produza uma análise objetiva e acionável. ' +
+  'Responda sempre em JSON válido no formato { "summary": string, "insights": string[], "recommendations": string[] }. ' +
+  'O snapshot traz o mês mais recente ("current") e o anterior ("previous", pode ser null) pra comparação — ' +
+  'esse dado é lançado manualmente 1x por mês pela equipe, não é sincronizado automaticamente, então trate como ' +
+  'uma foto mensal, não uma série diária. Se "hasData" for false ou "current" for null, diga claramente que ' +
+  'ainda não há dado lançado pra esse cliente, sem inventar números.'
 
 export function buildReportUserPrompt(snapshot: unknown, customPrompt?: string): string {
   return (
@@ -77,39 +107,60 @@ async function fetchClosedDealsSummary(workspaceId: string, days: number) {
   return { count: result._count.id, value: result._sum.value ?? 0 }
 }
 
-// Usado tanto pela rota on-demand (app/api/reports/generate) quanto pelo
-// cron diário (app/api/cron/reports) — monta o snapshot de tráfego do
-// workspace, chama o provedor de IA configurado e grava o resultado como
-// Insight, além de atualizar lastGeneratedAt na config.
-export async function generateAndSaveReport(
-  workspace: { id: string; svcMetaAds: boolean; svcGoogleAds: boolean },
-  config: { aiProvider: string; aiModel?: string | null; customPrompt?: string | null }
-) {
-  const [meta, google, vendasCRM] = await Promise.all([
-    workspace.svcMetaAds ? buildMetaTrafficSnapshot(workspace.id, REPORT_PERIOD) : Promise.resolve(null),
-    workspace.svcGoogleAds ? buildGoogleTrafficSnapshot(workspace.id, REPORT_PERIOD) : Promise.resolve(null),
-    fetchClosedDealsSummary(workspace.id, parseInt(REPORT_PERIOD, 10)),
-  ])
+function systemPromptForService(service: string): string {
+  if (service === 'social_media') return SOCIAL_MEDIA_SYSTEM_PROMPT
+  if (service === 'google_business') return GOOGLE_BUSINESS_SYSTEM_PROMPT
+  return REPORT_SYSTEM_PROMPT
+}
 
-  if (!meta && !google) {
-    throw new Error('Cliente não tem Meta Ads nem Google Ads configurado — nada para analisar')
+// Usado tanto pela rota on-demand (app/api/reports/generate) quanto pelo cron diário
+// (app/api/cron/reports) — monta o snapshot do serviço pedido (config.service), chama o
+// provedor de IA configurado com o prompt de sistema certo pro serviço, e grava o resultado
+// como Insight, além de atualizar lastGeneratedAt na config.
+export async function generateAndSaveReport(
+  workspace: { id: string; svcMetaAds: boolean; svcGoogleAds: boolean; svcSocialMedia: boolean; svcGoogleBusiness: boolean },
+  config: { service: string; aiProvider: string; aiModel?: string | null; customPrompt?: string | null }
+) {
+  const service = config.service in REPORT_SERVICES ? config.service : REPORT_SERVICE
+
+  let snapshot: unknown
+  if (service === 'social_media') {
+    if (!workspace.svcSocialMedia) throw new Error('Cliente não tem Social Media configurado — nada para analisar')
+    snapshot = { periodo: 'últimos 30 dias', ...await buildSocialMediaSnapshot(workspace.id, REPORT_PERIOD) }
+  } else if (service === 'google_business') {
+    if (!workspace.svcGoogleBusiness) throw new Error('Cliente não tem Google Business configurado — nada para analisar')
+    snapshot = await buildGoogleBusinessSnapshot(workspace.id)
+  } else {
+    const [meta, google, vendasCRM] = await Promise.all([
+      workspace.svcMetaAds ? buildMetaTrafficSnapshot(workspace.id, REPORT_PERIOD) : Promise.resolve(null),
+      workspace.svcGoogleAds ? buildGoogleTrafficSnapshot(workspace.id, REPORT_PERIOD) : Promise.resolve(null),
+      fetchClosedDealsSummary(workspace.id, parseInt(REPORT_PERIOD, 10)),
+    ])
+    if (!meta && !google) {
+      throw new Error('Cliente não tem Meta Ads nem Google Ads configurado — nada para analisar')
+    }
+    snapshot = { periodo: 'últimos 30 dias', meta, google, vendasCRM }
   }
 
-  const snapshot = { periodo: 'últimos 30 dias', meta, google, vendasCRM }
   const generate = config.aiProvider === 'anthropic' ? generateTrafficReportClaude : generateTrafficReportOpenAI
-  const report = await generate({ snapshot, customPrompt: config.customPrompt ?? undefined, model: config.aiModel ?? undefined })
+  const report = await generate({
+    snapshot,
+    customPrompt: config.customPrompt ?? undefined,
+    model: config.aiModel ?? undefined,
+    systemPrompt: systemPromptForService(service),
+  })
 
   const [insight] = await Promise.all([
     prisma.insight.create({
       data: {
         workspaceId: workspace.id,
-        service: REPORT_SERVICE,
+        service,
         period: REPORT_PERIOD,
         content: JSON.stringify(report),
       },
     }),
     prisma.reportConfig.updateMany({
-      where: { workspaceId: workspace.id, service: REPORT_SERVICE },
+      where: { workspaceId: workspace.id, service },
       data: { lastGeneratedAt: new Date() },
     }),
   ])

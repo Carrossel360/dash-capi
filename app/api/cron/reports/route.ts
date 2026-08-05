@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
 
   const configs = await prisma.reportConfig.findMany({
     where: { enabled: true },
-    include: { workspace: { select: { id: true, svcMetaAds: true, svcGoogleAds: true } } },
+    include: { workspace: { select: { id: true, svcMetaAds: true, svcGoogleAds: true, svcSocialMedia: true, svcGoogleBusiness: true } } },
   })
 
   let generated = 0

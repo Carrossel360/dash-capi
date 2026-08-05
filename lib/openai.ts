@@ -101,12 +101,13 @@ export async function generateTrafficReportOpenAI(input: {
   snapshot: unknown
   customPrompt?: string
   model?: string
+  systemPrompt?: string
 }): Promise<GeneratedReport> {
   const completion = await (await getClient()).chat.completions.create({
     model: input.model || 'gpt-4o',
     response_format: { type: 'json_object' },
     messages: [
-      { role: 'system', content: REPORT_SYSTEM_PROMPT },
+      { role: 'system', content: input.systemPrompt || REPORT_SYSTEM_PROMPT },
       { role: 'user', content: buildReportUserPrompt(input.snapshot, input.customPrompt) },
     ],
   })

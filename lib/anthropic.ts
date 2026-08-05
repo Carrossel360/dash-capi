@@ -73,13 +73,14 @@ export async function generateTrafficReportClaude(input: {
   snapshot: unknown
   customPrompt?: string
   model?: string
+  systemPrompt?: string
 }): Promise<GeneratedReport> {
   // output_config (Structured Outputs) ainda não está tipado no SDK instalado —
   // funciona na API real (confirmado contra a doc atual), só falta o type definition.
   const response = await (await getClient()).messages.create({
     model: input.model || 'claude-sonnet-5',
     max_tokens: 2048,
-    system: REPORT_SYSTEM_PROMPT,
+    system: input.systemPrompt || REPORT_SYSTEM_PROMPT,
     messages: [{ role: 'user', content: buildReportUserPrompt(input.snapshot, input.customPrompt) }],
     ...({ output_config: { format: { type: 'json_schema', schema: REPORT_JSON_SCHEMA } } } as object),
   })
