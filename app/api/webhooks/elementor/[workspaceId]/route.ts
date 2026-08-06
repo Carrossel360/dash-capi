@@ -47,6 +47,26 @@ function pick(fields: Record<string, { value: string; type?: string }>, keys: st
   return null
 }
 
+// CORS liberado: além do POST server-to-server do Elementor Pro (que não manda Origin/preflight,
+// então não é afetado por isso), sites estáticos sem WordPress (ex: Senamed, feito à parte) também
+// postam aqui direto do navegador — mesmo padrão já usado em /api/collect.
+function json(data: unknown, init?: ResponseInit) {
+  const res = NextResponse.json(data, init)
+  res.headers.set('Access-Control-Allow-Origin', '*')
+  return res
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    },
+  })
+}
+
 export async function POST(req: NextRequest, { params }: { params: { workspaceId: string } }) {
   const { workspaceId } = params
 
@@ -54,11 +74,11 @@ export async function POST(req: NextRequest, { params }: { params: { workspaceId
   try {
     body = await req.json()
   } catch {
-    return NextResponse.json({ ok: true })
+    return json({ ok: true })
   }
 
   const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId }, select: { id: true } })
-  if (!workspace) return NextResponse.json({ ok: true })
+  if (!workspace) return json({ ok: true })
 
   const fields = normalizeFields(body)
   const name = pick(fields, NAME_KEYS, ['text']) || ''
@@ -78,14 +98,14 @@ export async function POST(req: NextRequest, { params }: { params: { workspaceId
     },
     select: { id: true },
   })
-  if (crossSourceMatch) return NextResponse.json({ ok: true, leadId: crossSourceMatch.id, duplicate: true })
+  if (crossSourceMatch) return json({ ok: true, leadId: crossSourceMatch.id, duplicate: true })
 
   const firstStage = await prisma.pipelineStage.findFirst({
     where: { workspaceId },
     orderBy: { order: 'asc' },
     select: { id: true },
   })
-  if (!firstStage) return NextResponse.json({ ok: true })
+  if (!firstStage) return json({ ok: true })
 
   const newLead = await prisma.lead.create({
     data: {
@@ -112,5 +132,5 @@ export async function POST(req: NextRequest, { params }: { params: { workspaceId
     userData: buildHashedUserData({ email: email ?? undefined, phone: phone ?? undefined }),
   })
 
-  return NextResponse.json({ ok: true, leadId: newLead.id })
+  return json({ ok: true, leadId: newLead.id })
 }
