@@ -115,9 +115,12 @@ async function sendServiceDigest(service: DigestService): Promise<{ sent: number
     try {
       const report = parseGeneratedReport(insight.content)
       const label = REPORT_SERVICES[service]
+      // Tráfego Pago pode vir no formato novo (resumoExecutivo/diagnosticoTecnico, Camada 1
+      // já é o texto pro cliente) ou no antigo (summary) — Social Media só tem o antigo.
+      const excerpt = report.kind === 'v2' ? report.resumoExecutivo : report.summary
       const text =
         `📈 <b>${label} — ${client.name}</b>\n\n` +
-        `${report.summary}`
+        `${excerpt}`
       const ok = await sendTelegramAlert(text)
       ok ? sent++ : failed++
     } catch (err) {

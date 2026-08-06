@@ -1,8 +1,10 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
-import { Sparkles, Loader2, CalendarClock, Lightbulb, ListChecks, Save, Wand2, ChevronDown, Trash2 } from 'lucide-react'
+import { Sparkles, Loader2, CalendarClock, Lightbulb, ListChecks, Save, Wand2, ChevronDown, Trash2, FileText } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import Link from 'next/link'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import TopBar from '@/components/TopBar'
 import { useAuthStore } from '@/lib/store/auth'
 
@@ -12,17 +14,54 @@ interface ReportConfig {
   lastGeneratedAt: string | null
 }
 
-interface GeneratedReport {
+// Formato antigo (Social Media/GBP, e relatórios de Tráfego Pago gerados antes da mudança pras
+// "duas camadas" — Insight.content não tem migração, então registros antigos ficam nesse shape
+// pra sempre).
+interface LegacyReport {
   summary: string
   insights: string[]
   recommendations: string[]
+}
+
+// Formato novo, só Tráfego Pago — Camada 1 (resumoExecutivo, pro cliente) + Camada 2
+// (diagnosticoTecnico, markdown com tabelas, pra equipe interna).
+interface TrafficReportV2 {
+  resumoExecutivo: string
+  diagnosticoTecnico: string
+}
+
+type ReportShape = TrafficReportV2 | LegacyReport
+
+function isV2Report(r: ReportShape): r is TrafficReportV2 {
+  return 'resumoExecutivo' in r
 }
 
 interface InsightRow {
   id: string
   period: string | null
   createdAt: string
-  report: GeneratedReport | null
+  report: ReportShape | null
+}
+
+// Estilo mínimo pro markdown do relatório (sem plugin de typography instalado) — cor/tamanho
+// combinando com o resto do card (fundo #0f0b1e, texto slate). Tabelas ficam dentro de um
+// container com scroll horizontal próprio, nunca estouram o card.
+const markdownComponents = {
+  p: (props: React.ComponentPropsWithoutRef<'p'>) => <p className="mb-2 last:mb-0" {...props} />,
+  h1: (props: React.ComponentPropsWithoutRef<'h1'>) => <h3 className="text-xs font-bold text-white mt-3 mb-1.5 first:mt-0" {...props} />,
+  h2: (props: React.ComponentPropsWithoutRef<'h2'>) => <h3 className="text-xs font-bold text-white mt-3 mb-1.5 first:mt-0" {...props} />,
+  h3: (props: React.ComponentPropsWithoutRef<'h3'>) => <h4 className="text-[11px] font-semibold text-slate-300 mt-2.5 mb-1 first:mt-0" {...props} />,
+  ul: (props: React.ComponentPropsWithoutRef<'ul'>) => <ul className="list-disc list-inside space-y-0.5 mb-2" {...props} />,
+  ol: (props: React.ComponentPropsWithoutRef<'ol'>) => <ol className="list-decimal list-inside space-y-0.5 mb-2" {...props} />,
+  strong: (props: React.ComponentPropsWithoutRef<'strong'>) => <strong className="text-white font-semibold" {...props} />,
+  table: (props: React.ComponentPropsWithoutRef<'table'>) => (
+    <div className="overflow-x-auto mb-3 rounded-lg border border-[#1e1635]">
+      <table className="w-full text-[11px] border-collapse" {...props} />
+    </div>
+  ),
+  thead: (props: React.ComponentPropsWithoutRef<'thead'>) => <thead className="bg-[#1a1230]" {...props} />,
+  th: (props: React.ComponentPropsWithoutRef<'th'>) => <th className="text-left font-semibold text-slate-400 px-2.5 py-1.5 border-b border-[#1e1635] whitespace-nowrap" {...props} />,
+  td: (props: React.ComponentPropsWithoutRef<'td'>) => <td className="px-2.5 py-1.5 border-b border-[#1e1635]/60 text-slate-300 whitespace-nowrap" {...props} />,
 }
 
 function periodDays(period: string | null): number | null {
@@ -90,6 +129,15 @@ export default function RelatoriosIAPage() {
   const [generatingAll, setGeneratingAll] = useState(false)
   const [monthFilter, setMonthFilter] = useState('all')
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const [diagnosticoOpenIds, setDiagnosticoOpenIds] = useState<Set<string>>(new Set())
+
+  function toggleDiagnostico(id: string) {
+    setDiagnosticoOpenIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
 
   function toggleExpanded(id: string) {
     setExpandedIds(prev => {
@@ -374,34 +422,59 @@ export default function RelatoriosIAPage() {
                       </div>
                       {isOpen && (
                         <div className="px-4 pb-4">
-                          <p className="text-xs text-slate-200 leading-relaxed mb-3">{i.report!.summary}</p>
-                          {i.report!.insights.length > 0 && (
-                            <div className="mb-3">
-                              <p className="text-[11px] font-semibold text-slate-400 mb-1.5 flex items-center gap-1.5">
-                                <Lightbulb className="w-3.5 h-3.5" style={{ color: '#F5A314' }} /> Insights
-                              </p>
-                              <ul className="space-y-1">
-                                {i.report!.insights.map((ins, idx) => (
-                                  <li key={idx} className="text-xs text-slate-300 flex gap-2">
-                                    <span className="text-slate-600">•</span>{ins}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {i.report!.recommendations.length > 0 && (
+                          {isV2Report(i.report!) ? (
                             <div>
-                              <p className="text-[11px] font-semibold text-slate-400 mb-1.5 flex items-center gap-1.5">
-                                <ListChecks className="w-3.5 h-3.5" style={{ color: '#10b981' }} /> Recomendações
-                              </p>
-                              <ul className="space-y-1">
-                                {i.report!.recommendations.map((rec, idx) => (
-                                  <li key={idx} className="text-xs text-slate-300 flex gap-2">
-                                    <span className="text-slate-600">•</span>{rec}
-                                  </li>
-                                ))}
-                              </ul>
+                              <div className="text-xs text-slate-200 leading-relaxed mb-2">
+                                <ReactMarkdown components={markdownComponents}>{i.report!.resumoExecutivo}</ReactMarkdown>
+                              </div>
+                              <button
+                                onClick={e => { e.stopPropagation(); toggleDiagnostico(i.id) }}
+                                className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 hover:text-white transition-colors mt-1"
+                              >
+                                <FileText className="w-3.5 h-3.5" style={{ color: '#8b5cf6' }} />
+                                Diagnóstico técnico
+                                <ChevronDown className={`w-3 h-3 transition-transform ${diagnosticoOpenIds.has(i.id) ? 'rotate-180' : ''}`} />
+                              </button>
+                              {diagnosticoOpenIds.has(i.id) && (
+                                <div className="text-xs text-slate-300 leading-relaxed mt-2.5 pt-2.5 border-t border-[#1e1635]">
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                                    {i.report!.diagnosticoTecnico}
+                                  </ReactMarkdown>
+                                </div>
+                              )}
                             </div>
+                          ) : (
+                            <>
+                              <p className="text-xs text-slate-200 leading-relaxed mb-3">{i.report!.summary}</p>
+                              {i.report!.insights.length > 0 && (
+                                <div className="mb-3">
+                                  <p className="text-[11px] font-semibold text-slate-400 mb-1.5 flex items-center gap-1.5">
+                                    <Lightbulb className="w-3.5 h-3.5" style={{ color: '#F5A314' }} /> Insights
+                                  </p>
+                                  <ul className="space-y-1">
+                                    {i.report!.insights.map((ins, idx) => (
+                                      <li key={idx} className="text-xs text-slate-300 flex gap-2">
+                                        <span className="text-slate-600">•</span>{ins}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {i.report!.recommendations.length > 0 && (
+                                <div>
+                                  <p className="text-[11px] font-semibold text-slate-400 mb-1.5 flex items-center gap-1.5">
+                                    <ListChecks className="w-3.5 h-3.5" style={{ color: '#10b981' }} /> Recomendações
+                                  </p>
+                                  <ul className="space-y-1">
+                                    {i.report!.recommendations.map((rec, idx) => (
+                                      <li key={idx} className="text-xs text-slate-300 flex gap-2">
+                                        <span className="text-slate-600">•</span>{rec}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
                       )}

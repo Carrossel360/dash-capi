@@ -1,5 +1,5 @@
 import OpenAI from 'openai'
-import { REPORT_SYSTEM_PROMPT, buildReportUserPrompt, type GeneratedReport } from '@/lib/ai-reports'
+import { REPORT_SYSTEM_PROMPT, REPORT_SYSTEM_PROMPT_V2, TRAFFIC_REPORT_V2_JSON_SCHEMA, buildReportUserPrompt, type GeneratedReport, type TrafficReportV2 } from '@/lib/ai-reports'
 import { parseGeneratedSite } from '@/lib/site-generator/prompts'
 import type { GeneratedSite } from '@/lib/site-generator/types'
 import { getAiApiKey } from '@/lib/ai-keys'
@@ -117,6 +117,39 @@ export async function generateTrafficReportOpenAI(input: {
 
   const parsed = JSON.parse(raw) as GeneratedReport
   if (!parsed.summary || !Array.isArray(parsed.insights) || !Array.isArray(parsed.recommendations)) {
+    throw new Error('Formato inesperado na resposta da OpenAI')
+  }
+  return parsed
+}
+
+// Formato "duas camadas" (só trafego_pago — ver lib/ai-reports.ts REPORT_SYSTEM_PROMPT_V2).
+// Usa response_format json_schema com strict:true — diferente das demais funções deste arquivo
+// (que só pedem json_object solto), porque a Camada 2 é bem mais longa/estruturada e vale a
+// pena a garantia real do schema em vez de só validação pós-parse.
+export async function generateTrafficReportV2OpenAI(input: {
+  snapshot: unknown
+  customPrompt?: string
+  model?: string
+  systemPrompt?: string
+}): Promise<TrafficReportV2> {
+  const completion = await (await getClient()).chat.completions.create({
+    model: input.model || 'gpt-4o',
+    max_completion_tokens: 8192,
+    response_format: {
+      type: 'json_schema',
+      json_schema: { name: 'traffic_report_v2', schema: TRAFFIC_REPORT_V2_JSON_SCHEMA, strict: true },
+    },
+    messages: [
+      { role: 'system', content: input.systemPrompt || REPORT_SYSTEM_PROMPT_V2 },
+      { role: 'user', content: buildReportUserPrompt(input.snapshot, input.customPrompt) },
+    ],
+  })
+
+  const raw = completion.choices[0]?.message?.content
+  if (!raw) throw new Error('Resposta vazia da OpenAI')
+
+  const parsed = JSON.parse(raw) as TrafficReportV2
+  if (typeof parsed.resumoExecutivo !== 'string' || typeof parsed.diagnosticoTecnico !== 'string') {
     throw new Error('Formato inesperado na resposta da OpenAI')
   }
   return parsed

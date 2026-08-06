@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { REPORT_JSON_SCHEMA, REPORT_SYSTEM_PROMPT, buildReportUserPrompt, type GeneratedReport } from '@/lib/ai-reports'
+import { REPORT_JSON_SCHEMA, REPORT_SYSTEM_PROMPT, REPORT_SYSTEM_PROMPT_V2, TRAFFIC_REPORT_V2_JSON_SCHEMA, buildReportUserPrompt, type GeneratedReport, type TrafficReportV2 } from '@/lib/ai-reports'
 import { SITE_JSON_SCHEMA, parseGeneratedSite } from '@/lib/site-generator/prompts'
 import type { GeneratedSite } from '@/lib/site-generator/types'
 import { getAiApiKey } from '@/lib/ai-keys'
@@ -90,6 +90,32 @@ export async function generateTrafficReportClaude(input: {
 
   const parsed = JSON.parse(block.text) as GeneratedReport
   if (!parsed.summary || !Array.isArray(parsed.insights) || !Array.isArray(parsed.recommendations)) {
+    throw new Error('Formato inesperado na resposta da Anthropic')
+  }
+  return parsed
+}
+
+// Formato "duas camadas" (só trafego_pago — ver lib/ai-reports.ts REPORT_SYSTEM_PROMPT_V2).
+// Camada 2 é bem mais longa que o relatório antigo — max_tokens bem acima dos 2048 de cima.
+export async function generateTrafficReportV2Claude(input: {
+  snapshot: unknown
+  customPrompt?: string
+  model?: string
+  systemPrompt?: string
+}): Promise<TrafficReportV2> {
+  const response = await (await getClient()).messages.create({
+    model: input.model || 'claude-sonnet-5',
+    max_tokens: 8192,
+    system: input.systemPrompt || REPORT_SYSTEM_PROMPT_V2,
+    messages: [{ role: 'user', content: buildReportUserPrompt(input.snapshot, input.customPrompt) }],
+    ...({ output_config: { format: { type: 'json_schema', schema: TRAFFIC_REPORT_V2_JSON_SCHEMA } } } as object),
+  })
+
+  const block = response.content.find((b): b is Anthropic.TextBlock => b.type === 'text')
+  if (!block?.text) throw new Error('Resposta vazia da Anthropic')
+
+  const parsed = JSON.parse(block.text) as TrafficReportV2
+  if (typeof parsed.resumoExecutivo !== 'string' || typeof parsed.diagnosticoTecnico !== 'string') {
     throw new Error('Formato inesperado na resposta da Anthropic')
   }
   return parsed
