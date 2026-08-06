@@ -45,7 +45,7 @@ export async function GET(
     send({eventType:'Lead',userEmail:em||undefined,userPhone:ph||undefined});
   },true);
   d.addEventListener('click',function(e){
-    var t=(e.target).closest('a[href*="wa.me"],a[href*="whatsapp.com"],a[href*="api.whatsapp.com"]');
+    var t=(e.target).closest('a[href*="wa.me"],a[href*="whatsapp.com"],a[href*="api.whatsapp.com"],a[href^="'+cfg.api+'/l/"]');
     if(t)send({eventType:'WhatsAppClick',customData:{url:t.href}});
     var p=(e.target).closest('a[href^="tel:"]');
     if(p)send({eventType:'Lead',customData:{type:'phone_click'}});

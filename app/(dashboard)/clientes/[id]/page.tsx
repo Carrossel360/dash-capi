@@ -210,7 +210,7 @@ export default function ClienteDetailPage() {
   const [phrases, setPhrases] = useState<{ id: string; phrase: string; source: string; campaign: string | null }[]>([])
   const [phrasesLoaded, setPhrasesLoaded] = useState(false)
   const [loadingPhrases, setLoadingPhrases] = useState(false)
-  const [trackingLinks, setTrackingLinks] = useState<{ id: string; slug: string; trackingPhraseId: string | null; clickCount: number }[]>([])
+  const [trackingLinks, setTrackingLinks] = useState<{ id: string; slug: string; trackingPhraseId: string | null; clickCount: number; clickCountButton: number; clickCountForm: number }[]>([])
   const [generatingLinkFor, setGeneratingLinkFor] = useState<string | null>(null)
   const [newPhrase, setNewPhrase] = useState('')
   const [newSource, setNewSource] = useState('')
@@ -1400,7 +1400,12 @@ export default function ClienteDetailPage() {
                             {shortLink ? (
                               <div className="flex items-center gap-2">
                                 <code className="flex-1 text-[11px] text-[#8b5cf6] bg-[#0a0818] border border-[#1e1635] rounded-lg px-2.5 py-1.5 font-mono truncate">{shortLink}</code>
-                                <span className="text-[11px] text-slate-400 flex-shrink-0 px-1">{trackingLink!.clickCount} clique{trackingLink!.clickCount === 1 ? '' : 's'}</span>
+                                <span className="text-[11px] text-slate-400 flex-shrink-0 px-1">
+                                  {trackingLink!.clickCount} clique{trackingLink!.clickCount === 1 ? '' : 's'}
+                                  {(trackingLink!.clickCountButton > 0 || trackingLink!.clickCountForm > 0) && (
+                                    <span className="text-slate-600"> ({trackingLink!.clickCountButton} botão · {trackingLink!.clickCountForm} formulário)</span>
+                                  )}
+                                </span>
                                 <button onClick={() => { navigator.clipboard.writeText(shortLink); toast.success('Link copiado!') }}
                                   className="text-[11px] text-slate-500 hover:text-white border border-[#2d2550] px-2 py-1.5 rounded-lg hover:border-[#6a11cb]/50 transition-all flex-shrink-0">
                                   Copiar

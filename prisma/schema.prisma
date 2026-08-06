@@ -166,6 +166,10 @@ model TrackingLink {
   trackingPhraseId String?         @unique
   phrase           String
   clickCount       Int             @default(0)
+  // Quebra do clickCount por ponto de contato no site (?via=button|form na URL) — opcional,
+  // fica 0/0 pra links usados fora do site (bio, anúncio) que nunca mandam esse parâmetro.
+  clickCountButton Int             @default(0)
+  clickCountForm   Int             @default(0)
   createdAt        DateTime        @default(now())
   workspace        Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   trackingPhrase   TrackingPhrase? @relation(fields: [trackingPhraseId], references: [id], onDelete: SetNull)

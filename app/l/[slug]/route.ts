@@ -6,12 +6,25 @@ import { prisma } from '@/lib/db'
 // gerava antes — só que agora dá pra medir quantos cliques cada link recebeu. O número do
 // WhatsApp é lido do workspace NA HORA do clique (não congelado na criação do link), então
 // se o cliente trocar o número, os links antigos continuam funcionando com o número novo.
+//
+// `?via=button|form` é opcional — quem cola o link no site pode marcar de qual ponto de
+// contato veio o clique (botão de WhatsApp vs redirect pós-formulário), pra quebrar o
+// contador total na aba Rastreio. Links usados fora do site (bio, anúncio) não mandam esse
+// parâmetro e só contam pro total, sem quebra.
 export async function GET(req: NextRequest, { params }: { params: { slug: string } }) {
   const link = await prisma.trackingLink.findUnique({ where: { slug: params.slug } })
   if (!link) return NextResponse.redirect(new URL('/', req.url))
 
+  const via = req.nextUrl.searchParams.get('via')
   const [, workspace] = await Promise.all([
-    prisma.trackingLink.update({ where: { id: link.id }, data: { clickCount: { increment: 1 } } }),
+    prisma.trackingLink.update({
+      where: { id: link.id },
+      data: {
+        clickCount: { increment: 1 },
+        ...(via === 'button' ? { clickCountButton: { increment: 1 } } : {}),
+        ...(via === 'form' ? { clickCountForm: { increment: 1 } } : {}),
+      },
+    }),
     prisma.workspace.findUnique({ where: { id: link.workspaceId }, select: { whatsappNumber: true } }),
   ])
 
