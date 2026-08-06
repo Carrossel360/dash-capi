@@ -114,10 +114,12 @@ export async function POST(req: NextRequest, { params }: { params: { workspaceId
       email,
       phone,
       // source só vira algo além de "Indefinido" se o formulário carregar um utm_source real
-      // (ex: campo oculto lendo o parâmetro da URL) — o canal (Site) é sempre conhecido.
+      // (ex: cookie de UTM persistido pelo tracker, ou campo oculto lendo o parâmetro da URL)
+      // — o canal ("Formulário", reconhecido pelo badge do Pipeline, igual "Formulário Nativo"
+      // do Meta) é sempre conhecido, já que esse endpoint só recebe submissão de formulário.
       source: body.utm_source ?? fields['utm_source']?.value ?? 'Indefinido',
       utmSource: body.utm_source ?? fields['utm_source']?.value ?? null,
-      utmMedium: body.utm_medium ?? fields['utm_medium']?.value ?? 'Site',
+      utmMedium: body.utm_medium ?? fields['utm_medium']?.value ?? 'Formulário',
       utmCampaign: body.utm_campaign ?? fields['utm_campaign']?.value ?? null,
       metadata: { formName: body.form_name ?? null, raw: body },
       pipelineStageId: firstStage.id,
