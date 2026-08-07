@@ -177,6 +177,7 @@ export default function ConversasPage() {
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [showTagPanel, setShowTagPanel]   = useState(false)
   const [showAssign, setShowAssign]       = useState(false)
+  const [showStatusPanel, setShowStatusPanel] = useState(false)
   const [newTagName, setNewTagName]       = useState('')
   const [newTagColor, setNewTagColor]     = useState(TAG_COLORS[0])
   const [editingTagId, setEditingTagId]   = useState<string | null>(null)
@@ -820,21 +821,27 @@ export default function ConversasPage() {
               <div className="flex items-center gap-2">
                 {/* Status selector */}
                 <div className="relative">
-                  <button onClick={() => setShowAssign(false)}
+                  <button onClick={() => { setShowStatusPanel(s => !s); setShowAssign(false); setShowTagPanel(false) }}
                     className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-[#2d2550] text-slate-300 hover:border-[#6a11cb]/50 transition-colors">
                     <Circle className="w-2.5 h-2.5 fill-current" style={{ color: STATUS_COLORS[detail?.status ?? 'open'] }} />
                     {STATUS_LABELS[detail?.status ?? 'open']}
                     <ChevronDown className="w-3.5 h-3.5 ml-0.5" />
                   </button>
+                  {showStatusPanel && detail && (
+                    <div className="absolute right-0 top-11 z-50 w-44 bg-[#0f0b1e] border border-[#2d2550] rounded-xl shadow-2xl overflow-hidden">
+                      <p className="text-xs text-slate-500 px-3 pt-2 pb-1 font-semibold uppercase tracking-wider">Status</p>
+                      {(['open', 'in_progress', 'closed'] as const).map(s => (
+                        <button key={s}
+                          onClick={() => { updateConv({ status: s }); setShowStatusPanel(false) }}
+                          className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-[#1e1635] transition-colors ${detail.status === s ? 'text-[#8b5cf6]' : 'text-slate-300'}`}>
+                          <Circle className="w-2.5 h-2.5 fill-current flex-shrink-0" style={{ color: STATUS_COLORS[s] }} />
+                          <span className="flex-1">{STATUS_LABELS[s]}</span>
+                          {detail.status === s && <Check className="w-3.5 h-3.5" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                {['open', 'in_progress', 'closed'].map(s => (
-                  detail?.status !== s && (
-                    <button key={s} onClick={() => updateConv({ status: s })}
-                      className="text-xs px-2.5 py-1.5 rounded border border-[#2d2550] text-slate-500 hover:text-white hover:border-[#6a11cb]/50 transition-colors">
-                      → {STATUS_LABELS[s]}
-                    </button>
-                  )
-                ))}
 
                 {/* Assign */}
                 <div className="relative">
