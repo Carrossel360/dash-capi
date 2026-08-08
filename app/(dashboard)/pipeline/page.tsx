@@ -886,7 +886,7 @@ function NewLeadModal({ stages, token, onClose, onCreated }: {
 
 // ── Import leads modal ───────────────────────────────────────────────────────
 
-interface ParsedRow { name: string; phone: string; email: string }
+interface ParsedRow { name: string; phone: string; email: string; source?: string }
 
 // Aceita CSV real (cabeçalho ou não) ou linhas coladas com vírgula/tab/ponto-e-vírgula —
 // cobre tanto colar direto de uma planilha (Excel/Sheets copia com tab) quanto um arquivo
@@ -898,14 +898,15 @@ function parseImportText(text: string): ParsedRow[] {
   const splitLine = (l: string) => l.split(/\t|;|,/).map(c => c.trim())
 
   const firstCells = splitLine(lines[0]).map(c => c.toLowerCase())
-  const looksLikeHeader = firstCells.some(c => ['nome', 'name', 'telefone', 'phone', 'email', 'e-mail'].includes(c))
+  const looksLikeHeader = firstCells.some(c => ['nome', 'name', 'telefone', 'phone', 'email', 'e-mail', 'origem', 'source', 'origin', 'lead_source'].includes(c))
 
-  let nameIdx = 0, phoneIdx = 1, emailIdx = 2
+  let nameIdx = 0, phoneIdx = 1, emailIdx = 2, sourceIdx = -1
   let dataLines = lines
   if (looksLikeHeader) {
     nameIdx = firstCells.findIndex(c => ['nome', 'name'].includes(c))
     phoneIdx = firstCells.findIndex(c => ['telefone', 'phone', 'celular', 'whatsapp'].includes(c))
     emailIdx = firstCells.findIndex(c => ['email', 'e-mail'].includes(c))
+    sourceIdx = firstCells.findIndex(c => ['origem', 'source', 'origin', 'lead_source'].includes(c))
     dataLines = lines.slice(1)
   }
 
@@ -915,6 +916,7 @@ function parseImportText(text: string): ParsedRow[] {
       name: (nameIdx >= 0 ? cells[nameIdx] : '') ?? '',
       phone: (phoneIdx >= 0 ? cells[phoneIdx] : '') ?? '',
       email: (emailIdx >= 0 ? cells[emailIdx] : '') ?? '',
+      source: (sourceIdx >= 0 ? cells[sourceIdx] : '') || undefined,
     }
   }).filter(r => r.phone || r.email)
 }
@@ -1003,10 +1005,10 @@ function ImportLeadsModal({ stages, token, onClose, onImported }: {
                 onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
             </div>
             <textarea value={text} onChange={e => setText(e.target.value)} rows={8}
-              placeholder={'Nome, Telefone, Email\nMaria Silva, 11988887777, maria@email.com\nJoão, 11999998888,'}
+              placeholder={'Nome, Telefone, Email, Origem\nMaria Silva, 11988887777, maria@email.com, GLS\nJoão, 11999998888,, Google Local Services'}
               className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white placeholder-slate-600 focus:outline-none focus:border-[#6a11cb] font-mono" />
             <p className="text-xs text-slate-500">
-              {rows.length > 0 ? `${rows.length} lead${rows.length === 1 ? '' : 's'} detectado${rows.length === 1 ? '' : 's'}` : 'Telefone ou e-mail obrigatório em cada linha — nome pode ficar vazio'}
+              {rows.length > 0 ? `${rows.length} lead${rows.length === 1 ? '' : 's'} detectado${rows.length === 1 ? '' : 's'}` : 'Telefone ou e-mail obrigatório em cada linha — nome e origem podem ficar vazios'}
             </p>
           </div>
         </div>

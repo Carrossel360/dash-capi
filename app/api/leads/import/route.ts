@@ -11,6 +11,7 @@ interface ImportRow {
   name?: string
   phone?: string
   email?: string
+  source?: string
 }
 
 function normalizePhone(raw: string): string | null {
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
     : await prisma.pipelineStage.findFirst({ where: { workspaceId: auth.workspaceId }, orderBy: { order: 'asc' } })
   if (!stage) return NextResponse.json({ error: 'Nenhum estágio de pipeline encontrado' }, { status: 404 })
 
-  const leadSource = source?.trim() || 'Importação Manual'
+  const fallbackSource = source?.trim() || 'Importação Manual'
 
   let created = 0
   let duplicated = 0
@@ -45,6 +46,7 @@ export async function POST(req: NextRequest) {
     const name = row.name?.trim() || ''
     const email = row.email?.trim() || null
     const phone = row.phone ? normalizePhone(row.phone) : null
+    const leadSource = row.source?.trim() || fallbackSource
 
     if (!phone && !email) { invalid++; continue }
 
