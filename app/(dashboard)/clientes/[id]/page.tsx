@@ -72,6 +72,12 @@ const FUNNEL_METRICS = [
   { key: 'results', label: 'Resultados/Vendas' },
 ]
 
+const TURBO_FUNNEL_METRICS = [
+  { key: 'agendamentos', label: 'Agendamentos' },
+  { key: 'compareceram', label: 'Compareceram' },
+  { key: 'fechados', label: 'Fechados' },
+]
+
 const GOOGLE_FUNNEL_METRICS = [
   { key: 'impressions', label: 'Impressões' },
   { key: 'clicks', label: 'Cliques' },
@@ -194,6 +200,8 @@ export default function ClienteDetailPage() {
   const [googleVisible, setGoogleVisible] = useState<string[]>([])
   const [funnelSel, setFunnelSel] = useState<string[]>([])
   const [googleFunnelSel, setGoogleFunnelSel] = useState<string[]>([])
+  const isTurboClient = client?.name?.toLowerCase().trim() === 'turbo' || client?.slug === 'turbo'
+  const funnelMetricOptions = isTurboClient ? [...FUNNEL_METRICS, ...TURBO_FUNNEL_METRICS] : FUNNEL_METRICS
 
   // CRM — estágios do pipeline
   const [stages, setStages] = useState<Stage[]>([])
@@ -892,10 +900,10 @@ export default function ClienteDetailPage() {
                 <div className="glass rounded-2xl p-5 space-y-4">
                   <div>
                     <h2 className="text-sm font-semibold text-white">Etapas do funil de conversão</h2>
-                    <p className="text-xs text-slate-500 mt-1">Escolha as métricas que formam o funil (máx. 6, em ordem).</p>
+                    <p className="text-xs text-slate-500 mt-1">Escolha as métricas que formam o funil, em ordem.</p>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    {FUNNEL_METRICS.map(m => {
+                    {funnelMetricOptions.map(m => {
                       const on = funnelSel.includes(m.key)
                       const idx = funnelSel.indexOf(m.key)
                       return (

@@ -52,8 +52,15 @@ const googleKpiDefs = [
   { key: 'search_impression_share', label: 'Parcela Impressões',  fmt: (v: number) => `${v}%`,                                                                                       icon: TrendingUp,   color: '#6a11cb' },
 ]
 
+const turboManualKpiDefs = [
+  { key: 'agendamentos', label: 'Agendamentos', fmt: (v: number) => v.toLocaleString('pt-BR'), icon: Target, color: '#38bdf8' },
+  { key: 'compareceram', label: 'Compareceram', fmt: (v: number) => v.toLocaleString('pt-BR'), icon: Users, color: '#10b981' },
+  { key: 'fechados', label: 'Fechados', fmt: (v: number) => v.toLocaleString('pt-BR'), icon: ShoppingCart, color: '#F5A314' },
+]
+
 const defaultFunnelMeta   = ['impressions', 'reach', 'link_clicks', 'messaging_conversations_started', 'leads_bc', 'results']
 const defaultFunnelGoogle = ['spend', 'impressions', 'clicks', 'conversions']
+const turboFunnelExtra = ['agendamentos', 'compareceram', 'fechados']
 
 type ApiKpis  = Record<string, number | null>
 type ChartRow = { dia: string; leads: number; vendas: number; gasto: number }
@@ -364,6 +371,7 @@ const FICON: Record<string, React.ElementType> = {
   cost_per_link_click: DollarSign,
   clicks: MousePointer, roas: TrendingUp, quality_score: TrendingUp,
   search_impression_share: Eye, cost_per_conversion: DollarSign,
+  agendamentos: Target, compareceram: Users, fechados: ShoppingCart,
 }
 
 /* Meta palette — purple gradient */
@@ -543,6 +551,7 @@ export default function TrafegoPagoPage() {
   const visibleMeta = currentWorkspace?.metaVisibleMetrics   ?? []
   const visibleGoog = currentWorkspace?.googleVisibleMetrics ?? []
   const isMatriClient = currentWorkspace?.name?.toLowerCase().trim() === 'matri' || currentWorkspace?.slug === 'matri'
+  const isTurboClient = currentWorkspace?.name?.toLowerCase().trim() === 'turbo' || currentWorkspace?.slug === 'turbo'
 
   // Mesma regra de bloqueio do Sidebar (components/Sidebar.tsx): só bloqueia
   // pra viewer de workspace de cliente — agência e admin/manager sempre veem tudo.
@@ -749,10 +758,13 @@ export default function TrafegoPagoPage() {
   const campaigns   = isMeta ? metaCampaigns : googCampaigns
   const apiKpis     = isMeta ? metaKpis : googKpis
   const comparison  = isMeta ? metaComparison : googComparison
-  const kpiDefs     = isMeta ? metaKpiDefs : googleKpiDefs
-  const visibleKeys = isMeta
+  const kpiDefs     = isTurboClient ? [...(isMeta ? metaKpiDefs : googleKpiDefs), ...turboManualKpiDefs] : (isMeta ? metaKpiDefs : googleKpiDefs)
+  const baseVisibleKeys = isMeta
     ? (visibleMeta.length > 0 ? visibleMeta : kpiDefs.map(k => k.key))
     : (visibleGoog.length > 0 ? visibleGoog : kpiDefs.map(k => k.key))
+  const visibleKeys = isTurboClient
+    ? [...baseVisibleKeys, ...turboFunnelExtra.filter(key => !baseVisibleKeys.includes(key))]
+    : baseVisibleKeys
 
   const displayKpis = kpiDefs
     .filter(k => visibleKeys.includes(k.key) && (apiKpis[k.key] ?? 0) !== null)
@@ -761,9 +773,12 @@ export default function TrafegoPagoPage() {
   const kpiMap = Object.fromEntries(
     kpiDefs.map(k => [k.key, { ...k, value: manualOverrides[k.key] ?? (apiKpis[k.key] ?? 0) }])
   )
-  const activeFunnel = isMeta
+  const baseFunnel = isMeta
     ? (funnelKeys.length > 0 ? funnelKeys : defaultFunnelMeta)
     : (googleFunnelKeys.length > 0 ? googleFunnelKeys : defaultFunnelGoogle)
+  const activeFunnel = isTurboClient
+    ? [...baseFunnel, ...turboFunnelExtra.filter(key => !baseFunnel.includes(key))]
+    : baseFunnel
 
   const filteredCreatives = creatives
     .filter(c => creativeStatusFilter === 'all' || (creativeStatusFilter === 'active') === (c.effectiveStatus === 'ACTIVE'))
