@@ -107,6 +107,8 @@ model Workspace {
   notifications         Notification[]
   monitorStatuses       MonitorStatus[]
   extraServices         WorkspaceService[]
+  leadReconciliationSummary LeadReconciliationSummary?
+  leadReconciliationRows    LeadReconciliationRow[]
 }
 
 model ManualMetric {
@@ -803,6 +805,43 @@ model ReportConfig {
   workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, service])
+}
+
+// Conciliação especial Lead BC x CRM+Tráfego do cliente Matri. Os dados são agregados
+// por mês/origem e podem ser editados manualmente até existir upload automático das planilhas.
+model LeadReconciliationSummary {
+  id                  String    @id @default(cuid())
+  workspaceId          String    @unique
+  totalLinhasBc        Int
+  leadsUnicos          Int
+  duplicatas           Int
+  leadsConvertidos     Int
+  leadsNaoConvertidos  Int
+  faturamentoTotal     Decimal   @db.Decimal(12, 2)
+  ticketMedio          Decimal   @db.Decimal(12, 2)
+  taxaConversao        Decimal   @db.Decimal(6, 2)
+  leadsCrmTotal        Int
+  obs                 String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  workspace           Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model LeadReconciliationRow {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  origin         String
+  period         String    // 'total' ou YYYY-MM
+  leadsUnicos    Int
+  convertidos    Int
+  faturamento    Decimal   @db.Decimal(12, 2)
+  month          DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, origin, period])
+  @@index([workspaceId, month])
 }
 
 // ─── Monitoramento e Alertas ───────────────────────────────────────────────────

@@ -25,6 +25,7 @@ interface DashData {
   gbpCalls: number | null
   gbpRating: number | null
   hasGbp: boolean
+  hasReconciliation: boolean
 }
 
 interface MonthlyChartRow { mes: string; meta: number; google: number }
@@ -35,6 +36,7 @@ const empty: DashData = {
   crmLeads: 0, crmDeals: 0,
   igFollowers: null, igReach: 0, igEngagement: 0, hasInstagram: false,
   gbpViews: null, gbpCalls: null, gbpRating: null, hasGbp: false,
+  hasReconciliation: false,
 }
 
 const Tt = ({ active, payload, label }: { active?: boolean; payload?: { value: number; name: string; color: string }[]; label?: string }) => {
@@ -73,6 +75,7 @@ export default function DashboardPage() {
   // Carrossel (isAgency:true) vê os blocos Comercial/Sucesso/Financeiro em vez do dashboard
   // de KPIs de cliente. Mesma rota (/dashboard), conteúdo ramifica pelo contexto atual.
   const isAgencyAdmin = !!currentWorkspace?.isAgency && ['admin', 'manager'].includes(currentWorkspace?.role ?? '')
+  const isMatriClient = currentWorkspace?.name?.toLowerCase().trim() === 'matri' || currentWorkspace?.slug === 'matri'
   const curr = currencySymbol(currentWorkspace?.currency)
   const [data, setData] = useState<DashData>(empty)
   const [monthlyChart, setMonthlyChart] = useState<MonthlyChartRow[]>([])
@@ -115,6 +118,11 @@ export default function DashboardPage() {
     return null
   }
 
+  function reconciliationPeriod(): string {
+    const now = new Date()
+    return periodToYearMonth() ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  }
+
   const load = useCallback(async () => {
     if (!token) return
     if (isAgencyAdmin) { setLoading(false); return } // AgencyOverview busca os próprios dados
@@ -126,7 +134,7 @@ export default function DashboardPage() {
     const ym = periodToYearMonth()
     const gbpUrl = ym ? `/api/google-business?period=${ym}` : '/api/google-business'
     try {
-      const [metaRes, googRes, leadsRes, dealsRes, monthlyRes, socialRes, gbpRes] = await Promise.all([
+      const [metaRes, googRes, leadsRes, dealsRes, monthlyRes, socialRes, gbpRes, reconciliationRes] = await Promise.all([
         fetch(`/api/trafego/meta?${periodQs}`, { headers: h }),
         fetch(`/api/trafego/google?${periodQs}`, { headers: h }),
         fetch(`/api/leads?${periodQs}`, { headers: h }),
@@ -137,6 +145,9 @@ export default function DashboardPage() {
         fetch('/api/dashboard/leads-by-month', { headers: h }),
         fetch(`/api/social-media?${periodQs}`, { headers: h }),
         fetch(gbpUrl, { headers: h }),
+        isMatriClient
+          ? fetch(`/api/leads-cruzamento?period=${reconciliationPeriod()}`, { headers: h })
+          : Promise.resolve(null),
       ])
 
       const meta = metaRes.ok ? await metaRes.json() : null
@@ -146,10 +157,16 @@ export default function DashboardPage() {
       const monthly = monthlyRes.ok ? await monthlyRes.json() : null
       const social = socialRes.ok ? await socialRes.json() : null
       const gbp = gbpRes.ok ? await gbpRes.json() : null
+      const reconciliation = reconciliationRes?.ok ? await reconciliationRes.json() : null
 
       const leads = Array.isArray(leadsArr) ? leadsArr : []
       const dealLeads = Array.isArray(dealsArr) ? dealsArr : []
-      const crmDeals = dealLeads.reduce((s: number, l: { dealValue?: number }) => s + (l.dealValue ?? 0), 0)
+      const crmDealsFromPipeline = dealLeads.reduce((s: number, l: { dealValue?: number }) => s + (l.dealValue ?? 0), 0)
+      const reconciliationRevenue = Array.isArray(reconciliation?.rows)
+        ? reconciliation.rows.reduce((s: number, r: { faturamento?: number }) => s + (r.faturamento ?? 0), 0)
+        : 0
+      const hasReconciliation = isMatriClient && reconciliationRevenue > 0
+      const crmDeals = hasReconciliation ? reconciliationRevenue : crmDealsFromPipeline
 
       // Sem `period` explícito, /api/google-business devolve os últimos 12 meses (mais antigo
       // primeiro) — pega o mais recente. Com `period`, devolve um único registro (ou null).
@@ -170,12 +187,13 @@ export default function DashboardPage() {
         gbpCalls: gbpRow?.phoneCalls ?? null,
         gbpRating: gbpRow?.averageStars ?? null,
         hasGbp: !!gbpRow,
+        hasReconciliation,
       })
       setMonthlyChart(monthly?.chart ?? [])
     } catch { /* show zeros */ } finally {
       setLoading(false)
     }
-  }, [token, period, customRange, specificMonth, isAgencyAdmin]) // eslint-disable-line
+  }, [token, period, customRange, specificMonth, isAgencyAdmin, isMatriClient]) // eslint-disable-line
 
   useEffect(() => { load() }, [load])
 
@@ -188,14 +206,14 @@ export default function DashboardPage() {
   const kpis = [
     { label: 'Investimento', href: '/trafego-pago', value: `${curr} ${fmt(totalSpend)}`, icon: DollarSign, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)', border: 'rgba(139,92,246,0.25)', sub: `Meta: ${curr}${fmt(data.metaSpend)} · Google: ${curr}${fmt(data.googSpend)}` },
     { label: 'Leads', href: '/trafego-pago', value: fmt(totalLeads), icon: Users, color: '#10b981', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.25)', sub: `Meta: ${data.metaLeads} · Google: ${data.googLeads}` },
-    { label: 'Faturamento', href: '/pipeline', value: `${curr} ${fmt(data.crmDeals)}`, icon: DollarSign, color: '#F5A314', bg: 'rgba(245,163,20,0.1)', border: 'rgba(245,163,20,0.25)', sub: 'Vendas marcadas no CRM' },
-    { label: 'ROAS', href: '/pipeline', value: `${roas.toFixed(1)}x`, icon: Percent, color: '#2575fc', bg: 'rgba(37,117,252,0.1)', border: 'rgba(37,117,252,0.25)', sub: 'Faturamento ÷ Investimento' },
+    { label: 'Faturamento', href: data.hasReconciliation ? '/trafego-pago?tab=cruzamento' : '/pipeline', value: `${curr} ${fmt(data.crmDeals)}`, icon: DollarSign, color: '#F5A314', bg: 'rgba(245,163,20,0.1)', border: 'rgba(245,163,20,0.25)', sub: data.hasReconciliation ? 'Conciliação Matri' : 'Vendas marcadas no CRM' },
+    { label: 'ROAS', href: data.hasReconciliation ? '/trafego-pago?tab=cruzamento' : '/pipeline', value: `${roas.toFixed(1)}x`, icon: Percent, color: '#2575fc', bg: 'rgba(37,117,252,0.1)', border: 'rgba(37,117,252,0.25)', sub: 'Faturamento ÷ Investimento' },
   ]
 
   const channels = [
     { label: 'Tráfego Pago', href: '/trafego-pago', icon: TrendingUp, color: '#8b5cf6', badge: 'Meta + Google',
       stats: [{ label: 'Gasto', value: `${curr}${fmt(totalSpend)}` }, { label: 'Leads', value: fmt(totalLeads) }, { label: 'ROAS', value: `${roas.toFixed(1)}x` }] },
-    { label: 'CRM Pipeline', href: '/pipeline', icon: Users, color: '#10b981', badge: 'Leads e Vendas',
+    { label: data.hasReconciliation ? 'Cruzamento Matri' : 'CRM Pipeline', href: data.hasReconciliation ? '/trafego-pago?tab=cruzamento' : '/pipeline', icon: Users, color: '#10b981', badge: data.hasReconciliation ? 'Leads e Faturamento' : 'Leads e Vendas',
       stats: [{ label: 'Leads', value: String(data.crmLeads) }, { label: 'Vendas', value: `${curr}${fmt(data.crmDeals)}` }, { label: 'CAPI', value: '—' }] },
     { label: 'Social Media', href: '/social-media', icon: Share2, color: '#ec4899', badge: 'Instagram · Facebook',
       stats: [
@@ -353,7 +371,7 @@ export default function DashboardPage() {
                     <td className="px-4 py-3 text-white font-semibold text-right">{data.crmLeads}</td>
                   </tr>
                   <tr className="border-b border-[#1e1635]/50">
-                    <td className="px-4 py-3 text-slate-400">Faturamento (vendas marcadas)</td>
+                    <td className="px-4 py-3 text-slate-400">{data.hasReconciliation ? 'Faturamento (conciliação Matri)' : 'Faturamento (vendas marcadas)'}</td>
                     <td className="px-4 py-3 text-white font-semibold text-right">{curr} {fmt(data.crmDeals)}</td>
                   </tr>
                   <tr className="border-b border-[#1e1635]/50">

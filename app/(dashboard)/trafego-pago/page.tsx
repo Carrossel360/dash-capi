@@ -13,6 +13,7 @@ import TopBar from '@/components/TopBar'
 import PeriodSelector, { type Period } from '@/components/PeriodSelector'
 import LockedServiceModal from '@/components/LockedServiceModal'
 import GoogleLocalPanel from '@/components/GoogleLocalPanel'
+import LeadReconciliationPanel from '@/components/LeadReconciliationPanel'
 import { useAuthStore } from '@/lib/store/auth'
 
 const currencySymbol = (c?: string) => c === 'USD' ? 'US$' : 'R$'
@@ -57,6 +58,7 @@ const defaultFunnelGoogle = ['spend', 'impressions', 'clicks', 'conversions']
 type ApiKpis  = Record<string, number | null>
 type ChartRow = { dia: string; leads: number; vendas: number; gasto: number }
 type Campaign = { name: string; status: string; gasto: string; impressoes: string; cliques: string; ctr: string; leads: number; cpl: string; vendas: number; roas: string }
+type TrafficTab = 'meta' | 'google' | 'local' | 'cruzamento'
 type GoogleKeyword    = { campaign: string; keyword: string; matchType: string; impressions: number; clicks: number; conversions: number; ctr: number; cost: number }
 type GoogleSearchTerm = { campaign: string; term: string; status: string; impressions: number; clicks: number; conversions: number; ctr: number; cost: number }
 type Creative = {
@@ -540,6 +542,7 @@ export default function TrafegoPagoPage() {
   const googleFunnelKeys = currentWorkspace?.googleFunnelMetrics ?? defaultFunnelGoogle
   const visibleMeta = currentWorkspace?.metaVisibleMetrics   ?? []
   const visibleGoog = currentWorkspace?.googleVisibleMetrics ?? []
+  const isMatriClient = currentWorkspace?.name?.toLowerCase().trim() === 'matri' || currentWorkspace?.slug === 'matri'
 
   // Mesma regra de bloqueio do Sidebar (components/Sidebar.tsx): só bloqueia
   // pra viewer de workspace de cliente — agência e admin/manager sempre veem tudo.
@@ -550,9 +553,10 @@ export default function TrafegoPagoPage() {
   const googleLocked = !isAgency && isViewer && !(services?.googleAds ?? false)
   const localLocked  = !isAgency && isViewer && !(services?.googleLocal ?? false)
 
-  const [tab, setTab] = useState<'meta' | 'google' | 'local'>(() => {
+  const [tab, setTab] = useState<TrafficTab>(() => {
     const fromUrl = searchParams.get('tab')
     if (fromUrl === 'meta' || fromUrl === 'google' || fromUrl === 'local') return fromUrl
+    if (fromUrl === 'cruzamento' && isMatriClient) return fromUrl
     return (metaLocked && !googleLocked) ? 'google' : 'meta'
   })
   const [lockedTab, setLockedTab] = useState<'meta' | 'google' | 'local' | null>(null)
@@ -625,6 +629,7 @@ export default function TrafegoPagoPage() {
   useEffect(() => {
     if (!token) return
     if (period === 'custom' && !customRange) return
+    if (tab === 'local' || tab === 'cruzamento') return
     const service = tab === 'meta' ? 'meta_ads' : 'google_ads'
     fetch(`/api/manual-metrics?service=${service}&period=${encodeURIComponent(periodKey)}`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -687,6 +692,7 @@ export default function TrafegoPagoPage() {
       const body = period === 'custom' && customRange
         ? { period: 'custom', from: customRange.from, to: customRange.to }
         : { period }
+      if (tab === 'local' || tab === 'cruzamento') return
       const endpoint = tab === 'meta' ? '/api/trafego/meta/backfill' : '/api/trafego/google/backfill'
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -795,14 +801,15 @@ export default function TrafegoPagoPage() {
 
           {/* Platform tabs + Period */}
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex gap-2">
-              {(['meta', 'google', 'local'] as const).map((p) => {
-                const locked = p === 'meta' ? metaLocked : p === 'google' ? googleLocked : localLocked
-                const color = p === 'meta' ? '#6a11cb' : p === 'google' ? '#ea4335' : '#4285f4'
-                const label = p === 'meta' ? 'Meta Ads' : p === 'google' ? 'Google Ads' : 'Local Service'
-                const glyph = p === 'meta' ? 'f' : p === 'google' ? 'G' : '★'
+            <div className="flex gap-2 flex-wrap">
+              {([
+                { key: 'meta', label: 'Meta Ads', glyph: 'f', color: '#6a11cb', locked: metaLocked },
+                { key: 'google', label: 'Google Ads', glyph: 'G', color: '#ea4335', locked: googleLocked },
+                { key: 'local', label: 'Local Service', glyph: '★', color: '#4285f4', locked: localLocked },
+                ...(isMatriClient ? [{ key: 'cruzamento' as const, label: 'Cruzamento de Leads', glyph: '×', color: '#8b5cf6', locked: false }] : []),
+              ] as const).map(({ key: p, label, glyph, color, locked }) => {
                 return (
-                  <button key={p} onClick={() => locked ? setLockedTab(p) : setTab(p)}
+                  <button key={p} onClick={() => locked && p !== 'cruzamento' ? setLockedTab(p) : setTab(p)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${tab === p && !locked ? 'text-white border-transparent' : 'bg-transparent text-slate-400 border-[#1e1635] hover:text-white'}`}
                     style={tab === p && !locked ? { background: color, boxShadow: `0 4px 16px ${color}4d` } : {}}
                   >
@@ -814,7 +821,7 @@ export default function TrafegoPagoPage() {
               })}
             </div>
             <div className="w-px h-5 bg-[#1e1635]" />
-            {tab !== 'local' && (
+            {tab !== 'local' && tab !== 'cruzamento' && (
               <>
                 <PeriodSelector
                   value={period}
@@ -845,8 +852,9 @@ export default function TrafegoPagoPage() {
           </div>
 
           {tab === 'local' && <GoogleLocalPanel />}
+          {tab === 'cruzamento' && token && <LeadReconciliationPanel token={token} />}
 
-          {tab !== 'local' && <>
+          {tab !== 'local' && tab !== 'cruzamento' && <>
 
           {/* Análise de Criativos (Meta) — logo abaixo das abas, antes das métricas: sessão
               própria da Meta (como um "subtítulo"), não escondida no fim da página. */}
