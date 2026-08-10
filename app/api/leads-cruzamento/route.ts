@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthPayload } from '@/lib/auth'
+import { getAuthPayload, isAgencyStaff } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
 const ORIGINS = ['Google', 'Meta', 'Indefinido']
@@ -97,7 +97,7 @@ export async function GET(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   const auth = await getAuthPayload(req)
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!['admin', 'manager'].includes(auth.role)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+  if (!(await isAgencyStaff(auth.userId))) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
   const guard = await requireMatriWorkspace(auth.workspaceId)
   if ('error' in guard) return guard.error

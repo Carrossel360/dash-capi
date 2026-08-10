@@ -544,7 +544,7 @@ function VisualFunnel({ keys, kpiMap, currency, palette = FC }: {
 
 export default function TrafegoPagoPage() {
   const searchParams = useSearchParams()
-  const { currentWorkspace, token } = useAuthStore()
+  const { currentWorkspace, token, accessibleWorkspaces } = useAuthStore()
   const currency    = currentWorkspace?.currency ?? 'BRL'
   const funnelKeys       = currentWorkspace?.funnelMetrics       ?? defaultFunnelMeta
   const googleFunnelKeys = currentWorkspace?.googleFunnelMetrics ?? defaultFunnelGoogle
@@ -552,6 +552,7 @@ export default function TrafegoPagoPage() {
   const visibleGoog = currentWorkspace?.googleVisibleMetrics ?? []
   const isMatriClient = currentWorkspace?.name?.toLowerCase().trim() === 'matri' || currentWorkspace?.slug === 'matri'
   const isTurboClient = currentWorkspace?.name?.toLowerCase().includes('turbo') || currentWorkspace?.slug?.includes('turbo')
+  const canEditManualMetrics = accessibleWorkspaces.some(w => w.isAgency && ['admin', 'manager'].includes(w.role ?? ''))
 
   // Mesma regra de bloqueio do Sidebar (components/Sidebar.tsx): só bloqueia
   // pra viewer de workspace de cliente — agência e admin/manager sempre veem tudo.
@@ -867,7 +868,7 @@ export default function TrafegoPagoPage() {
           </div>
 
           {tab === 'local' && <GoogleLocalPanel />}
-          {tab === 'cruzamento' && token && <LeadReconciliationPanel token={token} />}
+          {tab === 'cruzamento' && token && <LeadReconciliationPanel token={token} canEdit={canEditManualMetrics} />}
 
           {tab !== 'local' && tab !== 'cruzamento' && <>
 
@@ -982,16 +983,18 @@ export default function TrafegoPagoPage() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {displayKpis.map(({ key, label, value, fmt, color, icon: Icon }) => (
                 <div key={key} className="glass card-hover rounded-xl p-4 group relative">
-                  <button onClick={() => setManualEdit({ key, label, value: value.toString() })}
-                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-slate-600 hover:text-[#6a11cb]">
-                    <Edit3 className="w-3 h-3" />
-                  </button>
+                  {canEditManualMetrics && (
+                    <button onClick={() => setManualEdit({ key, label, value: value.toString() })}
+                      className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-slate-600 hover:text-[#6a11cb]">
+                      <Edit3 className="w-3 h-3" />
+                    </button>
+                  )}
                   <div className="flex items-start justify-between mb-3">
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center theme-locked-accent" style={{ background: `${color}15` }}>
                       <Icon className="w-4 h-4" style={{ color }} />
                     </div>
                   </div>
-                  {manualOverrides[key] !== undefined && (
+                  {canEditManualMetrics && manualOverrides[key] !== undefined && (
                     <div className="flex items-center gap-1 mb-1">
                       <button onClick={() => removeManualOverride(key)}
                         className="text-slate-600 hover:text-red-400"><X className="w-3 h-3" /></button>

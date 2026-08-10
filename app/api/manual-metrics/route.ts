@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthPayload } from '@/lib/auth'
+import { getAuthPayload, isAgencyStaff } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
 // 'agencia' — métricas da Visão Geral da Agência sem fonte automática (item 4/12 do pedido):
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   const auth = await getAuthPayload(req)
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!['admin', 'manager'].includes(auth.role)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+  if (!(await isAgencyStaff(auth.userId))) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
   const { service, period, metricKey, value } = await req.json()
   if (!service || !period || !metricKey || value === undefined || !VALID_SERVICES.includes(service)) {
@@ -51,7 +51,7 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const auth = await getAuthPayload(req)
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!['admin', 'manager'].includes(auth.role)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+  if (!(await isAgencyStaff(auth.userId))) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
   const service = req.nextUrl.searchParams.get('service')
   const period = req.nextUrl.searchParams.get('period')

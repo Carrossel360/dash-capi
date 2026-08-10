@@ -196,7 +196,7 @@ function RowModal({ row, token, onClose, onSaved }: { row: Row; token: string; o
   )
 }
 
-function ResultTable({ title, rows, onEdit }: { title: string; rows: Row[]; onEdit: (row: Row) => void }) {
+function ResultTable({ title, rows, canEdit, onEdit }: { title: string; rows: Row[]; canEdit: boolean; onEdit: (row: Row) => void }) {
   const ordered = ['Google', 'Indefinido', 'Meta'].map(o => rows.find(r => r.origin === o)).filter((r): r is Row => !!r)
   const total = derive(ordered)
   const color = title.includes('Março') || title.includes('Junho') ? '#2f6b35' : title.includes('Abril') || title.includes('Julho') ? '#70368f' : '#23486f'
@@ -206,10 +206,12 @@ function ResultTable({ title, rows, onEdit }: { title: string; rows: Row[]; onEd
         <span className="inline-flex px-3 py-1.5 rounded-md text-xs font-bold uppercase text-white" style={{ background: color }}>
           {title}
         </span>
-        <button onClick={() => ordered[0] && onEdit(ordered[0])}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#2d2550] text-xs text-slate-300 hover:text-white hover:border-[#6a11cb]">
-          <Edit3 className="w-3.5 h-3.5" /> Editar
-        </button>
+        {canEdit && (
+          <button onClick={() => ordered[0] && onEdit(ordered[0])}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#2d2550] text-xs text-slate-300 hover:text-white hover:border-[#6a11cb]">
+            <Edit3 className="w-3.5 h-3.5" /> Editar
+          </button>
+        )}
       </div>
       <div className="overflow-x-auto rounded-lg border border-[#2d2550]">
         <table className="w-full text-xs">
@@ -226,7 +228,7 @@ function ResultTable({ title, rows, onEdit }: { title: string; rows: Row[]; onEd
               const ticket = r.convertidos > 0 ? r.faturamento / r.convertidos : 0
               const roas = r.origin === 'Indefinido' ? null : (r.spend > 0 ? r.faturamento / r.spend : 0)
               return (
-                <tr key={r.id} onClick={() => onEdit(r)} className="border-b border-[#2d2550]/70 hover:bg-white/[0.03] cursor-pointer">
+                <tr key={r.id} onClick={() => canEdit && onEdit(r)} className={`border-b border-[#2d2550]/70 hover:bg-white/[0.03] ${canEdit ? 'cursor-pointer' : ''}`}>
                   <td className="px-3 py-2.5 text-white font-medium">{r.origin}</td>
                   <td className="px-3 py-2.5 text-slate-200 text-right">{fmtInt(r.leadsUnicos)}</td>
                   <td className="px-3 py-2.5 text-slate-200 text-right">{fmtInt(r.convertidos)}</td>
@@ -253,7 +255,7 @@ function ResultTable({ title, rows, onEdit }: { title: string; rows: Row[]; onEd
   )
 }
 
-export default function LeadReconciliationPanel({ token }: { token: string }) {
+export default function LeadReconciliationPanel({ token, canEdit }: { token: string; canEdit: boolean }) {
   const [summary, setSummary] = useState<Summary | null>(null)
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
@@ -347,18 +349,20 @@ export default function LeadReconciliationPanel({ token }: { token: string }) {
 
   return (
     <div className="space-y-6">
-      {editSummary && <SummaryModal summary={summary} token={token} onClose={() => setEditSummary(false)} onSaved={load} />}
-      {editRow && <RowModal row={editRow} token={token} onClose={() => setEditRow(null)} onSaved={load} />}
+      {canEdit && editSummary && <SummaryModal summary={summary} token={token} onClose={() => setEditSummary(false)} onSaved={load} />}
+      {canEdit && editRow && <RowModal row={editRow} token={token} onClose={() => setEditRow(null)} onSaved={load} />}
 
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-white">Cruzamento de Leads — Salão Matri</h2>
           <p className="text-sm text-slate-400 mt-1">Lead BC × Controle de Atendimento CRM+Tráfego</p>
         </div>
-        <button onClick={() => setEditSummary(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[#2d2550] text-sm text-slate-300 hover:text-white hover:border-[#6a11cb]">
-          <Edit3 className="w-4 h-4" /> Editar Indicadores
-        </button>
+        {canEdit && (
+          <button onClick={() => setEditSummary(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[#2d2550] text-sm text-slate-300 hover:text-white hover:border-[#6a11cb]">
+            <Edit3 className="w-4 h-4" /> Editar Indicadores
+          </button>
+        )}
       </div>
 
       <section className="space-y-3">
@@ -382,21 +386,23 @@ export default function LeadReconciliationPanel({ token }: { token: string }) {
       <section className="space-y-4">
         <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Resultados por Origem</p>
         {groups.map(g => (
-          <ResultTable key={g.period} title={monthLabel(g.period)} rows={g.rows} onEdit={setEditRow} />
+          <ResultTable key={g.period} title={monthLabel(g.period)} rows={g.rows} canEdit={canEdit} onEdit={setEditRow} />
         ))}
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="month"
-            value={newPeriod}
-            onChange={e => setNewPeriod(e.target.value)}
-            className="px-3 py-2 rounded-lg text-xs bg-[#0f0b1e] border border-[#2d2550] text-white focus:outline-none focus:border-[#6a11cb]"
-          />
-          <button onClick={addMonth} disabled={addingMonth || !newPeriod}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#2d2550] text-xs font-semibold text-slate-300 hover:text-white hover:border-[#6a11cb] disabled:opacity-50">
-            {addingMonth ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '+'}
-            Adicionar Mês
-          </button>
-        </div>
+        {canEdit && (
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="month"
+              value={newPeriod}
+              onChange={e => setNewPeriod(e.target.value)}
+              className="px-3 py-2 rounded-lg text-xs bg-[#0f0b1e] border border-[#2d2550] text-white focus:outline-none focus:border-[#6a11cb]"
+            />
+            <button onClick={addMonth} disabled={addingMonth || !newPeriod}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#2d2550] text-xs font-semibold text-slate-300 hover:text-white hover:border-[#6a11cb] disabled:opacity-50">
+              {addingMonth ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '+'}
+              Adicionar Mês
+            </button>
+          </div>
+        )}
       </section>
     </div>
   )
