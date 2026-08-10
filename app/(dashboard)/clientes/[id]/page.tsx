@@ -200,7 +200,7 @@ export default function ClienteDetailPage() {
   const [googleVisible, setGoogleVisible] = useState<string[]>([])
   const [funnelSel, setFunnelSel] = useState<string[]>([])
   const [googleFunnelSel, setGoogleFunnelSel] = useState<string[]>([])
-  const isTurboClient = client?.name?.toLowerCase().trim() === 'turbo' || client?.slug === 'turbo'
+  const isTurboClient = client?.name?.toLowerCase().includes('turbo') || client?.slug?.includes('turbo')
   const funnelMetricOptions = isTurboClient ? [...FUNNEL_METRICS, ...TURBO_FUNNEL_METRICS] : FUNNEL_METRICS
 
   // CRM — estágios do pipeline

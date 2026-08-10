@@ -551,7 +551,7 @@ export default function TrafegoPagoPage() {
   const visibleMeta = currentWorkspace?.metaVisibleMetrics   ?? []
   const visibleGoog = currentWorkspace?.googleVisibleMetrics ?? []
   const isMatriClient = currentWorkspace?.name?.toLowerCase().trim() === 'matri' || currentWorkspace?.slug === 'matri'
-  const isTurboClient = currentWorkspace?.name?.toLowerCase().trim() === 'turbo' || currentWorkspace?.slug === 'turbo'
+  const isTurboClient = currentWorkspace?.name?.toLowerCase().includes('turbo') || currentWorkspace?.slug?.includes('turbo')
 
   // Mesma regra de bloqueio do Sidebar (components/Sidebar.tsx): só bloqueia
   // pra viewer de workspace de cliente — agência e admin/manager sempre veem tudo.
