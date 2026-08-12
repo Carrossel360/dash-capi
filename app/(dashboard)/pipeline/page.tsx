@@ -9,12 +9,13 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-
 import { CSS } from '@dnd-kit/utilities'
 import {
   Plus, Phone, Mail, GripVertical, Loader2, X, Check,
-  Clock, Globe, Trash2, ShoppingBag, DollarSign, Calendar, MessageCircle, MessageSquare, Search, Upload,
+  Clock, Globe, Trash2, ShoppingBag, DollarSign, Calendar, MessageCircle, MessageSquare, Search, Upload, Download,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
 import { useAuthStore } from '@/lib/store/auth'
+import { parseImportText } from '@/lib/lead-import-parser'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -886,41 +887,6 @@ function NewLeadModal({ stages, token, onClose, onCreated }: {
 
 // ── Import leads modal ───────────────────────────────────────────────────────
 
-interface ParsedRow { name: string; phone: string; email: string; source?: string }
-
-// Aceita CSV real (cabeçalho ou não) ou linhas coladas com vírgula/tab/ponto-e-vírgula —
-// cobre tanto colar direto de uma planilha (Excel/Sheets copia com tab) quanto um arquivo
-// .csv exportado de outra ferramenta, sem precisar de uma lib de parsing pra 3 colunas fixas.
-function parseImportText(text: string): ParsedRow[] {
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
-  if (lines.length === 0) return []
-
-  const splitLine = (l: string) => l.split(/\t|;|,/).map(c => c.trim())
-
-  const firstCells = splitLine(lines[0]).map(c => c.toLowerCase())
-  const looksLikeHeader = firstCells.some(c => ['nome', 'name', 'telefone', 'phone', 'email', 'e-mail', 'origem', 'source', 'origin', 'lead_source'].includes(c))
-
-  let nameIdx = 0, phoneIdx = 1, emailIdx = 2, sourceIdx = -1
-  let dataLines = lines
-  if (looksLikeHeader) {
-    nameIdx = firstCells.findIndex(c => ['nome', 'name'].includes(c))
-    phoneIdx = firstCells.findIndex(c => ['telefone', 'phone', 'celular', 'whatsapp'].includes(c))
-    emailIdx = firstCells.findIndex(c => ['email', 'e-mail'].includes(c))
-    sourceIdx = firstCells.findIndex(c => ['origem', 'source', 'origin', 'lead_source'].includes(c))
-    dataLines = lines.slice(1)
-  }
-
-  return dataLines.map(l => {
-    const cells = splitLine(l)
-    return {
-      name: (nameIdx >= 0 ? cells[nameIdx] : '') ?? '',
-      phone: (phoneIdx >= 0 ? cells[phoneIdx] : '') ?? '',
-      email: (emailIdx >= 0 ? cells[emailIdx] : '') ?? '',
-      source: (sourceIdx >= 0 ? cells[sourceIdx] : '') || undefined,
-    }
-  }).filter(r => r.phone || r.email)
-}
-
 function ImportLeadsModal({ stages, token, onClose, onImported }: {
   stages: Stage[]
   token: string
@@ -941,6 +907,20 @@ function ImportLeadsModal({ stages, token, onClose, onImported }: {
     reader.readAsText(file)
   }
 
+  function downloadTemplate() {
+    const defaultStatus = stages[0]?.name ?? 'Novo Lead'
+    const csv = [
+      ['Nome', 'Telefone', 'Email', 'Origem', 'Status', 'Data do Lead', 'Observações'],
+      ['Maria Silva', '11988887777', 'maria@email.com', 'Google', defaultStatus, '2026-08-11', ''],
+    ].map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\r\n')
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'modelo-importacao-leads.csv'
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   async function handleImport() {
     if (rows.length === 0) {
       toast.error('Cole ou envie ao menos uma linha com telefone ou e-mail')
@@ -955,7 +935,7 @@ function ImportLeadsModal({ stages, token, onClose, onImported }: {
       })
       if (!res.ok) throw new Error()
       const result = await res.json()
-      toast.success(`${result.created} lead${result.created === 1 ? '' : 's'} importado${result.created === 1 ? '' : 's'}${result.duplicated ? ` — ${result.duplicated} já existia(m)` : ''}${result.invalid ? ` — ${result.invalid} sem telefone/e-mail` : ''}`)
+      toast.success(`${result.created} lead${result.created === 1 ? '' : 's'} importado${result.created === 1 ? '' : 's'}${result.duplicated ? ` — ${result.duplicated} já existia(m)` : ''}${result.invalid ? ` — ${result.invalid} sem identificação` : ''}${result.statusFallback ? ` — ${result.statusFallback} com status não encontrado` : ''}`)
       onImported()
       onClose()
     } catch {
@@ -996,20 +976,46 @@ function ImportLeadsModal({ stages, token, onClose, onImported }: {
 
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-medium text-slate-400">Cole nome, telefone e e-mail (um lead por linha)</label>
-              <button onClick={() => fileInputRef.current?.click()}
-                className="text-xs text-[#8b5cf6] hover:text-white transition-colors">
-                Enviar arquivo .csv
-              </button>
+              <label className="text-xs font-medium text-slate-400">Cole os leads ou envie um CSV</label>
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={downloadTemplate}
+                  className="flex items-center gap-1 text-xs text-slate-500 hover:text-white transition-colors">
+                  <Download className="h-3 w-3" /> Modelo
+                </button>
+                <button type="button" onClick={() => fileInputRef.current?.click()}
+                  className="text-xs text-[#8b5cf6] hover:text-white transition-colors">
+                  Enviar arquivo .csv
+                </button>
+              </div>
               <input ref={fileInputRef} type="file" accept=".csv,.txt" className="hidden"
                 onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
             </div>
             <textarea value={text} onChange={e => setText(e.target.value)} rows={8}
-              placeholder={'Nome, Telefone, Email, Origem\nMaria Silva, 11988887777, maria@email.com, GLS\nJoão, 11999998888,, Google Local Services'}
+              placeholder={'Nome,Telefone,Email,Origem,Status,Data do Lead\nMaria Silva,11988887777,maria@email.com,Google,Novo Lead,2026-08-11'}
               className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white placeholder-slate-600 focus:outline-none focus:border-[#6a11cb] font-mono" />
             <p className="text-xs text-slate-500">
-              {rows.length > 0 ? `${rows.length} lead${rows.length === 1 ? '' : 's'} detectado${rows.length === 1 ? '' : 's'}` : 'Telefone ou e-mail obrigatório em cada linha — nome e origem podem ficar vazios'}
+              {rows.length > 0
+                ? `${rows.length} lead${rows.length === 1 ? '' : 's'} detectado${rows.length === 1 ? '' : 's'}${rows.some(row => row.status) ? ` — ${rows.filter(row => row.status).length} com status definido` : ''}`
+                : 'O CSV original do Google Local Services é reconhecido automaticamente. Para definir o estágio por linha, use a coluna Status.'}
             </p>
+            {rows.length > 0 && (
+              <div className="overflow-hidden rounded-lg border border-[#1e1635] bg-[#090713]">
+                <div className="grid grid-cols-[1fr_1fr_120px] gap-2 border-b border-[#1e1635] px-3 py-2 text-[10px] font-semibold uppercase text-slate-600">
+                  <span>Lead</span><span>Contato</span><span>Status</span>
+                </div>
+                {rows.slice(0, 5).map((row, index) => (
+                  <div key={`${row.importKey ?? row.phone ?? row.email}-${index}`}
+                    className="grid grid-cols-[1fr_1fr_120px] gap-2 border-b border-[#1e1635]/70 px-3 py-2 text-[11px] last:border-0">
+                    <span className="truncate text-slate-300">{row.name || 'Sem nome'}</span>
+                    <span className="truncate text-slate-500">{row.phone || row.email || row.utmMedium || 'Sem contato'}</span>
+                    <span className="truncate text-[#a78bfa]">{row.status || stages.find(stage => stage.id === stageId)?.name || 'Padrão'}</span>
+                  </div>
+                ))}
+                {rows.length > 5 && (
+                  <p className="px-3 py-2 text-[10px] text-slate-600">Mais {rows.length - 5} registros serão importados.</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

@@ -295,6 +295,8 @@ export async function syncWorkspaceLocalServices(workspace: Workspace): Promise<
   const lastMonthUntil = ymdLocal(lastMonthDate.getUTCFullYear(), lastMonthDate.getUTCMonth() + 1, lastMonthLastDay)
 
   try {
+    let savedAny = false
+
     for (const { period, since, until } of [
       { period: thisMonthPeriod, since: thisMonthSince, until: thisMonthUntil },
       { period: lastMonthPeriod, since: lastMonthSince, until: lastMonthUntil },
@@ -322,6 +324,10 @@ export async function syncWorkspaceLocalServices(workspace: Workspace): Promise<
         create: { workspaceId: workspace.id, period, ...data },
         update: data,
       })
+      savedAny = true
+    }
+    if (!savedAny) {
+      return { error: `Conta Local Services ${workspace.localServicesAccountId} não encontrada no MCC ${mcc}.` }
     }
     return 'ok'
   } catch (err: any) {

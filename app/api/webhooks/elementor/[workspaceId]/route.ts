@@ -72,7 +72,19 @@ export async function POST(req: NextRequest, { params }: { params: { workspaceId
 
   let body: any
   try {
-    body = await req.json()
+    const contentType = req.headers.get('content-type') ?? ''
+    if (contentType.includes('application/json')) {
+      body = await req.json()
+    } else if (contentType.includes('multipart/form-data') || contentType.includes('application/x-www-form-urlencoded')) {
+      body = Object.fromEntries(await req.formData())
+    } else {
+      const raw = await req.text()
+      try {
+        body = JSON.parse(raw)
+      } catch {
+        body = Object.fromEntries(new URLSearchParams(raw))
+      }
+    }
   } catch {
     return json({ ok: true })
   }

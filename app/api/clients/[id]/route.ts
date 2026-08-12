@@ -55,6 +55,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     metaVisibleMetrics, googleVisibleMetrics, funnelMetrics, googleFunnelMetrics, whatsappNumber, isActive, extraServices,
     isAgencyInternal,
   } = await req.json()
+  const normalizedLocalServicesAccountId = localServicesAccountId === undefined
+    ? undefined
+    : String(localServicesAccountId).replace(/\D/g, '') || null
 
   // Só um cliente pode representar as operações internas da agência por vez — a Visão Geral
   // da Agência (ver app/api/agency/overview/route.ts) lê Leads/Reuniões/Investimento dele.
@@ -89,7 +92,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(metaAdAccountId !== undefined && { metaAdAccountId }),
       ...(metaPageId !== undefined && { metaPageId }),
       ...(googleAdsCustomerId !== undefined && { googleAdsCustomerId }),
-      ...(localServicesAccountId !== undefined && { localServicesAccountId }),
+      ...(normalizedLocalServicesAccountId !== undefined && { localServicesAccountId: normalizedLocalServicesAccountId }),
       ...(whatsappNumber !== undefined && { whatsappNumber }),
       ...(currency && { currency }),
       ...(svcMetaAds !== undefined && { svcMetaAds }),

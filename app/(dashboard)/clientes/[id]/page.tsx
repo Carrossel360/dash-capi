@@ -1,11 +1,14 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { DndContext, DragEndEvent, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import {
   ArrowLeft, Save, Eye, EyeOff, Loader2, CheckCircle, Copy, Users, Zap, BarChart2,
   TrendingUp, Share2, MapPin, Star, DollarSign, MessageCircle, Sparkles, Globe,
   UserPlus, Trash2, ChevronDown, Key, Smartphone, Wifi, WifiOff, RefreshCw, Link2, Search,
-  Webhook, AlertTriangle, Plus, Calendar, LayoutDashboard, Settings2,
+  Webhook, AlertTriangle, Plus, Calendar, LayoutDashboard, Settings2, GripVertical,
 } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
@@ -101,6 +104,72 @@ const GOOGLE_METRICS = [
 
 interface Stage { id: string; name: string; color: string; order: number; triggerCapiEvent: string; isMeetingStage?: boolean }
 interface ProductRow { id: string; name: string; price: number; currency: string; description: string }
+
+function SortableStageRow({ stage, onChange, onDelete }: {
+  stage: Stage
+  onChange: (patch: Partial<Stage>) => void
+  onDelete: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: stage.id })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.55 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  }
+
+  return (
+    <div ref={setNodeRef} style={style}
+      className="flex items-start gap-2 p-3 bg-[#0f0b1e] rounded-xl border border-[#1e1635]">
+      <button type="button" {...attributes} {...listeners}
+        aria-label={`Mover estágio ${stage.name}`}
+        title="Arraste para reordenar"
+        className="flex h-8 w-7 flex-shrink-0 touch-none cursor-grab items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-white/[0.04] hover:text-slate-300 active:cursor-grabbing">
+        <GripVertical className="h-4 w-4" />
+      </button>
+
+      <div className="flex min-w-0 flex-1 flex-col gap-3 lg:flex-row lg:items-center">
+        <div className="flex max-w-[100px] flex-shrink-0 flex-wrap gap-1">
+          {STAGE_COLORS.map(c => (
+            <button type="button" key={c}
+              onClick={() => onChange({ color: c })}
+              aria-label={`Usar cor ${c}`}
+              className={`w-3.5 h-3.5 rounded-full transition-all ${stage.color === c ? 'ring-2 ring-white ring-offset-1 ring-offset-[#0f0b1e] scale-110' : 'opacity-50 hover:opacity-100'}`}
+              style={{ background: c }} />
+          ))}
+        </div>
+        <input
+          value={stage.name}
+          onChange={e => onChange({ name: e.target.value })}
+          className="min-w-0 flex-1 border-b border-transparent bg-transparent text-sm text-white transition-colors focus:border-[#6a11cb] focus:outline-none" />
+        <div className="flex flex-shrink-0 items-center gap-2">
+          <select
+            value={stage.triggerCapiEvent}
+            onChange={e => onChange({ triggerCapiEvent: e.target.value })}
+            className="min-w-0 flex-1 rounded-lg border border-[#2d2550] bg-[#1e1635] px-2 py-1 text-xs text-slate-300 focus:outline-none lg:flex-none">
+            <option value="none">Sem evento</option>
+            <option value="lead">Lead event</option>
+            <option value="qualified_lead">Lead Qualificado</option>
+            <option value="purchase">Purchase event</option>
+          </select>
+          <button type="button"
+            onClick={() => onChange({ isMeetingStage: !stage.isMeetingStage })}
+            title={stage.isMeetingStage ? 'Marcado como estágio de reunião — conta pra "Reuniões" na Visão Geral da Agência' : 'Marcar como estágio de reunião'}
+            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border transition-all"
+            style={stage.isMeetingStage
+              ? { background: 'rgba(37,117,252,0.15)', borderColor: '#2575fc', color: '#2575fc' }
+              : { background: 'transparent', borderColor: '#2d2550', color: '#475569' }}>
+            <Calendar className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" onClick={onDelete} title="Excluir estágio"
+            className="flex-shrink-0 text-slate-600 transition-colors hover:text-red-400">
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 interface ClientDetail {
   id: string; name: string; slug: string; segment: string | null
@@ -206,6 +275,10 @@ export default function ClienteDetailPage() {
   // CRM — estágios do pipeline
   const [stages, setStages] = useState<Stage[]>([])
   const [savingStages, setSavingStages] = useState(false)
+  const stageSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
   // Produtos
   const [products, setProducts] = useState<ProductRow[]>([])
@@ -270,7 +343,7 @@ export default function ClienteDetailPage() {
       if (metaAdAccountId) body.metaAdAccountId = metaAdAccountId
       if (metaPageId) body.metaPageId = metaPageId
       if (googleAdsCustomerId) body.googleAdsCustomerId = googleAdsCustomerId
-      if (localServicesAccountId) body.localServicesAccountId = localServicesAccountId
+      body.localServicesAccountId = localServicesAccountId
 
       const res = await fetch(`/api/clients/${clientId}`, {
         method: 'PATCH',
@@ -453,6 +526,16 @@ export default function ClienteDetailPage() {
       const res = await fetch(`/api/clients/${clientId}/stages`, { headers: { Authorization: `Bearer ${token}` } })
       if (res.ok) setStages(await res.json())
     } catch { toast.error('Erro ao salvar estágios') } finally { setSavingStages(false) }
+  }
+
+  function handleStageDragEnd({ active, over }: DragEndEvent) {
+    if (!over || active.id === over.id) return
+    setStages(current => {
+      const oldIndex = current.findIndex(stage => stage.id === active.id)
+      const newIndex = current.findIndex(stage => stage.id === over.id)
+      if (oldIndex < 0 || newIndex < 0) return current
+      return arrayMove(current, oldIndex, newIndex).map((stage, order) => ({ ...stage, order }))
+    })
   }
 
   async function deleteStage(id: string) {
@@ -660,6 +743,7 @@ export default function ClienteDetailPage() {
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://seudominio.com'
   const trackerScript = `<script src="${origin}/api/t/${clientId}" async></script>`
   const webhookUrl = `${origin}/api/webhooks/whatsapp/${clientId}`
+  const formWebhookUrl = `${origin}/api/webhooks/elementor/${clientId}`
 
   const acctQ = acctSearch.trim().toLowerCase()
   const filteredAdAccounts = acctQ
@@ -1182,7 +1266,8 @@ export default function ClienteDetailPage() {
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-slate-400">Account ID</label>
-                  <input value={localServicesAccountId} onChange={e => setLocalServicesAccountId(e.target.value)}
+                  <input value={localServicesAccountId} inputMode="numeric"
+                    onChange={e => setLocalServicesAccountId(e.target.value.replace(/\D/g, ''))}
                     placeholder="Ex: 1669536458"
                     className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb] transition-all"
                   />
@@ -1209,49 +1294,20 @@ export default function ClienteDetailPage() {
                     <Plus className="w-3.5 h-3.5" /> Adicionar
                   </button>
                 </div>
-                <div className="space-y-2">
-                  {stages.map(stage => (
-                    <div key={stage.id} className="flex items-center gap-3 p-3 bg-[#0f0b1e] rounded-xl border border-[#1e1635]">
-                      <div className="flex gap-1 flex-shrink-0 flex-wrap max-w-[100px]">
-                        {STAGE_COLORS.map(c => (
-                          <button key={c}
-                            onClick={() => setStages(prev => prev.map(s => s.id === stage.id ? { ...s, color: c } : s))}
-                            className={`w-3.5 h-3.5 rounded-full transition-all ${stage.color === c ? 'ring-2 ring-white ring-offset-1 ring-offset-[#0f0b1e] scale-110' : 'opacity-50 hover:opacity-100'}`}
-                            style={{ background: c }} />
-                        ))}
-                      </div>
-                      <input
-                        value={stage.name}
-                        onChange={e => setStages(prev => prev.map(s => s.id === stage.id ? { ...s, name: e.target.value } : s))}
-                        className="flex-1 text-sm bg-transparent text-white focus:outline-none border-b border-transparent focus:border-[#6a11cb] transition-colors min-w-0" />
-                      <select
-                        value={stage.triggerCapiEvent}
-                        onChange={e => setStages(prev => prev.map(s => s.id === stage.id ? { ...s, triggerCapiEvent: e.target.value } : s))}
-                        className="text-xs bg-[#1e1635] border border-[#2d2550] text-slate-300 rounded-lg px-2 py-1 focus:outline-none flex-shrink-0">
-                        <option value="none">Sem evento</option>
-                        <option value="lead">Lead event</option>
-                        <option value="qualified_lead">Lead Qualificado</option>
-                        <option value="purchase">Purchase event</option>
-                      </select>
-                      <button
-                        onClick={() => setStages(prev => prev.map(s => s.id === stage.id ? { ...s, isMeetingStage: !s.isMeetingStage } : s))}
-                        title={stage.isMeetingStage ? 'Marcado como estágio de reunião — conta pra "Reuniões" na Visão Geral da Agência' : 'Marcar como estágio de reunião'}
-                        className="flex items-center justify-center w-7 h-7 rounded-lg border transition-all flex-shrink-0"
-                        style={stage.isMeetingStage
-                          ? { background: 'rgba(37,117,252,0.15)', borderColor: '#2575fc', color: '#2575fc' }
-                          : { background: 'transparent', borderColor: '#2d2550', color: '#475569' }}
-                      >
-                        <Calendar className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => deleteStage(stage.id)} className="text-slate-600 hover:text-red-400 transition-colors flex-shrink-0">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                <DndContext sensors={stageSensors} collisionDetection={closestCenter} onDragEnd={handleStageDragEnd}>
+                  <SortableContext items={stages.map(stage => stage.id)} strategy={verticalListSortingStrategy}>
+                    <div className="space-y-2">
+                      {stages.map(stage => (
+                        <SortableStageRow key={stage.id} stage={stage}
+                          onChange={patch => setStages(prev => prev.map(s => s.id === stage.id ? { ...s, ...patch } : s))}
+                          onDelete={() => deleteStage(stage.id)} />
+                      ))}
+                      {stages.length === 0 && (
+                        <p className="text-xs text-slate-500 text-center py-6">Nenhum estágio configurado.</p>
+                      )}
                     </div>
-                  ))}
-                  {stages.length === 0 && (
-                    <p className="text-xs text-slate-500 text-center py-6">Nenhum estágio configurado.</p>
-                  )}
-                </div>
+                  </SortableContext>
+                </DndContext>
                 <button onClick={saveStages} disabled={savingStages}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-50 transition-all"
                   style={{ background: '#6a11cb', color: '#fff' }}>
@@ -1326,6 +1382,30 @@ export default function ClienteDetailPage() {
             {/* ─── Rastreio ─── */}
             {tab === 'rastreio' && (
               <div className="space-y-4">
+                <div className="glass rounded-2xl p-5 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Webhook className="h-4 w-4 text-[#8b5cf6]" />
+                    <h2 className="text-sm font-semibold text-white">Webhook de formulários</h2>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Use esta URL no Elementor Pro ou em outro formulário compatível para criar os leads diretamente no pipeline deste cliente.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input readOnly value={formWebhookUrl}
+                      aria-label="URL do webhook de formulários"
+                      className="min-w-0 flex-1 rounded-lg border border-[#6a11cb]/30 bg-[#1a1230] px-3 py-2 font-mono text-xs text-[#a78bfa]" />
+                    <button type="button"
+                      onClick={() => { navigator.clipboard.writeText(formWebhookUrl); toast.success('Webhook copiado!') }}
+                      title="Copiar webhook"
+                      className="flex-shrink-0 rounded-lg border border-[#2d2550] p-2 text-slate-400 transition-all hover:border-[#6a11cb]/60 hover:text-[#a78bfa]">
+                      <Copy className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-600">
+                    Campos reconhecidos: <code className="text-slate-400">name</code>, <code className="text-slate-400">email</code>, <code className="text-slate-400">phone</code> e UTMs opcionais.
+                  </p>
+                </div>
+
                 <div className="glass rounded-2xl p-5 space-y-3">
                   <div>
                     <h2 className="text-sm font-semibold text-white">Número do WhatsApp</h2>

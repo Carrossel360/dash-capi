@@ -33,13 +33,22 @@ export function isGoogleAdsConfigured(mcc: GoogleAdsMcc): boolean {
 }
 
 async function refreshGoogleAccessToken(creds: MccCreds): Promise<string> {
-  const { data } = await axios.post('https://oauth2.googleapis.com/token', {
-    client_id: creds.clientId,
-    client_secret: creds.clientSecret,
-    refresh_token: creds.refreshToken,
-    grant_type: 'refresh_token',
-  })
-  return data.access_token
+  try {
+    const { data } = await axios.post('https://oauth2.googleapis.com/token', {
+      client_id: creds.clientId,
+      client_secret: creds.clientSecret,
+      refresh_token: creds.refreshToken,
+      grant_type: 'refresh_token',
+    })
+    return data.access_token
+  } catch (err: any) {
+    const data = err?.response?.data
+    if (data?.error === 'invalid_grant') {
+      throw new Error('Credenciais Google Ads inválidas ou expiradas (invalid_grant). Gere um novo refresh token para este MCC.')
+    }
+    const message = data?.error?.message || data?.error_description || data?.error || err?.message
+    throw new Error(message || 'Erro ao renovar token do Google Ads.')
+  }
 }
 
 // Helper compartilhado por fetchGoogleAdsReport/fetchGoogleAdsKeywords/fetchGoogleAdsSearchTerms —
@@ -293,6 +302,7 @@ function dateParts(d: string) {
 export async function fetchLocalServicesAccountReport({ mcc, accountId, since, until }: FetchLocalServicesOptions): Promise<LocalServicesAccountReport | null> {
   const creds = getMccCreds(mcc)
   const accessToken = await refreshGoogleAccessToken(creds)
+  const normalizedAccountId = accountId.replace(/\D/g, '')
 
   const s = dateParts(since)
   const u = dateParts(until)
@@ -315,7 +325,9 @@ export async function fetchLocalServicesAccountReport({ mcc, accountId, since, u
     }
   )
 
-  const row = (data?.accountReports ?? []).find((r: any) => r.accountId === accountId)
+  const row = (data?.accountReports ?? []).find((r: any) =>
+    String(r.accountId ?? '').replace(/\D/g, '') === normalizedAccountId
+  )
   if (!row) return null
 
   return {
