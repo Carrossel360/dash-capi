@@ -14,6 +14,42 @@ const NAME_KEYS = ['name', 'nome', 'full_name', 'seu_nome', 'first_name']
 const EMAIL_KEYS = ['email', 'e-mail', 'seu_email']
 const PHONE_KEYS = ['phone', 'telefone', 'celular', 'whatsapp', 'tel', 'seu_telefone']
 
+function nonEmpty(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return null
+}
+
+function normalizeKey(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function pageUrlFromFields(fields: Record<string, { value: string }>): string | null {
+  for (const [key, field] of Object.entries(fields)) {
+    const normalized = normalizeKey(key)
+    if (['url da pagina', 'page url', 'pagina url', 'url'].includes(normalized) && field.value.trim()) {
+      return field.value.trim()
+    }
+  }
+  return null
+}
+
+function queryParam(pageUrl: string | null, key: string): string | null {
+  if (!pageUrl) return null
+  try {
+    return nonEmpty(new URL(pageUrl).searchParams.get(key))
+  } catch {
+    return null
+  }
+}
+
 function normalizeFields(body: any): Record<string, { value: string; type?: string }> {
   const out: Record<string, { value: string; type?: string }> = {}
   const raw = body?.fields && typeof body.fields === 'object' ? body.fields : body
@@ -97,6 +133,11 @@ export async function POST(req: NextRequest, { params }: { params: { workspaceId
   const email = pick(fields, EMAIL_KEYS, ['email'])
   const phoneRaw = pick(fields, PHONE_KEYS, ['tel'])
   const phone = phoneRaw ? `+${phoneRaw.replace(/\D/g, '')}` : null
+  const pageUrl = pageUrlFromFields(fields)
+  const utmSource = nonEmpty(body.utm_source, fields['utm_source']?.value, queryParam(pageUrl, 'utm_source'))
+  const utmMedium = nonEmpty(body.utm_medium, fields['utm_medium']?.value, queryParam(pageUrl, 'utm_medium'))
+  const utmCampaign = nonEmpty(body.utm_campaign, fields['utm_campaign']?.value, queryParam(pageUrl, 'utm_campaign'))
+  const utmContent = nonEmpty(body.utm_content, fields['utm_content']?.value, queryParam(pageUrl, 'utm_content'))
 
   // Mesmo contato pode já existir por outro caminho (WhatsApp, formulário nativo, CRM antigo)
   // — sem essa checagem duplicaria quem já está em contato por outro canal.
@@ -108,9 +149,22 @@ export async function POST(req: NextRequest, { params }: { params: { workspaceId
         email ? { email } : undefined,
       ].filter(Boolean) as Prisma.LeadWhereInput[],
     },
-    select: { id: true },
+    select: { id: true, source: true, utmSource: true, utmMedium: true, utmCampaign: true, utmContent: true },
   })
-  if (crossSourceMatch) return json({ ok: true, leadId: crossSourceMatch.id, duplicate: true })
+  if (crossSourceMatch) {
+    const sourceMissing = !crossSourceMatch.source || crossSourceMatch.source === 'Indefinido'
+    const attribution = {
+      ...(sourceMissing && utmSource && { source: utmSource }),
+      ...(!crossSourceMatch.utmSource && utmSource && { utmSource }),
+      ...(!crossSourceMatch.utmMedium && utmMedium && { utmMedium }),
+      ...(!crossSourceMatch.utmCampaign && utmCampaign && { utmCampaign }),
+      ...(!crossSourceMatch.utmContent && utmContent && { utmContent }),
+    }
+    if (Object.keys(attribution).length) {
+      await prisma.lead.update({ where: { id: crossSourceMatch.id }, data: attribution })
+    }
+    return json({ ok: true, leadId: crossSourceMatch.id, duplicate: true, attributionUpdated: Object.keys(attribution).length > 0 })
+  }
 
   const firstStage = await prisma.pipelineStage.findFirst({
     where: { workspaceId },
@@ -129,10 +183,11 @@ export async function POST(req: NextRequest, { params }: { params: { workspaceId
       // (ex: cookie de UTM persistido pelo tracker, ou campo oculto lendo o parâmetro da URL)
       // — o canal ("Formulário", reconhecido pelo badge do Pipeline, igual "Formulário Nativo"
       // do Meta) é sempre conhecido, já que esse endpoint só recebe submissão de formulário.
-      source: body.utm_source ?? fields['utm_source']?.value ?? 'Indefinido',
-      utmSource: body.utm_source ?? fields['utm_source']?.value ?? null,
-      utmMedium: body.utm_medium ?? fields['utm_medium']?.value ?? 'Formulário',
-      utmCampaign: body.utm_campaign ?? fields['utm_campaign']?.value ?? null,
+      source: utmSource ?? 'Indefinido',
+      utmSource,
+      utmMedium: utmMedium ?? 'Formulário',
+      utmCampaign,
+      utmContent,
       metadata: { formName: body.form_name ?? null, raw: body },
       pipelineStageId: firstStage.id,
     },
