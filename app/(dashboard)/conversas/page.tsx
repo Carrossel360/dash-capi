@@ -5,6 +5,7 @@ import {
   UserCheck, MessageCircle, Circle, CheckCircle2, Clock,
   ChevronDown, Trash2, Plus, Mic, Paperclip, MicOff, StopCircle,
   Pencil, Smile, BarChart2,
+  AlertCircle, RefreshCw,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
@@ -174,6 +175,7 @@ export default function ConversasPage() {
   const [input, setInput]                 = useState('')
   const [sending, setSending]             = useState(false)
   const [loadingList, setLoadingList]     = useState(true)
+  const [listError, setListError]         = useState<string | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [showTagPanel, setShowTagPanel]   = useState(false)
   const [showAssign, setShowAssign]       = useState(false)
@@ -208,17 +210,24 @@ export default function ConversasPage() {
 
   // ── Fetch list ───────────────────────────────────────────────────────────────
   const loadList = useCallback(async () => {
-    if (!token) return
+    if (!token) {
+      setLoadingList(false)
+      setListError('Sessão inválida. Entre novamente.')
+      return
+    }
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 15_000)
     try {
       const q = new URLSearchParams()
       if (statusFilter !== 'all') q.set('status', statusFilter)
       if (assignedFilter !== 'all') q.set('assignedTo', assignedFilter)
       if (search) q.set('search', search)
       if (initialPhone && !search) q.set('phone', initialPhone)
-      const res = await fetch(`/api/conversations?${q}`, { headers: h })
-      if (!res.ok) return
+      const res = await fetch(`/api/conversations?${q}`, { headers: h, signal: controller.signal })
+      if (!res.ok) throw new Error(res.status === 401 ? 'Sessão expirada. Entre novamente.' : 'Não foi possível carregar as conversas.')
       const data: ConvSummary[] = await res.json()
       setConversations(data)
+      setListError(null)
       // Auto-open first conversation matching phone param
       if (initialPhone && !activeId && data.length > 0) {
         setActiveId(data[0].id)
@@ -226,8 +235,14 @@ export default function ConversasPage() {
       } else if (initialPhone && data.length === 0 && !search) {
         setNoConvPhone(initialPhone)
       }
-    } catch {}
-    finally { setLoadingList(false) }
+    } catch (error) {
+      setListError(error instanceof Error && error.name !== 'AbortError'
+        ? error.message
+        : 'A conexão demorou demais. Tente novamente.')
+    } finally {
+      clearTimeout(timeout)
+      setLoadingList(false)
+    }
   }, [token, statusFilter, assignedFilter, search, initialPhone]) // eslint-disable-line
 
   useEffect(() => {
@@ -621,7 +636,20 @@ export default function ConversasPage() {
                 <Loader2 className="w-4 h-4 animate-spin text-[#6a11cb]" />
               </div>
             )}
-            {!loadingList && filtered.length === 0 && (
+            {!loadingList && listError && (
+              <div className="flex flex-col items-center justify-center h-36 px-5 text-center gap-3">
+                <AlertCircle className="w-6 h-6 text-amber-500" />
+                <p className="text-xs text-slate-500">{listError}</p>
+                <button
+                  onClick={() => { setLoadingList(true); loadList() }}
+                  className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-white transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Tentar novamente
+                </button>
+              </div>
+            )}
+            {!loadingList && !listError && filtered.length === 0 && (
               <div className="flex flex-col items-center justify-center h-32 gap-2">
                 <MessageCircle className="w-6 h-6 text-slate-700" />
                 <p className="text-xs text-slate-600">Nenhuma conversa</p>

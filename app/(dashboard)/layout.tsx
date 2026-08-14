@@ -6,15 +6,16 @@ import Sidebar from '@/components/Sidebar'
 import { useAuthStore } from '@/lib/store/auth'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, _hydrated, token, updateCurrentWorkspace, switchWorkspace, updateUser } = useAuthStore()
+  const { isAuthenticated, _hydrated, token, logout, updateCurrentWorkspace, switchWorkspace, updateUser } = useAuthStore()
   const router = useRouter()
 
   useEffect(() => {
-    if (_hydrated && !isAuthenticated) {
+    if (_hydrated && (!isAuthenticated || !token)) {
       document.documentElement.removeAttribute('data-theme') // login é sempre escuro
-      router.push('/login')
+      logout()
+      router.replace('/login')
     }
-  }, [isAuthenticated, _hydrated, router])
+  }, [isAuthenticated, _hydrated, token, logout, router])
 
   // Refresca currentWorkspace do banco ao carregar o app — sem isso, mudanças feitas pelo
   // admin (métricas visíveis, serviços contratados, etc.) só chegam no cliente se ele
@@ -25,7 +26,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     if (!_hydrated || !isAuthenticated || !token) return
     fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.ok ? r.json() : null)
+      .then(r => {
+        if (r.status === 401) {
+          logout()
+          router.replace('/login')
+          return null
+        }
+        return r.ok ? r.json() : null
+      })
       .then(d => {
         if (!d?.workspace) return
         if (d.token) switchWorkspace(d.token, d.workspace)
