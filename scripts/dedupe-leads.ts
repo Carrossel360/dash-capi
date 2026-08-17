@@ -1,4 +1,5 @@
 import { Prisma, PrismaClient } from '@prisma/client'
+import { writeFileSync } from 'node:fs'
 import { normalizeLeadEmail, normalizeLeadPhone } from '../lib/lead-identity'
 
 const prisma = new PrismaClient()
@@ -76,12 +77,28 @@ async function main() {
   console.log(JSON.stringify({
     mode: apply ? 'apply' : 'dry-run',
     totalLeads: leads.length,
+    leadValueTotal: leads.reduce((sum, lead) => sum + (lead.dealValue ?? 0), 0),
+    dealCount: leads.reduce((sum, lead) => sum + lead.deals.length, 0),
+    dealValueTotal: leads.reduce((sum, lead) => sum + lead.deals.reduce((dealSum, deal) => dealSum + deal.value, 0), 0),
     duplicateGroups: duplicateGroups.length,
     leadsToMerge: duplicateGroups.reduce((sum, group) => sum + group.length - 1, 0),
     workspaces: [...summary.entries()].map(([workspace, counts]) => ({ workspace, ...counts })),
   }, null, 2))
 
   if (!apply) return
+
+  const affectedIds = duplicateGroups.flatMap(group => group.map(lead => lead.id))
+  const backup = await prisma.lead.findMany({
+    where: { id: { in: affectedIds } },
+    include: {
+      deals: true,
+      conversations: { select: { id: true } },
+      capiEvents: { select: { id: true } },
+    },
+  })
+  const backupPath = `/tmp/dash-capi-leads-dedupe-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+  writeFileSync(backupPath, JSON.stringify(backup, null, 2), { flag: 'wx' })
+  console.log(`Backup: ${backupPath}`)
 
   for (const group of duplicateGroups) {
     const ordered = [...group].sort((a, b) => score(b) - score(a))
