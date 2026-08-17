@@ -40,7 +40,17 @@ interface Lead {
   dealValue: number | null
   tags: string[]
   ctwaClid: string | null
-  metadata: { metaAdId?: string; adHeadline?: string } | null
+  metadata: {
+    metaAdId?: string
+    adHeadline?: string
+    importKey?: string
+    serviceType?: string | null
+    jobType?: string | null
+    location?: string | null
+    leadType?: string | null
+    chargeStatus?: string | null
+    leadReceived?: string | null
+  } | null
   pipelineStageId: string
   createdAt: string
   deals?: { id: string; value: number; product: { id: string; name: string } | null }[]
@@ -82,7 +92,7 @@ function sourceBadgeStyle(source: string): { bg: string; text: string; border: s
   if (s.includes('meta')) {
     return { bg: 'rgba(37,117,252,0.12)', text: '#60a5fa', border: 'rgba(37,117,252,0.3)' } // Meta — azul
   }
-  if (s.includes('google') || s.includes('gbp')) {
+  if (s.includes('google') || s.includes('gbp') || s === 'gls' || s.includes('local service')) {
     return { bg: 'rgba(239,68,68,0.12)', text: '#f87171', border: 'rgba(239,68,68,0.3)' } // Google/GBP — vermelho
   }
   // WhatsApp sem atribuição de campanha (mensagem manual, sem ctwa_clid) — mesma cor de
@@ -443,6 +453,9 @@ function LeadModal({ lead, stages, currency, token, onClose, onSaved, onDeleted,
   const createdAt = new Date(lead.createdAt)
   const dateStr = createdAt.toLocaleDateString('pt-BR')
   const timeStr = createdAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  const isGoogleLocalServices = ['gls', 'google local services', 'local services']
+    .some(value => (lead.source ?? '').toLowerCase().includes(value))
+    || lead.metadata?.importKey?.startsWith('google-local-services:')
 
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 theme-locked-modal">
@@ -517,6 +530,29 @@ function LeadModal({ lead, stages, currency, token, onClose, onSaved, onDeleted,
               <p className="text-sm text-white mt-0.5">{dateStr} às {timeStr}</p>
             </div>
           </div>
+
+          {isGoogleLocalServices && (
+            <div className="rounded-xl p-4 border border-[#1e1635] bg-[#0a0818]">
+              <div className="flex items-center gap-2 mb-3">
+                <Globe className="w-4 h-4 text-slate-500" />
+                <p className="text-xs font-semibold text-slate-400">Detalhes do Google Local Services</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  ['Tipo de Serviços', lead.metadata?.serviceType ?? lead.metadata?.jobType],
+                  ['Location', lead.metadata?.location],
+                  ['Lead type', lead.metadata?.leadType],
+                  ['Charge status', lead.metadata?.chargeStatus],
+                  ['Lead received', lead.metadata?.leadReceived],
+                ].map(([label, value]) => (
+                  <div key={label} className={label === 'Lead received' ? 'col-span-2' : ''}>
+                    <p className="text-xs text-slate-600 mb-1">{label}</p>
+                    <div className="px-3 py-2 bg-[#1a1230] rounded-lg text-sm text-slate-300">{value || '-'}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* UTM */}
           {(lead.utmSource || lead.utmMedium) && (

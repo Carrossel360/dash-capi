@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import type { Prisma } from '@prisma/client'
 import { getAuthPayload } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { normalizeImportedPhone } from '@/lib/lead-import-parser'
@@ -18,6 +19,7 @@ interface ImportRow {
   receivedAt?: string
   utmMedium?: string
   notes?: string
+  dealValue?: number
   importKey?: string
   metadata?: Record<string, string | null>
 }
@@ -33,7 +35,15 @@ function normalizeStageName(value: string): string {
 
 function parseImportDate(value?: string): Date | undefined {
   if (!value?.trim()) return undefined
-  const date = new Date(value)
+  const monthAliases: Record<string, string> = {
+    'jan.': 'Jan', 'fev.': 'Feb', 'mar.': 'Mar', 'abr.': 'Apr', 'mai.': 'May', 'jun.': 'Jun',
+    'jul.': 'Jul', 'ago.': 'Aug', 'set.': 'Sep', 'out.': 'Oct', 'nov.': 'Nov', 'dez.': 'Dec',
+  }
+  const normalized = Object.entries(monthAliases).reduce(
+    (dateValue, [from, to]) => dateValue.replace(new RegExp(`^${from.replace('.', '\\.')}\\s`, 'i'), `${to} `),
+    value.trim(),
+  )
+  const date = new Date(normalized)
   return Number.isNaN(date.getTime()) ? undefined : date
 }
 
@@ -58,6 +68,11 @@ export async function POST(req: NextRequest) {
 
   const fallbackSource = source?.trim() || 'Importação Manual'
   const stageByName = new Map(stages.map(item => [normalizeStageName(item.name), item]))
+  const statusAliases: Record<string, string> = {
+    novo: 'novo lead',
+    'sem conversao': 'visita realizada sem conversao',
+    perdido: 'contato perdido',
+  }
 
   let created = 0
   let duplicated = 0
@@ -72,13 +87,17 @@ export async function POST(req: NextRequest) {
     const phone = row.phone ? normalizeImportedPhone(row.phone, workspace?.currency ?? 'BRL') : null
     const leadSource = row.source?.trim() || fallbackSource
     const requestedStatus = row.status?.trim()
-    const targetStage = requestedStatus ? stageByName.get(normalizeStageName(requestedStatus)) : stage
+    const normalizedStatus = requestedStatus ? normalizeStageName(requestedStatus) : ''
+    const targetStage = requestedStatus
+      ? stageByName.get(normalizedStatus) ?? stageByName.get(statusAliases[normalizedStatus] ?? '')
+      : stage
     if (requestedStatus && !targetStage) {
       statusFallback++
       unknownStatuses.add(requestedStatus)
     }
     const resolvedStage = targetStage ?? stage
     const createdAt = parseImportDate(row.receivedAt)
+    const dealValue = typeof row.dealValue === 'number' && row.dealValue > 0 ? row.dealValue : null
 
     if (!phone && !email && !row.importKey) { invalid++; continue }
 
@@ -88,28 +107,79 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     }) : null
     const crossSourceMatch = identityMatch ?? importKeyMatch
-    if (crossSourceMatch) { duplicated++; continue }
+    if (crossSourceMatch) {
+      const existing = await prisma.lead.findUnique({
+        where: { id: crossSourceMatch.id },
+        include: { deals: { select: { id: true } } },
+      })
+      if (existing) {
+        const existingMetadata = existing.metadata && typeof existing.metadata === 'object' && !Array.isArray(existing.metadata)
+          ? existing.metadata as Prisma.JsonObject
+          : {}
+        const shouldFillPhone = !existing.phone || existing.phone.replace(/\D/g, '').length < 7
+        const mergedIdentity = shouldFillPhone && phone
+          ? await getLeadIdentity(auth.workspaceId, phone, existing.email)
+          : {}
+
+        await prisma.$transaction(async tx => {
+          await tx.lead.update({
+            where: { id: existing.id },
+            data: {
+              ...((!existing.name || /^sem nome$|^lead \d+$/i.test(existing.name)) && name !== 'Sem nome' && { name }),
+              ...(shouldFillPhone && phone && { phone, ...mergedIdentity }),
+              source: leadSource,
+              utmMedium: row.utmMedium?.trim() || existing.utmMedium || 'Importação',
+              ...(row.notes?.trim() && { notes: row.notes.trim() }),
+              ...(row.clientType?.trim() && { clientType: row.clientType.trim() }),
+              ...(requestedStatus && targetStage && { pipelineStageId: targetStage.id }),
+              ...(dealValue && !existing.dealValue && { dealValue, closedAt: createdAt ?? new Date() }),
+              metadata: {
+                ...existingMetadata,
+                ...(row.metadata ?? {}),
+                ...(row.importKey ? { importKey: row.importKey } : {}),
+              } as Prisma.InputJsonValue,
+            },
+          })
+          if (dealValue && !existing.dealValue && existing.deals.length === 0) {
+            await tx.deal.create({
+              data: { workspaceId: auth.workspaceId, leadId: existing.id, value: dealValue },
+            })
+          }
+        })
+      }
+      duplicated++
+      continue
+    }
 
     const identity = await getLeadIdentity(auth.workspaceId, phone, email)
     try {
-      await prisma.lead.create({
-        data: {
-          workspaceId: auth.workspaceId,
-          name,
-          phone,
-          email,
-          ...identity,
-          clientType: row.clientType?.trim() || null,
-          source: leadSource,
-          utmMedium: row.utmMedium?.trim() || 'Importação',
-          notes: row.notes?.trim() || null,
-          metadata: row.metadata || row.importKey
-            ? { ...(row.metadata ?? {}), ...(row.importKey ? { importKey: row.importKey } : {}) }
-            : undefined,
-          pipelineStageId: resolvedStage.id,
-          ...(createdAt && { createdAt }),
-          ...(resolvedStage.triggerCapiEvent === 'purchase' && { closedAt: createdAt ?? new Date() }),
-        },
+      await prisma.$transaction(async tx => {
+        const importedLead = await tx.lead.create({
+          data: {
+            workspaceId: auth.workspaceId,
+            name,
+            phone,
+            email,
+            ...identity,
+            clientType: row.clientType?.trim() || null,
+            source: leadSource,
+            utmMedium: row.utmMedium?.trim() || 'Importação',
+            notes: row.notes?.trim() || null,
+            dealValue,
+            metadata: row.metadata || row.importKey
+              ? { ...(row.metadata ?? {}), ...(row.importKey ? { importKey: row.importKey } : {}) }
+              : undefined,
+            pipelineStageId: resolvedStage.id,
+            ...(createdAt && { createdAt }),
+            ...((dealValue || resolvedStage.triggerCapiEvent === 'purchase') && { closedAt: createdAt ?? new Date() }),
+          },
+          select: { id: true },
+        })
+        if (dealValue) {
+          await tx.deal.create({
+            data: { workspaceId: auth.workspaceId, leadId: importedLead.id, value: dealValue },
+          })
+        }
       })
       created++
     } catch (error) {

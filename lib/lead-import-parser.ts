@@ -8,6 +8,7 @@ export interface ParsedImportRow {
   receivedAt?: string
   utmMedium?: string
   notes?: string
+  dealValue?: number
   importKey?: string
   metadata?: Record<string, string | null>
 }
@@ -15,7 +16,7 @@ export interface ParsedImportRow {
 export function normalizeImportedPhone(raw: string, currency: string): string | null {
   const withoutExtension = raw.replace(/\s*(?:ext(?:ension)?\.?|x)\s*\d+\s*$/i, '')
   let digits = withoutExtension.replace(/\D/g, '')
-  if (!digits) return null
+  if (digits.length < 7) return null
 
   if (currency === 'USD' && digits.length === 10) digits = `1${digits}`
   if (currency === 'BRL' && (digits.length === 10 || digits.length === 11)) digits = `55${digits}`
@@ -98,6 +99,12 @@ const HEADER_ALIASES = {
   notes: ['observacoes', 'observacao', 'notes', 'note'],
 } as const
 
+function parseMoney(value: string): number | undefined {
+  const normalized = value.trim().replace(/[^\d,.-]/g, '').replace(',', '.')
+  const amount = Number(normalized)
+  return Number.isFinite(amount) && amount > 0 ? amount : undefined
+}
+
 function findColumn(headers: string[], aliases: readonly string[]): number {
   return headers.findIndex(header => aliases.includes(header))
 }
@@ -119,11 +126,61 @@ export function parseImportText(text: string): ParsedImportRow[] {
   if (table.length === 0) return []
 
   const headers = table[0].map(normalizeLabel)
+  const isAdaptedGoogleLocalServices = ['nome', 'telefone', 'tipo de servicos', 'lead type', 'lead received', 'origem']
+    .every(header => headers.includes(header))
   const isGoogleLocalServices = ['customer', 'job type', 'lead type', 'lead received']
     .every(header => headers.includes(header))
   const knownHeaders: string[] = Object.values(HEADER_ALIASES).flat()
   const hasHeader = isGoogleLocalServices || headers.some(header => knownHeaders.includes(header))
   const dataRows = hasHeader ? table.slice(1) : table
+
+  if (isAdaptedGoogleLocalServices) {
+    const nameIdx = headers.indexOf('nome')
+    const phoneIdx = headers.indexOf('telefone')
+    const serviceTypeIdx = headers.indexOf('tipo de servicos')
+    const locationIdx = headers.indexOf('location')
+    const leadTypeIdx = headers.indexOf('lead type')
+    const chargeStatusIdx = headers.indexOf('charge status')
+    const receivedAtIdx = headers.indexOf('lead received')
+    const statusIdx = findColumn(headers, HEADER_ALIASES.status)
+    const sourceIdx = findColumn(headers, HEADER_ALIASES.source)
+    const notesIdx = findColumn(headers, HEADER_ALIASES.notes)
+    const dealValueIdx = headers.findIndex(header => header.startsWith('venda'))
+
+    return dataRows.map(row => {
+      const name = valueAt(row, nameIdx) || 'Sem nome'
+      const rawPhone = valueAt(row, phoneIdx)
+      const phone = looksLikePhone(rawPhone) ? rawPhone : ''
+      const serviceType = valueAt(row, serviceTypeIdx)
+      const location = valueAt(row, locationIdx)
+      const leadType = valueAt(row, leadTypeIdx)
+      const chargeStatus = valueAt(row, chargeStatusIdx)
+      const receivedAt = valueAt(row, receivedAtIdx)
+      const importKey = [phone || name, serviceType, location, leadType, receivedAt]
+        .map(importKeyPart)
+        .join('|')
+
+      return {
+        name,
+        phone,
+        email: '',
+        source: valueAt(row, sourceIdx) || 'GLS',
+        status: valueAt(row, statusIdx) || undefined,
+        receivedAt: receivedAt || undefined,
+        utmMedium: 'Google Local Services',
+        notes: valueAt(row, notesIdx) || undefined,
+        dealValue: parseMoney(valueAt(row, dealValueIdx)),
+        importKey: `google-local-services:${importKey}`,
+        metadata: {
+          serviceType: serviceType || null,
+          location: location || null,
+          leadType: leadType || null,
+          chargeStatus: chargeStatus || null,
+          leadReceived: receivedAt || null,
+        },
+      }
+    })
+  }
 
   if (isGoogleLocalServices) {
     const customerIdx = headers.indexOf('customer')
