@@ -25,6 +25,15 @@ export async function GET(req: NextRequest) {
   // o timeout de 30s do cron-job.org (chegava a ~37s). Cada syncWorkspace/syncWorkspaceInstagram
   // já é uma função pura por workspace, sem estado compartilhado, então roda em paralelo com segurança.
   await Promise.all(workspaces.map(async workspace => {
+    // Leads são o dado operacional mais sensível a atraso e levam bem menos tempo que
+    // Local Services/insights. Executa primeiro para que um timeout do chamador não impeça
+    // a entrada dos formulários no CRM. A rota /api/cron/meta-leads também permite rodar
+    // somente esta etapa sem aguardar todas as integrações de mídia.
+    const leads = await syncWorkspaceMetaLeads(workspace)
+    if (leads === 'ok') leadsOk++
+    else if (leads === 'skip') leadsSkip++
+    else { leadsErr++; console.error('[cron/ads-sync] leads', workspace.id, leads.error) }
+
     const { meta, google } = await syncWorkspace(workspace)
     if (meta === 'ok') metaOk++
     else if (meta === 'skip') metaSkip++
@@ -47,12 +56,6 @@ export async function GET(req: NextRequest) {
     else if (local === 'skip') localSkip++
     else { localErr++; console.error('[cron/ads-sync] local', workspace.id, local.error) }
 
-    // Lead Ads (formulário nativo) — por polling (metaPageId), não webhook: ver comentário
-    // em lib/ads-sync.ts. Só roda de verdade pra quem tem a Página cadastrada.
-    const leads = await syncWorkspaceMetaLeads(workspace)
-    if (leads === 'ok') leadsOk++
-    else if (leads === 'skip') leadsSkip++
-    else { leadsErr++; console.error('[cron/ads-sync] leads', workspace.id, leads.error) }
   }))
 
   return NextResponse.json({

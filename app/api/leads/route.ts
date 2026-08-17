@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthPayload } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { dateRange } from '@/lib/trafego-period'
+import { findDuplicateLead, getLeadIdentity, isLeadIdentityConflict } from '@/lib/lead-identity'
 
 export async function GET(req: NextRequest) {
   const auth = await getAuthPayload(req)
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const { name, phone, email, source, stageId, dealValue, tags } = body
+  const { name, phone, email, source, stageId, dealValue, tags, clientType } = body
 
   if (!name || !stageId) {
     return NextResponse.json({ error: 'name e stageId são obrigatórios' }, { status: 400 })
@@ -57,19 +58,35 @@ export async function POST(req: NextRequest) {
   })
   if (!stage) return NextResponse.json({ error: 'Stage não encontrado' }, { status: 404 })
 
-  const lead = await prisma.lead.create({
-    data: {
-      workspaceId: auth.workspaceId,
-      name,
-      phone,
-      email,
-      source,
-      pipelineStageId: stageId,
-      dealValue,
-      tags: tags || [],
-    },
-    include: { stage: true },
-  })
+  const duplicate = await findDuplicateLead(auth.workspaceId, phone, email)
+  if (duplicate) {
+    return NextResponse.json({ error: 'Já existe um lead com este telefone ou e-mail', leadId: duplicate.id }, { status: 409 })
+  }
+
+  const identity = await getLeadIdentity(auth.workspaceId, phone, email)
+  let lead
+  try {
+    lead = await prisma.lead.create({
+      data: {
+        workspaceId: auth.workspaceId,
+        name,
+        phone,
+        email,
+        ...identity,
+        clientType: clientType || null,
+        source,
+        pipelineStageId: stageId,
+        dealValue,
+        tags: tags || [],
+      },
+      include: { stage: true },
+    })
+  } catch (error) {
+    if (isLeadIdentityConflict(error)) {
+      return NextResponse.json({ error: 'Já existe um lead com este telefone ou e-mail' }, { status: 409 })
+    }
+    throw error
+  }
 
   return NextResponse.json(lead, { status: 201 })
 }

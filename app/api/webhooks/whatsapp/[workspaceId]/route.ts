@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { enqueueCapiEvent } from '@/lib/capi-events'
+import { findDuplicateLead, getLeadIdentity, isLeadIdentityConflict } from '@/lib/lead-identity'
 
 // GET — Meta webhook verification (step 1 of setup)
 export async function GET(
@@ -66,9 +67,7 @@ export async function POST(
         const name     = contact?.profile?.name || waId
         const phone    = '+' + waId
 
-        const existingLead = await prisma.lead.findFirst({
-          where: { workspaceId, phone },
-        })
+        const existingLead = await findDuplicateLead(workspaceId, phone, null)
 
         if (existingLead) {
           // New ad click on existing contact — update attribution data
@@ -91,17 +90,25 @@ export async function POST(
         })
         if (!firstStage) continue
 
-        const newLead = await prisma.lead.create({
-          data: {
-            workspaceId,
-            name,
-            phone,
-            source: 'whatsapp',
-            ctwaClid,
-            metadata: adMeta ?? undefined,
-            pipelineStageId: firstStage.id,
-          },
-        })
+        const identity = await getLeadIdentity(workspaceId, phone, null)
+        let newLead
+        try {
+          newLead = await prisma.lead.create({
+            data: {
+              workspaceId,
+              name,
+              phone,
+              ...identity,
+              source: 'whatsapp',
+              ctwaClid,
+              metadata: adMeta ?? undefined,
+              pipelineStageId: firstStage.id,
+            },
+          })
+        } catch (error) {
+          if (isLeadIdentityConflict(error)) continue
+          throw error
+        }
 
         // Immediately queue a Lead CAPI event if we have a ctwa_clid
         // This tells Meta that the ad generated a lead (top-of-funnel signal)

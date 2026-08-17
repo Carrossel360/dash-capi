@@ -4,6 +4,7 @@ export interface ParsedImportRow {
   email: string
   source?: string
   status?: string
+  clientType?: string
   receivedAt?: string
   utmMedium?: string
   notes?: string
@@ -92,6 +93,7 @@ const HEADER_ALIASES = {
   email: ['email', 'e mail'],
   source: ['origem', 'source', 'origin', 'lead source'],
   status: ['status', 'estagio', 'stage', 'pipeline status', 'crm status'],
+  clientType: ['tipo de cliente', 'client type', 'customer type'],
   receivedAt: ['data do lead', 'lead received', 'received at', 'created at', 'data'],
   notes: ['observacoes', 'observacao', 'notes', 'note'],
 } as const
@@ -133,6 +135,7 @@ export function parseImportText(text: string): ParsedImportRow[] {
     const receivedAtIdx = headers.indexOf('lead received')
     const lastActivityIdx = headers.indexOf('last activity')
     const statusIdx = findColumn(headers, HEADER_ALIASES.status)
+    const clientTypeIdx = findColumn(headers, HEADER_ALIASES.clientType)
 
     return dataRows.map(row => {
       const customer = valueAt(row, customerIdx)
@@ -161,6 +164,7 @@ export function parseImportText(text: string): ParsedImportRow[] {
         email: '',
         source: 'Google Local Services',
         status: valueAt(row, statusIdx) || undefined,
+        clientType: valueAt(row, clientTypeIdx) || undefined,
         receivedAt: receivedAt || undefined,
         utmMedium: leadType || 'Local Services',
         notes: notes || undefined,
@@ -184,6 +188,7 @@ export function parseImportText(text: string): ParsedImportRow[] {
   const emailIdx = hasHeader ? findColumn(headers, HEADER_ALIASES.email) : 2
   const sourceIdx = hasHeader ? findColumn(headers, HEADER_ALIASES.source) : -1
   const statusIdx = hasHeader ? findColumn(headers, HEADER_ALIASES.status) : -1
+  const clientTypeIdx = hasHeader ? findColumn(headers, HEADER_ALIASES.clientType) : -1
   const receivedAtIdx = hasHeader ? findColumn(headers, HEADER_ALIASES.receivedAt) : -1
   const notesIdx = hasHeader ? findColumn(headers, HEADER_ALIASES.notes) : -1
 
@@ -193,6 +198,7 @@ export function parseImportText(text: string): ParsedImportRow[] {
     email: valueAt(row, emailIdx),
     source: valueAt(row, sourceIdx) || undefined,
     status: valueAt(row, statusIdx) || undefined,
+    clientType: valueAt(row, clientTypeIdx) || undefined,
     receivedAt: valueAt(row, receivedAtIdx) || undefined,
     notes: valueAt(row, notesIdx) || undefined,
   })).filter(row => row.phone || row.email)

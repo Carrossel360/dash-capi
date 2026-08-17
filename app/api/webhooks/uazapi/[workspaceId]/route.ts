@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import type { Prisma } from '@prisma/client'
 import { enqueueCapiEvent } from '@/lib/capi-events'
+import { findDuplicateLead, getLeadIdentity, isLeadIdentityConflict } from '@/lib/lead-identity'
 
 function normalizePhone(raw: string): string {
   const digits = raw.replace(/\D/g, '')
@@ -129,17 +130,8 @@ export async function POST(
   const direction    = fromMe ? 'outbound' : 'inbound'
 
   // Find existing lead by phone
-  let lead = await prisma.lead.findFirst({
-    where: {
-      workspaceId,
-      OR: [
-        { phone: `+55${phone}` },
-        { phone: phone },
-        { phone: { contains: phone.slice(-8) } },
-      ],
-    },
-    select: { id: true, name: true },
-  })
+  const leadPhone = `+55${phone}`
+  let lead: { id: string; name: string } | null = await findDuplicateLead(workspaceId, leadPhone, null)
 
   // Sem lead ainda + primeira mensagem do cliente: cria o Lead já com a origem identificada.
   // Prioridade: (1) contexto real de anúncio Meta anexado pela própria mensagem (contextInfo),
@@ -190,20 +182,30 @@ export async function POST(
     })
 
     if (firstStage) {
-      const newLead = await prisma.lead.create({
-        data: {
-          workspaceId,
-          name: customerName || '',
-          phone: `+55${phone}`,
-          source,
-          utmSource, utmMedium, utmCampaign,
-          ctwaClid,
-          metadata: metadata as Prisma.InputJsonValue | undefined,
-          pipelineStageId: firstStage.id,
-          notes: content ? `Primeira mensagem: ${content}` : undefined,
-        },
-        select: { id: true, name: true },
-      })
+      const identity = await getLeadIdentity(workspaceId, leadPhone, null)
+      let newLead: { id: string; name: string }
+      try {
+        newLead = await prisma.lead.create({
+          data: {
+            workspaceId,
+            name: customerName || '',
+            phone: leadPhone,
+            ...identity,
+            source,
+            utmSource, utmMedium, utmCampaign,
+            ctwaClid,
+            metadata: metadata as Prisma.InputJsonValue | undefined,
+            pipelineStageId: firstStage.id,
+            notes: content ? `Primeira mensagem: ${content}` : undefined,
+          },
+          select: { id: true, name: true },
+        })
+      } catch (error) {
+        if (!isLeadIdentityConflict(error)) throw error
+        const duplicate = await findDuplicateLead(workspaceId, leadPhone, null)
+        if (!duplicate) throw error
+        newLead = { id: duplicate.id, name: duplicate.name }
+      }
       lead = newLead
 
       // Mesmo sinal de topo de funil que o webhook oficial da Cloud API já manda pra Meta —
@@ -214,7 +216,7 @@ export async function POST(
           leadId: newLead.id,
           eventName: 'Lead',
           source: 'whatsapp',
-          userData: { phone: `+55${phone}`, ctwaClid },
+          userData: { phone: leadPhone, ctwaClid },
         })
       }
     }

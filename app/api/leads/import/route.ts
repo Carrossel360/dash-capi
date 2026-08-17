@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import type { Prisma } from '@prisma/client'
 import { getAuthPayload } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { normalizeImportedPhone } from '@/lib/lead-import-parser'
+import { findDuplicateLead, getLeadIdentity, isLeadIdentityConflict } from '@/lib/lead-identity'
 
 // Import em lote — pra clientes cujo canal ainda não tem sync automático pro CRM (hoje é o
 // caso do Local Service Ads: só relatório agregado, sem lead individual disponível na API).
@@ -14,6 +14,7 @@ interface ImportRow {
   email?: string
   source?: string
   status?: string
+  clientType?: string
   receivedAt?: string
   utmMedium?: string
   notes?: string
@@ -81,37 +82,40 @@ export async function POST(req: NextRequest) {
 
     if (!phone && !email && !row.importKey) { invalid++; continue }
 
-    const crossSourceMatch = await prisma.lead.findFirst({
-      where: {
-        workspaceId: auth.workspaceId,
-        OR: [
-          phone ? { phone } : undefined,
-          email ? { email } : undefined,
-          row.importKey ? { metadata: { path: ['importKey'], equals: row.importKey } } : undefined,
-        ].filter(Boolean) as Prisma.LeadWhereInput[],
-      },
+    const identityMatch = await findDuplicateLead(auth.workspaceId, phone, email)
+    const importKeyMatch = row.importKey ? await prisma.lead.findFirst({
+      where: { workspaceId: auth.workspaceId, metadata: { path: ['importKey'], equals: row.importKey } },
       select: { id: true },
-    })
+    }) : null
+    const crossSourceMatch = identityMatch ?? importKeyMatch
     if (crossSourceMatch) { duplicated++; continue }
 
-    await prisma.lead.create({
-      data: {
-        workspaceId: auth.workspaceId,
-        name,
-        phone,
-        email,
-        source: leadSource,
-        utmMedium: row.utmMedium?.trim() || 'Importação',
-        notes: row.notes?.trim() || null,
-        metadata: row.metadata || row.importKey
-          ? { ...(row.metadata ?? {}), ...(row.importKey ? { importKey: row.importKey } : {}) }
-          : undefined,
-        pipelineStageId: resolvedStage.id,
-        ...(createdAt && { createdAt }),
-        ...(resolvedStage.triggerCapiEvent === 'purchase' && { closedAt: createdAt ?? new Date() }),
-      },
-    })
-    created++
+    const identity = await getLeadIdentity(auth.workspaceId, phone, email)
+    try {
+      await prisma.lead.create({
+        data: {
+          workspaceId: auth.workspaceId,
+          name,
+          phone,
+          email,
+          ...identity,
+          clientType: row.clientType?.trim() || null,
+          source: leadSource,
+          utmMedium: row.utmMedium?.trim() || 'Importação',
+          notes: row.notes?.trim() || null,
+          metadata: row.metadata || row.importKey
+            ? { ...(row.metadata ?? {}), ...(row.importKey ? { importKey: row.importKey } : {}) }
+            : undefined,
+          pipelineStageId: resolvedStage.id,
+          ...(createdAt && { createdAt }),
+          ...(resolvedStage.triggerCapiEvent === 'purchase' && { closedAt: createdAt ?? new Date() }),
+        },
+      })
+      created++
+    } catch (error) {
+      if (isLeadIdentityConflict(error)) { duplicated++; continue }
+      throw error
+    }
   }
 
   return NextResponse.json({

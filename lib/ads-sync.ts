@@ -5,6 +5,7 @@ import { fetchActiveLeadgenForms, fetchFormLeads, fetchPageAccessToken, extractL
 import { fetchGoogleAdsReport, fetchLocalServicesAccountReport, isGoogleAdsConfigured, type GoogleAdsMcc } from '@/lib/google-ads'
 import { enqueueCapiEvent } from '@/lib/capi-events'
 import { buildHashedUserData } from '@/lib/utils'
+import { normalizeLeadEmail, normalizeLeadPhone } from '@/lib/lead-identity'
 
 // Janela deslizante: reprocessa os últimos N dias a cada sync (corrige atraso de atribuição
 // e faz upsert de novo em cima de dias já sincronizados). 30 dias garante que o filtro de
@@ -199,60 +200,77 @@ export async function syncWorkspaceMetaLeads(workspace: Workspace): Promise<Sync
     const forms = await fetchActiveLeadgenForms(workspace.metaPageId, accessToken)
     if (!forms.length) return 'ok'
 
-    const firstStage = await prisma.pipelineStage.findFirst({
-      where: { workspaceId: workspace.id },
-      orderBy: { order: 'asc' },
-      select: { id: true },
-    })
+    const [firstStage, existingLeads, formLeads] = await Promise.all([
+      prisma.pipelineStage.findFirst({
+        where: { workspaceId: workspace.id },
+        orderBy: { order: 'asc' },
+        select: { id: true },
+      }),
+      prisma.lead.findMany({
+        where: { workspaceId: workspace.id },
+        select: { id: true, phone: true, email: true },
+      }),
+      Promise.all(forms.map(async form => ({ form, leads: await fetchFormLeads(form.id, accessToken) }))),
+    ])
     if (!firstStage) return 'ok'
 
-    for (const form of forms) {
-      const leads = await fetchFormLeads(form.id, accessToken)
+    const existingIds = new Set(existingLeads.map(lead => lead.id))
+    const existingPhones = new Set(existingLeads.map(lead => normalizeLeadPhone(lead.phone, workspace.currency)).filter(Boolean))
+    const existingEmails = new Set(existingLeads.map(lead => normalizeLeadEmail(lead.email)).filter(Boolean))
+
+    for (const { form, leads } of formLeads) {
       for (const lead of leads) {
-        const already = await prisma.lead.findUnique({ where: { id: lead.id }, select: { id: true } })
-        if (already) continue
+        if (existingIds.has(lead.id)) continue
 
         const { name, email, phone } = extractLeadContact(lead.fieldData)
         const phoneFormatted = phone ? `+${phone.replace(/\D/g, '')}` : null
+        const phoneKey = normalizeLeadPhone(phoneFormatted, workspace.currency)
+        const emailKey = normalizeLeadEmail(email)
 
         // Mesmo lead pode já ter chegado por outro caminho (reimportação do CRM antigo, que
         // também é alimentado pelo mesmo n8n puxando esses formulários; ou até WhatsApp) —
         // o id da Meta não bate com o desses outros caminhos, então sem checar telefone/e-mail
         // aqui duplicaria todo mundo que já existe. Mesma lógica que o fluxo n8n já usa.
-        const crossSourceMatch = await prisma.lead.findFirst({
-          where: {
-            workspaceId: workspace.id,
-            OR: [
-              phoneFormatted ? { phone: phoneFormatted } : undefined,
-              email ? { email } : undefined,
-            ].filter(Boolean) as Prisma.LeadWhereInput[],
-          },
-          select: { id: true },
-        })
-        if (crossSourceMatch) continue
+        if ((phoneKey && existingPhones.has(phoneKey)) || (emailKey && existingEmails.has(emailKey))) continue
 
-        const newLead = await prisma.lead.create({
-          data: {
-            id: lead.id,
-            workspaceId: workspace.id,
-            name: name || '',
-            email,
-            phone: phoneFormatted,
-            source: 'Meta',
-            utmSource: 'meta',
-            utmMedium: 'Formulário Nativo',
-            pipelineStageId: firstStage.id,
-            createdAt: lead.createdTime ? new Date(lead.createdTime) : undefined,
-            metadata: {
-              formId: lead.formId, formName: form.name,
-              adId: lead.adId, adName: lead.adName,
-              adsetId: lead.adsetId, adsetName: lead.adsetName,
-              campaignId: lead.campaignId, campaignName: lead.campaignName,
-              isOrganic: lead.isOrganic, platform: lead.platform,
-              fieldData: lead.fieldData,
-            } as unknown as Prisma.InputJsonValue,
-          },
-        })
+        let newLead: { id: string }
+        try {
+          newLead = await prisma.lead.create({
+            data: {
+              id: lead.id,
+              workspaceId: workspace.id,
+              name: name || '',
+              email,
+              phone: phoneFormatted,
+              normalizedEmail: emailKey,
+              normalizedPhone: phoneKey,
+              source: 'Meta',
+              utmSource: 'meta',
+              utmMedium: 'Formulário Nativo',
+              pipelineStageId: firstStage.id,
+              createdAt: lead.createdTime ? new Date(lead.createdTime) : undefined,
+              metadata: {
+                formId: lead.formId, formName: form.name,
+                adId: lead.adId, adName: lead.adName,
+                adsetId: lead.adsetId, adsetName: lead.adsetName,
+                campaignId: lead.campaignId, campaignName: lead.campaignName,
+                isOrganic: lead.isOrganic, platform: lead.platform,
+                fieldData: lead.fieldData,
+              } as unknown as Prisma.InputJsonValue,
+            },
+            select: { id: true },
+          })
+        } catch (error: any) {
+          // Dois crons podem encontrar o lead ao mesmo tempo antes do create. O ID da Meta
+          // é global e estável; se uma chamada concorrente já o criou, esta pode encerrar
+          // normalmente sem duplicar nem derrubar a sincronização dos demais formulários.
+          if (error?.code === 'P2002') continue
+          throw error
+        }
+
+        existingIds.add(lead.id)
+        if (phoneKey) existingPhones.add(phoneKey)
+        if (emailKey) existingEmails.add(emailKey)
 
         await enqueueCapiEvent({
           workspaceId: workspace.id,

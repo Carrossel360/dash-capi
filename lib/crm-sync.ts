@@ -5,6 +5,7 @@
 // com o usuário). Idempotente: upsert por id de origem, seguro pra rodar 1x/dia via cron.
 import { Client } from 'pg'
 import { prisma } from '@/lib/db'
+import { findDuplicateLead, getLeadIdentity, isLeadIdentityConflict } from '@/lib/lead-identity'
 
 const STAGE_COLORS = ['#6a11cb', '#2575fc', '#f59e0b', '#10b981', '#ec4899', '#ef4444', '#8b5cf6', '#06b6d4']
 
@@ -114,6 +115,7 @@ export async function syncCrmFromSupabase(supabaseUrl: string): Promise<CrmSyncR
     const colNames = leadCols.map((c: { column_name: string }) => c.column_name)
     const stageCol = colNames.find((c: string) => ['status', 'column_id', 'stage_id', 'status_id', 'pipeline_column_id', 'pipeline_stage_id'].includes(c)) ?? null
     const sourceCol = colNames.find((c: string) => ['source', 'origin', 'lead_source'].includes(c)) ?? null
+    const clientTypeCol = colNames.find((c: string) => ['client_type', 'customer_type', 'tipo_cliente'].includes(c)) ?? null
 
     const { rows: leadRows } = await crm.query(`SELECT * FROM leads ORDER BY created_at`)
 
@@ -132,6 +134,7 @@ export async function syncCrmFromSupabase(supabaseUrl: string): Promise<CrmSyncR
     }
 
     let leadsCreated = 0, leadsUpdated = 0
+    const leadIdMap = new Map<string, string>()
     for (const r of leadRows) {
       const workspaceId = idMap.get(r.client_id) ?? r.client_id
       if (!workspaceId) continue
@@ -146,11 +149,11 @@ export async function syncCrmFromSupabase(supabaseUrl: string): Promise<CrmSyncR
         }
 
         const source = (sourceCol ? r[sourceCol] : null) ?? r.utm_source ?? null
-
         const shared = {
           name: r.name || 'Lead',
           email: r.email ?? null,
           phone: r.phone ?? null,
+          ...(clientTypeCol && { clientType: r[clientTypeCol] ?? null }),
           utmSource: r.utm_source ?? null,
           utmMedium: r.utm_medium ?? null,
           source,
@@ -162,13 +165,32 @@ export async function syncCrmFromSupabase(supabaseUrl: string): Promise<CrmSyncR
         }
 
         const existing = await prisma.lead.findUnique({ where: { id: r.id }, select: { id: true } })
-        await prisma.lead.upsert({
-          where: { id: r.id },
-          create: { id: r.id, workspaceId, ...shared, createdAt: r.created_at ? new Date(r.created_at) : undefined },
-          update: shared,
-        })
-        if (existing) leadsUpdated++; else leadsCreated++
-      } catch { /* lead malformado — pula, não derruba o sync */ }
+        if (existing) {
+          await prisma.lead.update({ where: { id: r.id }, data: shared })
+          leadIdMap.set(r.id, r.id)
+          leadsUpdated++
+          continue
+        }
+
+        const duplicate = await findDuplicateLead(workspaceId, r.phone, r.email)
+        if (duplicate) {
+          const targetId = duplicate.id
+          await prisma.lead.update({ where: { id: targetId }, data: shared })
+          leadIdMap.set(r.id, targetId)
+          leadsUpdated++
+        } else {
+          const identity = await getLeadIdentity(workspaceId, r.phone, r.email)
+          await prisma.lead.create({
+            data: { id: r.id, workspaceId, ...shared, ...identity, createdAt: r.created_at ? new Date(r.created_at) : undefined },
+          })
+          leadIdMap.set(r.id, r.id)
+          leadsCreated++
+        }
+      } catch (error) {
+        if (!isLeadIdentityConflict(error)) continue
+        const duplicate = await findDuplicateLead(workspaceId, r.phone, r.email, r.id)
+        if (duplicate) leadIdMap.set(r.id, duplicate.id)
+      }
     }
 
     // ── Deals ──
@@ -177,7 +199,8 @@ export async function syncCrmFromSupabase(supabaseUrl: string): Promise<CrmSyncR
     for (const r of dealRows) {
       let workspaceId: string | undefined
       try {
-        const lead = await prisma.lead.findUnique({ where: { id: r.lead_id }, select: { workspaceId: true } })
+        const targetLeadId = leadIdMap.get(r.lead_id) ?? r.lead_id
+        const lead = await prisma.lead.findUnique({ where: { id: targetLeadId }, select: { workspaceId: true } })
         workspaceId = lead?.workspaceId
       } catch { /* lead não encontrado — deal órfão, pula */ }
       if (!workspaceId) continue
@@ -186,11 +209,11 @@ export async function syncCrmFromSupabase(supabaseUrl: string): Promise<CrmSyncR
         await prisma.deal.upsert({
           where: { id: r.id },
           create: {
-            id: r.id, workspaceId, leadId: r.lead_id, productId: r.product_id || null,
+            id: r.id, workspaceId, leadId: leadIdMap.get(r.lead_id) ?? r.lead_id, productId: r.product_id || null,
             value: Number(r.value) || 0, status: r.status,
             createdAt: r.created_at ? new Date(r.created_at) : undefined,
           },
-          update: { value: Number(r.value) || 0, status: r.status },
+          update: { leadId: leadIdMap.get(r.lead_id) ?? r.lead_id, value: Number(r.value) || 0, status: r.status },
         })
         if (existing) dealsUpdated++; else dealsCreated++
       } catch { /* deal malformado — pula, não derruba o sync */ }

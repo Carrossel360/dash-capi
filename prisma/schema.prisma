@@ -199,6 +199,9 @@ model Lead {
   name            String
   email           String?
   phone           String?
+  normalizedEmail String?
+  normalizedPhone String?
+  clientType      String?
   source          String?
   utmSource       String?
   utmMedium       String?
@@ -222,6 +225,9 @@ model Lead {
   capiEvents      CAPIEvent[]
   deals           Deal[]
   conversations   Conversation[]
+
+  @@unique([workspaceId, normalizedEmail])
+  @@unique([workspaceId, normalizedPhone])
 }
 
 model Deal {

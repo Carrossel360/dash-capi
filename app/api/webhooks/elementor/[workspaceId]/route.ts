@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { enqueueCapiEvent } from '@/lib/capi-events'
 import { buildHashedUserData } from '@/lib/utils'
+import { findDuplicateLead, getLeadIdentity, isLeadIdentityConflict } from '@/lib/lead-identity'
 
 // Recebe o POST da ação "Webhook" de um formulário Elementor Pro. O formato exato do body
 // varia por versão/config do Elementor (plano/aninhado, chaves por id de campo), então o
@@ -141,16 +141,7 @@ export async function POST(req: NextRequest, { params }: { params: { workspaceId
 
   // Mesmo contato pode já existir por outro caminho (WhatsApp, formulário nativo, CRM antigo)
   // — sem essa checagem duplicaria quem já está em contato por outro canal.
-  const crossSourceMatch = await prisma.lead.findFirst({
-    where: {
-      workspaceId,
-      OR: [
-        phone ? { phone } : undefined,
-        email ? { email } : undefined,
-      ].filter(Boolean) as Prisma.LeadWhereInput[],
-    },
-    select: { id: true, source: true, utmSource: true, utmMedium: true, utmCampaign: true, utmContent: true },
-  })
+  const crossSourceMatch = await findDuplicateLead(workspaceId, phone, email)
   if (crossSourceMatch) {
     const sourceMissing = !crossSourceMatch.source || crossSourceMatch.source === 'Indefinido'
     const attribution = {
@@ -173,25 +164,34 @@ export async function POST(req: NextRequest, { params }: { params: { workspaceId
   })
   if (!firstStage) return json({ ok: true })
 
-  const newLead = await prisma.lead.create({
-    data: {
-      workspaceId,
-      name,
-      email,
-      phone,
-      // source só vira algo além de "Indefinido" se o formulário carregar um utm_source real
-      // (ex: cookie de UTM persistido pelo tracker, ou campo oculto lendo o parâmetro da URL)
-      // — o canal ("Formulário", reconhecido pelo badge do Pipeline, igual "Formulário Nativo"
-      // do Meta) é sempre conhecido, já que esse endpoint só recebe submissão de formulário.
-      source: utmSource ?? 'Indefinido',
-      utmSource,
-      utmMedium: utmMedium ?? 'Formulário',
-      utmCampaign,
-      utmContent,
-      metadata: { formName: body.form_name ?? null, raw: body },
-      pipelineStageId: firstStage.id,
-    },
-  })
+  const identity = await getLeadIdentity(workspaceId, phone, email)
+  let newLead: { id: string }
+  try {
+    newLead = await prisma.lead.create({
+      data: {
+        workspaceId,
+        name,
+        email,
+        phone,
+        ...identity,
+        // source só vira algo além de "Indefinido" se o formulário carregar um utm_source real.
+        source: utmSource ?? 'Indefinido',
+        utmSource,
+        utmMedium: utmMedium ?? 'Formulário',
+        utmCampaign,
+        utmContent,
+        metadata: { formName: body.form_name ?? null, raw: body },
+        pipelineStageId: firstStage.id,
+      },
+      select: { id: true },
+    })
+  } catch (error) {
+    if (isLeadIdentityConflict(error)) {
+      const duplicate = await findDuplicateLead(workspaceId, phone, email)
+      return json({ ok: true, leadId: duplicate?.id, duplicate: true })
+    }
+    throw error
+  }
 
   await enqueueCapiEvent({
     workspaceId,

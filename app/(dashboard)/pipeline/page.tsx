@@ -32,6 +32,7 @@ interface Lead {
   name: string
   email: string | null
   phone: string | null
+  clientType: string | null
   source: string | null
   utmSource: string | null
   utmMedium: string | null
@@ -107,6 +108,7 @@ function mediumBadgeStyle(medium: string): { bg: string; text: string; border: s
 // tanto valores que webhooks/importações já preenchem fora dessa lista (Google Ads, Site...)
 // quanto uma origem manual quando não tem rastreamento automático.
 const PREDEFINED_SOURCES = ['Meta', 'Google', 'GBP', 'Instagram', 'Orgânico']
+const CLIENT_TYPES = ['Cliente Novo', 'Cliente Ativo', 'Cliente Recuperado', 'Visitante']
 
 function OriginField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   // Leads antigos gravaram o texto literal "Indefinido" no campo source — trata igual a vazio
@@ -362,6 +364,7 @@ function LeadModal({ lead, stages, currency, token, onClose, onSaved, onDeleted,
     name: lead.name,
     email: lead.email ?? '',
     phone: lead.phone ?? '',
+    clientType: lead.clientType ?? '',
     notes: lead.notes ?? '',
     source: lead.source ?? '',
     pipelineStageId: lead.pipelineStageId,
@@ -388,7 +391,10 @@ function LeadModal({ lead, stages, currency, token, onClose, onSaved, onDeleted,
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify(rest),
         })
-        if (!res.ok) throw new Error()
+        if (!res.ok) {
+          const data = await res.json().catch(() => null)
+          throw new Error(data?.error || 'Erro ao salvar')
+        }
         const updated = await res.json()
         onSaved({ ...lead, ...rest, ...updated })
         onRequestDeal({ ...lead, ...rest, ...updated }, form.pipelineStageId)
@@ -400,13 +406,16 @@ function LeadModal({ lead, stages, currency, token, onClose, onSaved, onDeleted,
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(form),
       })
-      if (!res.ok) throw new Error()
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.error || 'Erro ao salvar')
+      }
       const updated = await res.json()
       onSaved({ ...lead, ...form, ...updated })
       toast.success('Lead atualizado')
       onClose()
-    } catch {
-      toast.error('Erro ao salvar')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao salvar')
     } finally {
       setSaving(false)
     }
@@ -466,15 +475,24 @@ function LeadModal({ lead, stages, currency, token, onClose, onSaved, onDeleted,
             </div>
           </div>
 
-          {/* Produto + Email */}
+          {/* Tipo de cliente + Email */}
           <div className="grid grid-cols-2 gap-3">
-            <OriginField value={form.source} onChange={v => set('source', v)} />
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400">Tipo de Cliente</label>
+              <select value={form.clientType} onChange={e => set('clientType', e.target.value)}
+                className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb]">
+                <option value="">Selecione...</option>
+                {CLIENT_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
+              </select>
+            </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-slate-400 flex items-center gap-1"><Mail className="w-3 h-3" /> Email</label>
               <input type="email" value={form.email} onChange={e => set('email', e.target.value)}
                 className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb]" />
             </div>
           </div>
+
+          <OriginField value={form.source} onChange={v => set('source', v)} />
 
           {/* Telefone + Observações */}
           <div className="grid grid-cols-2 gap-3">
@@ -786,6 +804,7 @@ function NewLeadModal({ stages, token, onClose, onCreated }: {
     name: '',
     email: '',
     phone: '',
+    clientType: '',
     source: '',
     pipelineStageId: stages[0]?.id ?? '',
   })
@@ -807,17 +826,21 @@ function NewLeadModal({ stages, token, onClose, onCreated }: {
           name: form.name,
           email: form.email || undefined,
           phone: form.phone || undefined,
+          clientType: form.clientType || undefined,
           source: form.source || undefined,
           stageId: form.pipelineStageId,
         }),
       })
-      if (!res.ok) throw new Error()
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.error || 'Erro ao criar lead')
+      }
       const created = await res.json()
       onCreated(created)
       toast.success('Lead criado')
       onClose()
-    } catch {
-      toast.error('Erro ao criar lead')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao criar lead')
     } finally {
       setSaving(false)
     }
@@ -853,13 +876,22 @@ function NewLeadModal({ stages, token, onClose, onCreated }: {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <OriginField value={form.source} onChange={v => set('source', v)} />
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400">Tipo de Cliente</label>
+              <select value={form.clientType} onChange={e => set('clientType', e.target.value)}
+                className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb]">
+                <option value="">Selecione...</option>
+                {CLIENT_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
+              </select>
+            </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-slate-400 flex items-center gap-1"><Mail className="w-3 h-3" /> Email</label>
               <input type="email" value={form.email} onChange={e => set('email', e.target.value)}
                 className="w-full px-3 py-2.5 text-sm bg-[#1a1230] border border-[#2d2550] rounded-lg text-white focus:outline-none focus:border-[#6a11cb]" />
             </div>
           </div>
+
+          <OriginField value={form.source} onChange={v => set('source', v)} />
 
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-slate-400 flex items-center gap-1"><Phone className="w-3 h-3" /> Telefone</label>
@@ -910,8 +942,8 @@ function ImportLeadsModal({ stages, token, onClose, onImported }: {
   function downloadTemplate() {
     const defaultStatus = stages[0]?.name ?? 'Novo Lead'
     const csv = [
-      ['Nome', 'Telefone', 'Email', 'Origem', 'Status', 'Data do Lead', 'Observações'],
-      ['Maria Silva', '11988887777', 'maria@email.com', 'Google', defaultStatus, '2026-08-11', ''],
+      ['Nome', 'Telefone', 'Email', 'Origem', 'Status', 'Tipo de Cliente', 'Data do Lead', 'Observações'],
+      ['Maria Silva', '11988887777', 'maria@email.com', 'Google', defaultStatus, 'Cliente Novo', '2026-08-11', ''],
     ].map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\r\n')
     const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }))
     const link = document.createElement('a')
