@@ -44,6 +44,7 @@ interface Lead {
     metaAdId?: string
     adHeadline?: string
     importKey?: string
+    phoneOriginal?: string | null
     serviceType?: string | null
     jobType?: string | null
     location?: string | null
@@ -539,6 +540,7 @@ function LeadModal({ lead, stages, currency, token, onClose, onSaved, onDeleted,
               </div>
               <div className="grid grid-cols-2 gap-3">
                 {[
+                  ['Telefone no GLS', lead.metadata?.phoneOriginal],
                   ['Tipo de Serviços', lead.metadata?.serviceType ?? lead.metadata?.jobType],
                   ['Location', lead.metadata?.location],
                   ['Lead type', lead.metadata?.leadType],

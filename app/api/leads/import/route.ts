@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import type { Prisma } from '@prisma/client'
 import { getAuthPayload } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { normalizeImportedPhone } from '@/lib/lead-import-parser'
+import { normalizeImportedPhone, parseImportedDate } from '@/lib/lead-import-parser'
 import { findDuplicateLead, getLeadIdentity, isLeadIdentityConflict } from '@/lib/lead-identity'
 
 // Import em lote — pra clientes cujo canal ainda não tem sync automático pro CRM (hoje é o
@@ -31,20 +31,6 @@ function normalizeStageName(value: string): string {
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim()
-}
-
-function parseImportDate(value?: string): Date | undefined {
-  if (!value?.trim()) return undefined
-  const monthAliases: Record<string, string> = {
-    'jan.': 'Jan', 'fev.': 'Feb', 'mar.': 'Mar', 'abr.': 'Apr', 'mai.': 'May', 'jun.': 'Jun',
-    'jul.': 'Jul', 'ago.': 'Aug', 'set.': 'Sep', 'out.': 'Oct', 'nov.': 'Nov', 'dez.': 'Dec',
-  }
-  const normalized = Object.entries(monthAliases).reduce(
-    (dateValue, [from, to]) => dateValue.replace(new RegExp(`^${from.replace('.', '\\.')}\\s`, 'i'), `${to} `),
-    value.trim(),
-  )
-  const date = new Date(normalized)
-  return Number.isNaN(date.getTime()) ? undefined : date
 }
 
 export async function POST(req: NextRequest) {
@@ -96,7 +82,7 @@ export async function POST(req: NextRequest) {
       unknownStatuses.add(requestedStatus)
     }
     const resolvedStage = targetStage ?? stage
-    const createdAt = parseImportDate(row.receivedAt)
+    const createdAt = parseImportedDate(row.receivedAt)
     const dealValue = typeof row.dealValue === 'number' && row.dealValue > 0 ? row.dealValue : null
 
     if (!phone && !email && !row.importKey) { invalid++; continue }

@@ -135,6 +135,7 @@ export async function syncCrmFromSupabase(supabaseUrl: string): Promise<CrmSyncR
 
     let leadsCreated = 0, leadsUpdated = 0
     const leadIdMap = new Map<string, string>()
+    const protectedLeadIds = new Set<string>()
     for (const r of leadRows) {
       const workspaceId = idMap.get(r.client_id) ?? r.client_id
       if (!workspaceId) continue
@@ -164,8 +165,16 @@ export async function syncCrmFromSupabase(supabaseUrl: string): Promise<CrmSyncR
           dealValue: dealValueByLead.get(r.id) ?? null,
         }
 
-        const existing = await prisma.lead.findUnique({ where: { id: r.id }, select: { id: true } })
+        const existing = await prisma.lead.findUnique({ where: { id: r.id }, select: { id: true, metadata: true } })
         if (existing) {
+          const metadata = existing.metadata && typeof existing.metadata === 'object' && !Array.isArray(existing.metadata)
+            ? existing.metadata as Record<string, unknown>
+            : {}
+          if (typeof metadata.importKey === 'string' && metadata.importKey.startsWith('google-local-services:')) {
+            leadIdMap.set(r.id, r.id)
+            protectedLeadIds.add(r.id)
+            continue
+          }
           await prisma.lead.update({ where: { id: r.id }, data: shared })
           leadIdMap.set(r.id, r.id)
           leadsUpdated++
@@ -204,6 +213,7 @@ export async function syncCrmFromSupabase(supabaseUrl: string): Promise<CrmSyncR
         workspaceId = lead?.workspaceId
       } catch { /* lead não encontrado — deal órfão, pula */ }
       if (!workspaceId) continue
+      if (protectedLeadIds.has(r.lead_id)) continue
       try {
         const existing = await prisma.deal.findUnique({ where: { id: r.id }, select: { id: true } })
         await prisma.deal.upsert({

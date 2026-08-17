@@ -23,6 +23,20 @@ export function normalizeImportedPhone(raw: string, currency: string): string | 
   return `+${digits}`
 }
 
+export function parseImportedDate(value?: string): Date | undefined {
+  if (!value?.trim()) return undefined
+  const monthAliases: Record<string, string> = {
+    'jan.': 'Jan', 'fev.': 'Feb', 'mar.': 'Mar', 'abr.': 'Apr', 'mai.': 'May', 'jun.': 'Jun',
+    'jul.': 'Jul', 'ago.': 'Aug', 'set.': 'Sep', 'out.': 'Oct', 'nov.': 'Nov', 'dez.': 'Dec',
+  }
+  const normalized = Object.entries(monthAliases).reduce(
+    (dateValue, [from, to]) => dateValue.replace(new RegExp(`^${from.replace('.', '\\.')}\\s`, 'i'), `${to} `),
+    value.trim(),
+  )
+  const date = new Date(normalized)
+  return Number.isNaN(date.getTime()) ? undefined : date
+}
+
 function normalizeLabel(value: string): string {
   return value
     .normalize('NFD')
@@ -172,6 +186,7 @@ export function parseImportText(text: string): ParsedImportRow[] {
         dealValue: parseMoney(valueAt(row, dealValueIdx)),
         importKey: `google-local-services:${importKey}`,
         metadata: {
+          phoneOriginal: phone || null,
           serviceType: serviceType || null,
           location: location || null,
           leadType: leadType || null,
