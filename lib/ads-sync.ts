@@ -1,7 +1,7 @@
 import type { Prisma, Workspace } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { fetchMetaInsights, sumActions, leadCount, MESSAGING_ACTION_TYPES } from '@/lib/meta-ads'
-import { fetchActiveLeadgenForms, fetchFormLeads, fetchPageAccessToken, extractLeadContact } from '@/lib/meta-leads'
+import { fetchActiveLeadgenForms, fetchAdAccountId, fetchFormLeads, fetchPageAccessToken, extractLeadContact } from '@/lib/meta-leads'
 import { fetchGoogleAdsReport, fetchLocalServicesAccountReport, isGoogleAdsConfigured, type GoogleAdsMcc } from '@/lib/google-ads'
 import { enqueueCapiEvent } from '@/lib/capi-events'
 import { buildHashedUserData } from '@/lib/utils'
@@ -217,10 +217,32 @@ export async function syncWorkspaceMetaLeads(workspace: Workspace): Promise<Sync
     const existingIds = new Set(existingLeads.map(lead => lead.id))
     const existingPhones = new Set(existingLeads.map(lead => normalizeLeadPhone(lead.phone, workspace.currency)).filter(Boolean))
     const existingEmails = new Set(existingLeads.map(lead => normalizeLeadEmail(lead.email)).filter(Boolean))
+    const configuredAdAccountId = workspace.metaAdAccountId?.replace(/^act_/, '') ?? null
+    const adAccountCache = new Map<string, string | null>()
+
+    async function belongsToWorkspaceAdAccount(adId: string | null): Promise<boolean> {
+      if (!adId || !configuredAdAccountId) return true
+      if (!adAccountCache.has(adId)) {
+        adAccountCache.set(adId, await fetchAdAccountId(adId, agencyAccessToken!))
+      }
+      return adAccountCache.get(adId) === configuredAdAccountId
+    }
 
     for (const { form, leads } of formLeads) {
       for (const lead of leads) {
         if (existingIds.has(lead.id)) continue
+
+        // A Página identifica de onde o formulário foi listado, mas uma configuração humana
+        // incorreta pode apontar dois clientes para a Página errada. O anúncio oferece uma
+        // segunda barreira: só entra no workspace cuja conta de anúncios é a proprietária.
+        if (!await belongsToWorkspaceAdAccount(lead.adId)) {
+          console.warn('[meta-leads] anúncio ignorado por conta divergente', {
+            workspaceId: workspace.id,
+            formId: lead.formId,
+            adId: lead.adId,
+          })
+          continue
+        }
 
         const { name, email, phone } = extractLeadContact(lead.fieldData)
         const phoneFormatted = phone ? `+${phone.replace(/\D/g, '')}` : null

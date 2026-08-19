@@ -85,6 +85,13 @@ export async function fetchFormLeads(formId: string, accessToken: string): Promi
   return results
 }
 
+export async function fetchAdAccountId(adId: string, accessToken: string): Promise<string | null> {
+  const { data } = await axios.get(`https://graph.facebook.com/v21.0/${adId}`, {
+    params: { access_token: accessToken, fields: 'account_id' },
+  })
+  return data.account_id ? String(data.account_id) : null
+}
+
 // Nomes de campo variam por formulário (idioma, campo custom) — cobre os mais comuns dos
 // formulários nativos da Meta em pt-BR/en (full_name/phone_number são os nomes padrão que a
 // própria Meta usa nos campos de autopreenchimento).
