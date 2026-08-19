@@ -679,7 +679,11 @@ function LeadCard({ lead, currency, onClick, isDragging }: { lead: Lead; currenc
         <div className="flex items-center gap-1 flex-shrink-0 mt-0.5">
           {lead.phone && (
             <button
-              onClick={e => { e.stopPropagation(); router.push(`/conversas?phone=${lead.phone!.replace(/\D/g, '')}`) }}
+              onClick={e => {
+                e.stopPropagation()
+                const phone = lead.phone!.replace(/\D/g, '')
+                router.push(`/conversas?leadId=${encodeURIComponent(lead.id)}&phone=${phone}`)
+              }}
               className="text-slate-600 hover:text-green-400 transition-colors"
               title="Abrir conversa no WhatsApp"
             >

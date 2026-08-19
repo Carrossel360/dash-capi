@@ -95,6 +95,17 @@ function initials(name: string | null, phone: string) {
   return phone.slice(-2)
 }
 
+function phonesMatch(first: string, second: string): boolean {
+  const a = first.replace(/\D/g, '')
+  const b = second.replace(/\D/g, '')
+  if (!a || !b) return false
+  if (a === b) return true
+
+  // Conversas antigas podem estar sem DDI, enquanto o lead já está normalizado com DDI.
+  // O sufixo mínimo evita que máscara ou código do país impeçam a seleção do mesmo contato.
+  return Math.min(a.length, b.length) >= 8 && (a.endsWith(b) || b.endsWith(a))
+}
+
 function timeAgo(iso: string | null): string {
   if (!iso) return ''
   const diff = Date.now() - new Date(iso).getTime()
@@ -156,6 +167,7 @@ function previewContent(content: string): string {
 export default function ConversasPage() {
   const { token } = useAuthStore()
   const searchParams = useSearchParams()
+  const initialLeadId = searchParams.get('leadId')
   const initialPhone = searchParams.get('phone')
 
   const [conversations, setConversations] = useState<ConvSummary[]>([])
@@ -205,6 +217,7 @@ export default function ConversasPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const listInterval   = useRef<ReturnType<typeof setInterval> | null>(null)
   const detailInterval = useRef<ReturnType<typeof setInterval> | null>(null)
+  const initialTargetHandledRef = useRef(false)
 
   const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
 
@@ -222,18 +235,24 @@ export default function ConversasPage() {
       if (statusFilter !== 'all') q.set('status', statusFilter)
       if (assignedFilter !== 'all') q.set('assignedTo', assignedFilter)
       if (search) q.set('search', search)
-      if (initialPhone && !search) q.set('phone', initialPhone)
       const res = await fetch(`/api/conversations?${q}`, { headers: h, signal: controller.signal })
       if (!res.ok) throw new Error(res.status === 401 ? 'Sessão expirada. Entre novamente.' : 'Não foi possível carregar as conversas.')
       const data: ConvSummary[] = await res.json()
       setConversations(data)
       setListError(null)
-      // Auto-open first conversation matching phone param
-      if (initialPhone && !activeId && data.length > 0) {
-        setActiveId(data[0].id)
-        setNoConvPhone(null)
-      } else if (initialPhone && data.length === 0 && !search) {
-        setNoConvPhone(initialPhone)
+      // O atalho do Pipeline seleciona uma conversa dentro da lista normal. O ID do lead é
+      // determinístico; telefone normalizado cobre conversas antigas ainda sem esse vínculo.
+      if (!initialTargetHandledRef.current && !search && (initialLeadId || initialPhone)) {
+        const target = data.find(conversation => conversation.leadId === initialLeadId)
+          ?? (initialPhone ? data.find(conversation => phonesMatch(conversation.customerPhone, initialPhone)) : undefined)
+
+        initialTargetHandledRef.current = true
+        if (target) {
+          setActiveId(target.id)
+          setNoConvPhone(null)
+        } else if (initialPhone) {
+          setNoConvPhone(initialPhone)
+        }
       }
     } catch (error) {
       setListError(error instanceof Error && error.name !== 'AbortError'
@@ -243,7 +262,7 @@ export default function ConversasPage() {
       clearTimeout(timeout)
       setLoadingList(false)
     }
-  }, [token, statusFilter, assignedFilter, search, initialPhone]) // eslint-disable-line
+  }, [token, statusFilter, assignedFilter, search, initialLeadId, initialPhone]) // eslint-disable-line
 
   useEffect(() => {
     loadList()
