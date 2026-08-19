@@ -98,6 +98,15 @@ export default function TaskPanel({
     const saved = Number(localStorage.getItem('task-panel-width'))
     if (saved) setPanelWidth(saved)
   }, [])
+  useEffect(() => {
+    if (!openDropdown) return
+    function closeOnOutsideClick(event: MouseEvent) {
+      const target = event.target as HTMLElement
+      if (!target.closest('[data-task-dropdown]')) setOpenDropdown(null)
+    }
+    document.addEventListener('mousedown', closeOnOutsideClick)
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick)
+  }, [openDropdown])
 
   function startResize(event: React.MouseEvent) {
     event.preventDefault()
@@ -310,7 +319,7 @@ export default function TaskPanel({
 
                   {/* Status */}
                   <FieldRow label="Status">
-                    <div className="relative">
+                    <div className="relative" data-task-dropdown>
                       <button onClick={() => setOpenDropdown(d => d === 'status' ? null : 'status')}
                         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all"
                         style={{ background: statusBg(statusMeta.color), color: statusMeta.color }}>
@@ -335,7 +344,7 @@ export default function TaskPanel({
 
                   {/* Priority */}
                   <FieldRow label="Prioridade">
-                    <div className="relative">
+                    <div className="relative" data-task-dropdown>
                       <button onClick={() => setOpenDropdown(d => d === 'priority' ? null : 'priority')}
                         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all"
                         style={{ background: prioMeta.color + '1a', color: prioMeta.color }}>
@@ -359,7 +368,7 @@ export default function TaskPanel({
 
                   {/* Assignee */}
                   <FieldRow label="Responsável">
-                    <div className="relative">
+                    <div className="relative" data-task-dropdown>
                       <button onClick={() => setOpenDropdown(d => d === 'assignee' ? null : 'assignee')}
                         className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-slate-400 hover:bg-white/5 transition-all">
                         {task.assignees.length ? (

@@ -144,7 +144,7 @@ export default function TopBar({ title, hideWorkspaceSwitcher }: { title: string
         .catch(() => {})
     }
     loadNotifications()
-    const interval = setInterval(loadNotifications, 60_000)
+    const interval = setInterval(loadNotifications, 15_000)
     return () => clearInterval(interval)
   }, [token])
 

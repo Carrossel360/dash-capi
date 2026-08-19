@@ -108,9 +108,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     })
   }
 
+  const notificationDeliveries = []
   for (const userId of newAssigneeIds) {
     if (userId === auth.userId) continue
-    await notifyTaskUser({
+    const delivery = await notifyTaskUser({
       workspaceId: auth.workspaceId,
       userId,
       taskId: existing.id,
@@ -118,6 +119,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       eventType: 'assigned',
       message: `${actor?.name ?? 'Alguém'} atribuiu a tarefa “${String(update.title ?? existing.title)}” a você.`,
     })
+    notificationDeliveries.push({ userId, ...delivery })
   }
 
   if (data.status && data.status !== existing.status) {
@@ -136,7 +138,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   }
 
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({ ok: true, notificationDeliveries })
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {

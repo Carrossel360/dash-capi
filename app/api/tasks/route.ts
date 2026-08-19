@@ -141,9 +141,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const notificationDeliveries = []
   for (const assignee of task.assignees) {
     if (assignee.userId === auth.userId) continue
-    await notifyTaskUser({
+    const delivery = await notifyTaskUser({
       workspaceId: auth.workspaceId,
       userId: assignee.userId,
       taskId: task.id,
@@ -151,7 +152,8 @@ export async function POST(req: NextRequest) {
       eventType: 'assigned',
       message: `${createdByName ?? 'Alguém'} atribuiu a tarefa “${task.title}” a você.`,
     })
+    notificationDeliveries.push({ userId: assignee.userId, ...delivery })
   }
 
-  return NextResponse.json({ task }, { status: 201 })
+  return NextResponse.json({ task, notificationDeliveries }, { status: 201 })
 }

@@ -50,14 +50,8 @@ function Pill({ label, color, children, onClick }: { label: string; color: strin
 function Dropdown<T extends { key: string; label: string; color?: string }>({
   options, value, onChange, onClose,
 }: { options: T[]; value: string; onChange: (v: T) => void; onClose: () => void }) {
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    function h(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) onClose() }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
-  }, [onClose])
   return (
-    <div ref={ref} className="absolute top-full left-0 mt-1 rounded-xl border border-[#2d2550] shadow-2xl z-50 overflow-hidden min-w-[160px]" style={{ background: '#0d0a1f' }}>
+    <div className="absolute top-full left-0 mt-1 rounded-xl border border-[#2d2550] shadow-2xl z-50 overflow-hidden min-w-[160px]" style={{ background: '#0d0a1f' }}>
       {options.map(opt => (
         <button key={opt.key} onClick={() => { onChange(opt); onClose() }}
           className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-white/5 transition-all"
@@ -99,6 +93,16 @@ export default function CreateTaskModal({
     titleRef.current?.focus()
     fetch('/api/tasks/search', { headers: { Authorization: `Bearer ${token}` } }).then(res => res.json()).then(data => setTaskOptions(data.tasks ?? []))
   }, [token])
+
+  useEffect(() => {
+    if (!openDropdown) return
+    function closeOnOutsideClick(event: MouseEvent) {
+      const target = event.target as HTMLElement
+      if (!target.closest('[data-task-dropdown]')) setOpenDropdown(null)
+    }
+    document.addEventListener('mousedown', closeOnOutsideClick)
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick)
+  }, [openDropdown])
 
   const selectedList = spaces.flatMap(s => [...s.lists, ...s.folders.flatMap(f => f.lists)]).find(l => l.id === draft.projectId)
   const selectedSpace = spaces.find(s => s.lists.some(l => l.id === draft.projectId) || s.folders.some(f => f.lists.some(l => l.id === draft.projectId)))
@@ -186,7 +190,7 @@ export default function CreateTaskModal({
         {/* Top bar: status, priority, assignee, list */}
         <div className="flex items-center gap-2 px-5 pt-4 pb-3 border-b border-[#1e1635] flex-wrap">
           {/* Status */}
-          <div className="relative">
+          <div className="relative" data-task-dropdown>
             <Pill label={statusMeta.label} color={statusMeta.color}
               onClick={() => setOpenDropdown(d => d === 'status' ? null : 'status')}>
               <span className="w-2 h-2 rounded-full" style={{ background: statusMeta.color }} />
@@ -198,7 +202,7 @@ export default function CreateTaskModal({
           </div>
 
           {/* Priority */}
-          <div className="relative">
+          <div className="relative" data-task-dropdown>
             <Pill label={prioMeta.label} color={prioMeta.color}
               onClick={() => setOpenDropdown(d => d === 'priority' ? null : 'priority')}>
               <Flag className="w-3 h-3" />
@@ -210,7 +214,7 @@ export default function CreateTaskModal({
           </div>
 
           {/* Assignee */}
-          <div className="relative">
+          <div className="relative" data-task-dropdown>
             <button onClick={() => setOpenDropdown(d => d === 'assignee' ? null : 'assignee')}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80 border"
               style={{ background: 'rgba(255,255,255,0.04)', color: '#94a3b8', borderColor: '#2d2550' }}>
@@ -248,7 +252,7 @@ export default function CreateTaskModal({
 
           {/* List */}
           {listOptions.length > 0 && (
-            <div className="relative ml-auto">
+            <div className="relative ml-auto" data-task-dropdown>
               <button onClick={() => setOpenDropdown(d => d === 'list' ? null : 'list')}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all border"
                 style={{ background: 'rgba(255,255,255,0.04)', color: '#94a3b8', borderColor: '#2d2550' }}>

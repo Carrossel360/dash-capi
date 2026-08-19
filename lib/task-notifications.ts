@@ -25,6 +25,7 @@ export async function notifyTaskUser(input: {
   actorName?: string
   dedupeKey?: string
 }) {
+  const delivery = { inAppCreated: false, emailSent: false, skipped: false }
   const preference = await prisma.taskNotificationPreference.findUnique({
     where: {
       workspaceId_userId_eventType: {
@@ -42,30 +43,35 @@ export async function notifyTaskUser(input: {
 
   if (input.dedupeKey) {
     const existing = await prisma.notification.findFirst({ where: { dedupeKey: input.dedupeKey, recipientUserId: input.userId } })
-    if (existing) return
+    if (existing) return { ...delivery, skipped: true }
   }
 
   if (inApp) {
-    const notification = await prisma.notification.create({
-      data: {
-        workspaceId: input.workspaceId,
-        recipientUserId: input.userId,
-        type: `task_${input.eventType}`,
-        severity: 'info',
-        title: EVENT_LABELS[input.eventType] ?? 'Atualização de tarefa',
-        message: input.message,
-        link,
-        dedupeKey: input.dedupeKey ?? `task:${input.taskId}:${input.eventType}:${input.userId}:${Date.now()}`,
-        metadata: { taskId: input.taskId, eventType: input.eventType, sound },
-      },
-      select: { id: true },
-    })
-    notificationId = notification.id
+    try {
+      const notification = await prisma.notification.create({
+        data: {
+          workspaceId: input.workspaceId,
+          recipientUserId: input.userId,
+          type: `task_${input.eventType}`,
+          severity: 'info',
+          title: EVENT_LABELS[input.eventType] ?? 'Atualização de tarefa',
+          message: input.message,
+          link,
+          dedupeKey: input.dedupeKey ?? `task:${input.taskId}:${input.eventType}:${input.userId}:${Date.now()}`,
+          metadata: { taskId: input.taskId, eventType: input.eventType, sound },
+        },
+        select: { id: true },
+      })
+      notificationId = notification.id
+      delivery.inAppCreated = true
+    } catch (error) {
+      console.error('[task-notification]', input.eventType, input.userId, error)
+    }
   }
 
-  if (!emailEnabled) return
+  if (!emailEnabled) return delivery
   const user = await prisma.user.findUnique({ where: { id: input.userId }, select: { email: true, name: true } })
-  if (!user?.email) return
+  if (!user?.email) return delivery
 
   try {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.carrossel360.com'
@@ -83,7 +89,9 @@ export async function notifyTaskUser(input: {
     if (notificationId) {
       await prisma.notification.update({ where: { id: notificationId }, data: { emailSentAt: new Date() } })
     }
+    delivery.emailSent = true
   } catch (error) {
     console.error('[task-email]', input.eventType, input.userId, error)
   }
+  return delivery
 }
