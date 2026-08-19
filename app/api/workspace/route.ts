@@ -29,8 +29,15 @@ export async function PATCH(req: NextRequest) {
   const {
     name, metaPixelId, metaAccessToken, metaAdAccountId, instagramAccountId,
     googleAdsCustomerId, googleAdsRefreshToken, telegramBotToken, telegramChatId,
-    openaiApiKey, anthropicApiKey, geminiApiKey,
+    notificationSound, openaiApiKey, anthropicApiKey, geminiApiKey,
   } = body
+
+  if (notificationSound !== undefined) {
+    const allowedSounds = new Set(['silent', 'soft', 'chime', 'double', 'crystal', 'pop', 'pulse', 'ascending', 'digital', 'bell', 'deep'])
+    if (!allowedSounds.has(notificationSound)) return NextResponse.json({ error: 'Som inválido' }, { status: 400 })
+    const current = await prisma.workspace.findUnique({ where: { id: auth.workspaceId }, select: { isAgency: true } })
+    if (!current?.isAgency) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   const workspace = await prisma.workspace.update({
     where: { id: auth.workspaceId },
@@ -44,6 +51,7 @@ export async function PATCH(req: NextRequest) {
       ...(googleAdsRefreshToken !== undefined && { googleAdsRefreshToken }),
       ...(telegramBotToken !== undefined && { telegramBotToken }),
       ...(telegramChatId !== undefined && { telegramChatId }),
+      ...(notificationSound !== undefined && { notificationSound }),
       ...(openaiApiKey !== undefined && { openaiApiKey }),
       ...(anthropicApiKey !== undefined && { anthropicApiKey }),
       ...(geminiApiKey !== undefined && { geminiApiKey }),

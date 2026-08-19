@@ -4,12 +4,13 @@ import { useRouter } from 'next/navigation'
 import {
   Save, Plus, Trash2, CheckCircle, Eye, EyeOff,
   Users, Loader2, Smartphone, RefreshCw,
-  Wifi, WifiOff, Zap, ChevronDown, KeyRound, X, Rows3, Camera, Clock,
+  Wifi, WifiOff, Zap, ChevronDown, KeyRound, X, Rows3, Camera, Clock, Volume2, Play,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
 import { useAuthStore } from '@/lib/store/auth'
 import { OPENAI_TEXT_MODELS, ANTHROPIC_TEXT_MODELS } from '@/lib/ai-models'
+import { NOTIFICATION_SOUNDS, playNotificationSound, type NotificationSoundId } from '@/lib/notification-sounds'
 
 interface Member {
   id: string; role: string
@@ -29,6 +30,7 @@ interface WorkspaceData {
   whatsappNumber: string | null
   telegramBotToken: string | null
   telegramChatId: string | null
+  notificationSound: NotificationSoundId | null
   openaiApiKey: string | null
   anthropicApiKey: string | null
   geminiApiKey: string | null
@@ -49,6 +51,10 @@ const TEAM_ROLE_LABELS: Record<string, string> = {
 const TEAM_ROLE_COLORS: Record<string, string> = {
   admin: '#F5A314', manager: '#8b5cf6', viewer: '#64748b',
 }
+const SOUND_OPTIONS = [
+  ...NOTIFICATION_SOUNDS,
+  { id: 'silent' as const, label: 'Sem som', description: 'Mantém apenas o aviso visual' },
+]
 
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -173,9 +179,10 @@ export default function SettingsPage() {
     { id: 'clientes',   label: 'Clientes',              staffOnly: false },
     { id: 'equipe',     label: 'Equipe',                staffOnly: false },
     { id: 'whatsapp',   label: 'WhatsApp / Telegram',   staffOnly: false },
-    { id: 'relatorios-ia', label: 'Relatórios com IA',  staffOnly: true },
+    { id: 'notificacoes', label: 'Notificações',        staffOnly: true, adminOnly: true },
+    { id: 'relatorios-ia', label: 'Relatórios com IA',  staffOnly: true, adminOnly: false },
   ]
-  const tabs = ALL_TABS.filter(t => !t.staffOnly || isAgencyStaff)
+  const tabs = ALL_TABS.filter(t => (!t.staffOnly || isAgencyStaff) && (!('adminOnly' in t) || !t.adminOnly || role === 'admin'))
 
   const [tab, setTab] = useState('equipe')
 
@@ -201,6 +208,7 @@ export default function SettingsPage() {
   // Alertas — Telegram
   const [telegramBotToken, setTelegramBotToken] = useState('')
   const [telegramChatId,   setTelegramChatId]   = useState('')
+  const [notificationSound, setNotificationSound] = useState<NotificationSoundId>('soft')
 
   // Relatórios com IA — chaves globais (só isAgency) + config por cliente
   const [openaiApiKey,    setOpenaiApiKey]    = useState('')
@@ -253,6 +261,7 @@ export default function SettingsPage() {
       setWhatsappNumber(data.whatsappNumber ?? '')
       setTelegramBotToken(data.telegramBotToken ?? '')
       setTelegramChatId(data.telegramChatId ?? '')
+      setNotificationSound(data.notificationSound ?? 'soft')
       setOpenaiApiKey(data.openaiApiKey ?? '')
       setAnthropicApiKey(data.anthropicApiKey ?? '')
       setGeminiApiKey(data.geminiApiKey ?? '')
@@ -299,6 +308,17 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error()
       toast.success('Alertas salvo!')
     } catch { toast.error('Erro ao salvar') } finally { setSaving(false) }
+  }
+
+  async function saveNotificationSound() {
+    setSaving(true)
+    try {
+      const res = await fetch('/api/workspace', {
+        method: 'PATCH', headers: h, body: JSON.stringify({ notificationSound }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success('Som das notificações atualizado')
+    } catch { toast.error('Erro ao salvar o som') } finally { setSaving(false) }
   }
 
   async function saveAiKeys() {
@@ -479,6 +499,52 @@ export default function SettingsPage() {
               </button>
             ))}
           </div>
+
+          {/* ── Notificações ── */}
+          {tab === 'notificacoes' && isAgency && role === 'admin' && (
+            <div className="glass rounded-2xl p-5 space-y-5">
+              <div>
+                <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <Volume2 className="w-4 h-4 text-[#8b5cf6]" /> Som das notificações
+                </h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  Som padrão usado nos alertas de tarefas para toda a equipe. A preferência individual de som continua sendo respeitada.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {SOUND_OPTIONS.map(option => {
+                  const selected = notificationSound === option.id
+                  return (
+                    <div key={option.id}
+                      className="flex items-center gap-3 min-h-16 px-3 py-2.5 rounded-lg border cursor-pointer transition-all"
+                      style={selected
+                        ? { background: 'rgba(106,17,203,0.12)', borderColor: '#6a11cb' }
+                        : { background: '#0f0b1e', borderColor: '#1e1635' }}
+                      onClick={() => setNotificationSound(option.id)}>
+                      <span className="w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0"
+                        style={{ borderColor: selected ? '#8b5cf6' : '#475569' }}>
+                        {selected && <span className="w-2 h-2 rounded-full bg-[#8b5cf6]" />}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-slate-200">{option.label}</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">{option.description}</p>
+                      </div>
+                      {option.id !== 'silent' && (
+                        <button type="button" title={`Ouvir ${option.label}`}
+                          onClick={event => { event.stopPropagation(); playNotificationSound(option.id) }}
+                          className="w-8 h-8 rounded-lg border border-[#2d2550] flex items-center justify-center text-slate-500 hover:text-white hover:border-[#6a11cb] transition-all flex-shrink-0">
+                          <Play className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              <SaveBtn onClick={saveNotificationSound} loading={saving} />
+            </div>
+          )}
 
           {/* ── Telegram (notificações da agência) — parte da aba WhatsApp / Telegram ── */}
           {tab === 'whatsapp' && (

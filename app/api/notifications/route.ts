@@ -11,18 +11,21 @@ export async function GET(req: NextRequest) {
   const isAgencyManager = await isAgencyStaff(auth.userId)
   const unreadOnly = req.nextUrl.searchParams.get('unreadOnly') === 'true'
 
-  const notifications = await prisma.notification.findMany({
-    where: {
-      AND: [
-        isAgencyManager ? {} : { workspaceId: auth.workspaceId },
-        { OR: [{ recipientUserId: null }, { recipientUserId: auth.userId }] },
-      ],
-      ...(unreadOnly ? { readAt: null } : {}),
-    },
-    orderBy: { createdAt: 'desc' },
-    take: 50,
-    include: { workspace: { select: { name: true } } },
-  })
+  const [notifications, agencyConfig] = await Promise.all([
+    prisma.notification.findMany({
+      where: {
+        AND: [
+          isAgencyManager ? {} : { workspaceId: auth.workspaceId },
+          { OR: [{ recipientUserId: null }, { recipientUserId: auth.userId }] },
+        ],
+        ...(unreadOnly ? { readAt: null } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      include: { workspace: { select: { name: true } } },
+    }),
+    prisma.workspace.findFirst({ where: { isAgency: true }, select: { notificationSound: true } }),
+  ])
 
-  return NextResponse.json({ notifications })
+  return NextResponse.json({ notifications, notificationSound: agencyConfig?.notificationSound ?? 'soft' })
 }

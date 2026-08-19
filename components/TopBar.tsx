@@ -8,6 +8,7 @@ import { useUIStore } from '@/lib/store/ui'
 import { useTheme } from '@/lib/hooks/useTheme'
 import type { WorkspaceInfo } from '@/lib/store/auth'
 import { defaultRouteForRole, ATTENDANT_ALLOWED_HREFS } from '@/lib/roleAccess'
+import { playNotificationSound, type NotificationSoundId } from '@/lib/notification-sounds'
 
 interface NotificationRow {
   id: string
@@ -65,23 +66,7 @@ export default function TopBar({ title, hideWorkspaceSwitcher }: { title: string
   const [notifOpen, setNotifOpen] = useState(false)
   const notifRef = useRef<HTMLDivElement>(null)
   const knownNotificationIds = useRef<Set<string> | null>(null)
-
-  function playNotificationSound() {
-    try {
-      const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-      if (!AudioContextClass) return
-      const context = new AudioContextClass()
-      const oscillator = context.createOscillator()
-      const gain = context.createGain()
-      oscillator.frequency.setValueAtTime(740, context.currentTime)
-      oscillator.frequency.exponentialRampToValueAtTime(980, context.currentTime + 0.12)
-      gain.gain.setValueAtTime(0.0001, context.currentTime)
-      gain.gain.exponentialRampToValueAtTime(0.12, context.currentTime + 0.02)
-      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.2)
-      oscillator.connect(gain); gain.connect(context.destination)
-      oscillator.start(); oscillator.stop(context.currentTime + 0.21)
-    } catch { /* browser may require a prior user interaction */ }
-  }
+  const notificationSound = useRef<NotificationSoundId>('soft')
 
   // Perfil (canto superior direito) — qualquer pessoa logada, cliente ou agência, troca a
   // própria foto por aqui. Usa a mesma rota de avatar já usada em Configurações > Equipe
@@ -133,10 +118,11 @@ export default function TopBar({ title, hideWorkspaceSwitcher }: { title: string
         .then(r => r.json())
         .then(d => {
           if (!Array.isArray(d.notifications)) return
+          notificationSound.current = d.notificationSound ?? 'soft'
           const next = d.notifications as NotificationRow[]
           if (knownNotificationIds.current) {
             const shouldPlay = next.some(item => !knownNotificationIds.current?.has(item.id) && item.type.startsWith('task_') && item.metadata?.sound !== false)
-            if (shouldPlay) playNotificationSound()
+            if (shouldPlay) playNotificationSound(notificationSound.current)
           }
           knownNotificationIds.current = new Set(next.map(item => item.id))
           setNotifications(next)
