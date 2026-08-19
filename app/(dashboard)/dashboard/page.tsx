@@ -335,7 +335,7 @@ export default function DashboardPage() {
   const kpis = [
     { label: 'Investimento', href: '/trafego-pago', value: `${curr} ${fmt(totalSpend)}`, icon: DollarSign, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)', border: 'rgba(139,92,246,0.25)', sub: `Meta: ${curr}${fmt(data.metaSpend)} · Google: ${curr}${fmt(data.googSpend)}` },
     { label: 'Leads', href: '/trafego-pago', value: fmt(totalLeads), icon: Users, color: '#10b981', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.25)', sub: `Meta: ${data.metaLeads} · Google: ${data.googLeads}` },
-    { label: 'Faturamento', href: data.hasReconciliation ? '/trafego-pago?tab=cruzamento' : '/pipeline', value: fmtMoney(revenue, curr), icon: DollarSign, color: '#F5A314', bg: 'rgba(245,163,20,0.1)', border: 'rgba(245,163,20,0.25)', sub: manualRevenue !== null ? 'Valor ajustado manualmente' : data.hasReconciliation ? 'Conciliação Matri' : 'Vendas marcadas no CRM', editable: true },
+    { label: 'Faturamento', href: data.hasReconciliation ? '/trafego-pago?tab=cruzamento' : '/pipeline', value: fmtMoney(revenue, curr), icon: DollarSign, color: '#F5A314', bg: 'rgba(245,163,20,0.1)', border: 'rgba(245,163,20,0.25)', sub: manualRevenue !== null ? undefined : data.hasReconciliation ? 'Conciliação Matri' : 'Vendas marcadas no CRM', editable: true },
     { label: 'ROAS', href: data.hasReconciliation ? '/trafego-pago?tab=cruzamento' : '/pipeline', value: `${roas.toFixed(1)}x`, icon: Percent, color: '#2575fc', bg: 'rgba(37,117,252,0.1)', border: 'rgba(37,117,252,0.25)', sub: 'Faturamento ÷ Investimento' },
   ]
 
@@ -422,7 +422,7 @@ export default function DashboardPage() {
                 </div>
                 <p className="text-xl font-bold text-white">{value}</p>
                 <p className="text-xs text-slate-500 mt-0.5">{label}</p>
-                {sub && <p className={`text-[10px] mt-1 ${manualRevenue !== null && label === 'Faturamento' ? 'text-amber-400' : 'text-slate-600'}`}>{sub}</p>}
+                {sub && <p className="text-[10px] mt-1 text-slate-600">{sub}</p>}
               </Link>
               {editable && canEditRevenue && (
                 <button type="button" title="Editar faturamento"
