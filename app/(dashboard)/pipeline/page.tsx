@@ -14,6 +14,7 @@ import {
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
+import PeriodSelector, { type Period } from '@/components/PeriodSelector'
 import { useAuthStore } from '@/lib/store/auth'
 import { parseImportText } from '@/lib/lead-import-parser'
 
@@ -64,24 +65,39 @@ interface Product {
   currency: string
 }
 
-type Period = 'all' | '7d' | '30d' | '90d' | 'today'
+const PIPELINE_PERIODS: Period[] = ['today', 'yesterday', 'this_month', '30d', 'all', 'custom']
 
-const PERIOD_OPTS: { value: Period; label: string }[] = [
-  { value: 'all',   label: 'Todos' },
-  { value: 'today', label: 'Hoje' },
-  { value: '7d',    label: '7 dias' },
-  { value: '30d',   label: '30 dias' },
-  { value: '90d',   label: '90 dias' },
-]
+function periodBounds(period: Period, customRange: { from: string; to: string } | null) {
+  if (period === 'all') return null
+  if (period === 'custom') {
+    if (!customRange) return null
+    return {
+      from: new Date(`${customRange.from}T00:00:00.000`),
+      to: new Date(`${customRange.to}T23:59:59.999`),
+    }
+  }
 
-function periodFrom(p: Period): Date | null {
-  if (p === 'all') return null
-  const d = new Date()
-  if (p === 'today') { d.setHours(0, 0, 0, 0); return d }
-  const days = p === '7d' ? 7 : p === '30d' ? 30 : 90
-  d.setDate(d.getDate() - days)
-  d.setHours(0, 0, 0, 0)
-  return d
+  const now = new Date()
+  const from = new Date(now)
+  const to = new Date(now)
+  to.setHours(23, 59, 59, 999)
+
+  if (period === 'today') from.setHours(0, 0, 0, 0)
+  else if (period === 'yesterday') {
+    from.setDate(from.getDate() - 1)
+    from.setHours(0, 0, 0, 0)
+    to.setDate(to.getDate() - 1)
+  } else if (period === 'this_month') {
+    from.setDate(1)
+    from.setHours(0, 0, 0, 0)
+  } else if (period === '30d') {
+    from.setDate(from.getDate() - 29)
+    from.setHours(0, 0, 0, 0)
+  } else {
+    return null
+  }
+
+  return { from, to }
 }
 
 // Origem (campanha/plataforma) e canal (como a mensagem chegou) são dois badges separados —
@@ -1121,6 +1137,7 @@ export default function PipelinePage() {
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [period, setPeriod]   = useState<Period>('all')
+  const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
 
   const [nameFilter, setNameFilter] = useState('')
@@ -1154,8 +1171,13 @@ export default function PipelinePage() {
     if (!token) return
     setLoading(true)
     try {
-      const from = periodFrom(period)
-      const q = from ? `?from=${from.toISOString()}` : ''
+      const bounds = periodBounds(period, customRange)
+      const query = new URLSearchParams()
+      if (bounds) {
+        query.set('from', bounds.from.toISOString())
+        query.set('to', bounds.to.toISOString())
+      }
+      const q = query.size ? `?${query}` : ''
       const [stagesRes, leadsRes, productsRes] = await Promise.all([
         fetch('/api/stages',     { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`/api/leads${q}`,  { headers: { Authorization: `Bearer ${token}` } }),
@@ -1172,7 +1194,7 @@ export default function PipelinePage() {
     } finally {
       setLoading(false)
     }
-  }, [token, period])
+  }, [token, period, customRange])
 
   useEffect(() => { load() }, [load])
 
@@ -1300,8 +1322,15 @@ export default function PipelinePage() {
   const availableSources = Array.from(new Set(leads.map(l => l.source || l.utmSource).filter((s): s is string => !!s))).sort()
 
   const nameQuery = nameFilter.trim().toLowerCase()
+  const phoneQuery = nameQuery.replace(/\D/g, '')
   const filteredLeads = leads.filter(l => {
-    if (nameQuery && !l.name.toLowerCase().includes(nameQuery)) return false
+    if (nameQuery) {
+      const matchesName = l.name.toLowerCase().includes(nameQuery)
+      const matchesEmail = l.email?.toLowerCase().includes(nameQuery) ?? false
+      const matchesPhone = l.phone?.toLowerCase().includes(nameQuery) ?? false
+      const matchesPhoneDigits = phoneQuery.length > 0 && (l.phone?.replace(/\D/g, '').includes(phoneQuery) ?? false)
+      if (!matchesName && !matchesEmail && !matchesPhone && !matchesPhoneDigits) return false
+    }
     if (sourceFilter !== 'all' && (l.source || l.utmSource || '') !== sourceFilter) return false
     return true
   })
@@ -1386,30 +1415,26 @@ export default function PipelinePage() {
           {/* Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                <Calendar className="w-3.5 h-3.5" />
-                <span>Período:</span>
-              </div>
-              <div className="flex gap-1">
-                {PERIOD_OPTS.map(opt => (
-                  <button key={opt.value} onClick={() => setPeriod(opt.value)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                    style={period === opt.value
-                      ? { background: '#6a11cb', color: '#fff', boxShadow: '0 2px 12px rgba(106,17,203,0.4)' }
-                      : { background: 'rgba(15,11,30,0.7)', color: '#94a3b8', border: '1px solid #1e1635' }}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
+              <PeriodSelector
+                value={period}
+                options={PIPELINE_PERIODS}
+                onChange={next => {
+                  setPeriod(next)
+                  if (next !== 'custom') setCustomRange(null)
+                }}
+                onCustomChange={(from, to) => {
+                  setPeriod('custom')
+                  setCustomRange({ from, to })
+                }}
+              />
               <div className="w-px h-4 bg-[#1e1635]" />
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
                 <input
                   value={nameFilter}
                   onChange={e => setNameFilter(e.target.value)}
-                  placeholder="Buscar por nome..."
-                  className="w-44 pl-8 pr-3 py-1.5 text-xs bg-[#0f0b1e] border border-[#1e1635] rounded-lg text-white placeholder-slate-600 focus:outline-none focus:border-[#6a11cb] transition-colors"
+                  placeholder="Nome, e-mail ou telefone..."
+                  className="w-52 pl-8 pr-3 py-1.5 text-xs bg-[#0f0b1e] border border-[#1e1635] rounded-lg text-white placeholder-slate-600 focus:outline-none focus:border-[#6a11cb] transition-colors"
                 />
               </div>
               <select

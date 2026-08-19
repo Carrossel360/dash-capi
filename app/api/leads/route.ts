@@ -24,7 +24,10 @@ export async function GET(req: NextRequest) {
   // o período selecionado. Sem `period`, mantém o comportamento legado só com `from` (gte aberto),
   // usado pelo Pipeline (que só filtra "a partir de", sem período fechado).
   const range = period ? dateRange(period, from, to) : undefined
-  const dateFilter = range ? { [dateField]: range } : from ? { [dateField]: { gte: new Date(from) } } : {}
+  const directRange = from
+    ? { gte: new Date(from), ...(to ? { lte: new Date(to) } : {}) }
+    : undefined
+  const dateFilter = range ? { [dateField]: range } : directRange ? { [dateField]: directRange } : {}
 
   const leads = await prisma.lead.findMany({
     where: {

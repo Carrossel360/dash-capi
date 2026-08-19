@@ -21,9 +21,10 @@ interface Props {
   value: Period
   onChange: (p: Period) => void
   onCustomChange?: (from: string, to: string) => void
+  options?: Period[]
 }
 
-export default function PeriodSelector({ value, onChange, onCustomChange }: Props) {
+export default function PeriodSelector({ value, onChange, onCustomChange, options = PERIODS }: Props) {
   const [open, setOpen] = useState(false)
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -54,7 +55,7 @@ export default function PeriodSelector({ value, onChange, onCustomChange }: Prop
         </button>
         {open && (
           <div className="absolute left-0 top-10 z-50 w-44 bg-[#0f0b1e] border border-[#2d2550] rounded-xl shadow-2xl overflow-hidden py-1">
-            {PERIODS.map(p => (
+            {options.map(p => (
               <button
                 key={p}
                 onClick={() => { onChange(p); setOpen(false) }}
@@ -71,6 +72,7 @@ export default function PeriodSelector({ value, onChange, onCustomChange }: Prop
           <input
             type="date"
             value={from}
+            max={to || undefined}
             onChange={e => updateFrom(e.target.value)}
             className="px-2 py-1.5 bg-[#1a1230] border border-[#2d2550] rounded-lg text-xs text-white focus:outline-none focus:border-[#6a11cb]"
           />
@@ -78,6 +80,7 @@ export default function PeriodSelector({ value, onChange, onCustomChange }: Prop
           <input
             type="date"
             value={to}
+            min={from || undefined}
             onChange={e => updateTo(e.target.value)}
             className="px-2 py-1.5 bg-[#1a1230] border border-[#2d2550] rounded-lg text-xs text-white focus:outline-none focus:border-[#6a11cb]"
           />
