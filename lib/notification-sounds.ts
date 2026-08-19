@@ -58,6 +58,9 @@ const PROFILES: Record<Exclude<NotificationSoundId, 'silent'>, Tone[]> = {
   deep: [{ frequency: 240, offset: 0, duration: 0.3, gain: 0.09, type: 'triangle', endFrequency: 190 }],
 }
 
+const MASTER_VOLUME = 2.3
+const MAX_TONE_GAIN = 0.2
+
 export function playNotificationSound(soundId: NotificationSoundId) {
   if (soundId === 'silent' || typeof window === 'undefined') return
   try {
@@ -76,7 +79,7 @@ export function playNotificationSound(soundId: NotificationSoundId) {
       oscillator.frequency.setValueAtTime(tone.frequency, start)
       if (tone.endFrequency) oscillator.frequency.exponentialRampToValueAtTime(tone.endFrequency, end)
       gain.gain.setValueAtTime(0.0001, start)
-      gain.gain.exponentialRampToValueAtTime(tone.gain, start + Math.min(0.02, tone.duration / 3))
+      gain.gain.exponentialRampToValueAtTime(Math.min(tone.gain * MASTER_VOLUME, MAX_TONE_GAIN), start + Math.min(0.02, tone.duration / 3))
       gain.gain.exponentialRampToValueAtTime(0.0001, end)
       oscillator.connect(gain)
       gain.connect(context.destination)
