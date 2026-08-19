@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { syncWorkspaceMetaLeads } from '@/lib/ads-sync'
 
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60
+
 // Rota curta e independente para formulários nativos Meta. Evita que a entrada de leads
 // dependa da conclusão do cron geral, que também consulta integrações mais lentas como
 // Local Services, Google Ads e Instagram.
