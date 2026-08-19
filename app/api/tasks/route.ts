@@ -73,6 +73,11 @@ export async function POST(req: NextRequest) {
   } = body
 
   if (!title?.trim()) return NextResponse.json({ error: 'Title required' }, { status: 400 })
+  if (!parentId && !projectId) return NextResponse.json({ error: 'List required' }, { status: 400 })
+  if (projectId) {
+    const project = await prisma.taskProject.findFirst({ where: { id: projectId, workspaceId: auth.workspaceId }, select: { id: true } })
+    if (!project) return NextResponse.json({ error: 'Invalid list' }, { status: 400 })
+  }
 
   const maxPos = await prisma.task.aggregate({
     where: { workspaceId: auth.workspaceId, status: status ?? 'todo', parentId: null },

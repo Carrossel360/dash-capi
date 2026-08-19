@@ -195,6 +195,10 @@ export default function TaskPanel({
   const totalSubs = task?.subtasks.length ?? 0
   const selectedClient = clients.find(client => client.id === task?.clientWorkspaceId)
   const runningTime = task?.timeEntries.find(entry => !entry.endedAt)
+  const listOptions = spaces.flatMap(space => [
+    ...space.lists.map(list => ({ id: list.id, label: `${space.name} / ${list.name}` })),
+    ...space.folders.flatMap(folder => folder.lists.map(list => ({ id: list.id, label: `${space.name} / ${folder.name} / ${list.name}` }))),
+  ])
 
   async function addChecklist() {
     if (!task || !checklistText.trim()) return
@@ -399,6 +403,14 @@ export default function TaskPanel({
                         </div>
                       )}
                     </div>
+                  </FieldRow>
+
+                  <FieldRow label="Lista">
+                    <select value={task.projectId ?? ''} onChange={event => patch({ projectId: event.target.value }).then(load)}
+                      className="w-full text-xs bg-[#0f0b1e] border border-[#1e1635] rounded-md px-2 py-1.5 text-slate-300 outline-none focus:border-[#6a11cb]">
+                      <option value="" disabled>Selecione uma lista</option>
+                      {listOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+                    </select>
                   </FieldRow>
 
                   {/* Dates */}

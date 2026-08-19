@@ -47,6 +47,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+  if ('projectId' in data) {
+    if (!data.projectId && !existing.parentId) return NextResponse.json({ error: 'List required' }, { status: 400 })
+    if (data.projectId) {
+      const project = await prisma.taskProject.findFirst({ where: { id: data.projectId, workspaceId: auth.workspaceId }, select: { id: true } })
+      if (!project) return NextResponse.json({ error: 'Invalid list' }, { status: 400 })
+    }
+  }
+
   const scalarFields = ['title', 'description', 'status', 'priority', 'assigneeId', 'assigneeName', 'startDate', 'dueDate', 'projectId', 'position', 'taskTags', 'estimatedMinutes', 'timeSpentMinutes', 'clientWorkspaceId', 'serviceKey']
   const update: Record<string, unknown> = {}
   for (const k of scalarFields) {

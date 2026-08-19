@@ -134,6 +134,7 @@ export default function CreateTaskModal({
 
   async function handleCreate() {
     if (!draft.title.trim()) { titleRef.current?.focus(); return }
+    if (!draft.projectId) { setOpenDropdown('list'); return }
     setSaving(true)
     try {
       const res = await fetch('/api/tasks', {
@@ -255,7 +256,7 @@ export default function CreateTaskModal({
             <div className="relative ml-auto" data-task-dropdown>
               <button onClick={() => setOpenDropdown(d => d === 'list' ? null : 'list')}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all border"
-                style={{ background: 'rgba(255,255,255,0.04)', color: '#94a3b8', borderColor: '#2d2550' }}>
+                style={{ background: 'rgba(255,255,255,0.04)', color: draft.projectId ? '#94a3b8' : '#fca5a5', borderColor: draft.projectId ? '#2d2550' : 'rgba(239,68,68,0.55)' }}>
                 {draft.projectId ? (
                   <><span className="w-2 h-2 rounded-full" style={{ background: listOptions.find(l => l.key === draft.projectId)?.color ?? '#6a11cb' }} />
                   {listOptions.find(l => l.key === draft.projectId)?.label ?? 'Lista'}</>
@@ -264,8 +265,6 @@ export default function CreateTaskModal({
               </button>
               {openDropdown === 'list' && (
                 <div className="absolute top-full right-0 mt-1 rounded-xl border border-[#2d2550] shadow-2xl z-50 overflow-hidden min-w-[220px] max-h-48 overflow-y-auto" style={{ background: '#0d0a1f' }}>
-                  <button onClick={() => { set('projectId', ''); setOpenDropdown(null) }}
-                    className="w-full px-3 py-2 text-xs text-slate-500 hover:bg-white/5 text-left">Sem lista</button>
                   {listOptions.map(l => (
                     <button key={l.key} onClick={() => { set('projectId', l.key); setOpenDropdown(null) }}
                       className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-300 hover:bg-white/5 truncate text-left">
@@ -481,11 +480,12 @@ export default function CreateTaskModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-[#1e1635]">
+        <div className="flex items-center gap-3 px-5 py-4 border-t border-[#1e1635]">
+          {!draft.projectId && <p className="text-[11px] text-red-300 mr-auto">Selecione uma lista para definir o Space.</p>}
           <button onClick={onClose} className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 transition-all">
             Cancelar
           </button>
-          <button onClick={handleCreate} disabled={saving || !draft.title.trim()}
+          <button onClick={handleCreate} disabled={saving || !draft.title.trim() || !draft.projectId}
             className="px-5 py-2 rounded-xl text-xs font-semibold text-white flex items-center gap-2 transition-all disabled:opacity-50"
             style={{ background: 'linear-gradient(135deg, #6a11cb, #2575fc)' }}>
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
