@@ -6,6 +6,7 @@ import {
   TrendingUp, TrendingDown, DollarSign, Users, ShoppingCart, Zap,
   Edit3, Check, X, Eye, MessageCircle, MousePointer, Target, Lock,
   Loader2, PlayCircle, ExternalLink, Image as ImageIcon, ArrowUpDown, Film, ChevronDown, Repeat,
+  BarChart3, Phone, Mail,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { RefreshCw, History } from 'lucide-react'
@@ -74,6 +75,17 @@ type Creative = {
   body: string | null; title: string | null
   spend: number; impressions: number; clicks: number; ctr: number; cpm: number; cpc: number
   leads: number; cpl: number
+  crmLeads: number; meetings: number; sales: number; revenue: number
+}
+
+type CreativeFunnel = {
+  summary: { totalLeads: number; meetings: number; sales: number; revenue: number }
+  funnel: { id: string; name: string; color: string; order: number; count: number }[]
+  leads: {
+    id: string; name: string; phone: string | null; email: string | null; source: string | null
+    clientType: string | null; dealValue: number; isSale: boolean; createdAt: string
+    stage: { id: string; name: string; color: string }
+  }[]
 }
 
 const statusColor: Record<string, string> = {
@@ -224,13 +236,16 @@ function ManualEditModal({ metric, value, currency, onSave, onClose }: {
 }
 
 /* ── Creative modal ── */
-function CreativeModal({ creative, adAccountId, currency, token, onClose }: {
-  creative: Creative; adAccountId: string; currency: string; token: string; onClose: () => void
+function CreativeModal({ creative, adAccountId, currency, token, periodQuery, onClose }: {
+  creative: Creative; adAccountId: string; currency: string; token: string; periodQuery: string; onClose: () => void
 }) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null)
   const [videoPermalink, setVideoPermalink] = useState<string | null>(null)
   const [previewSrc, setPreviewSrc] = useState<string | null>(null)
   const [loadingVideo, setLoadingVideo] = useState(false)
+  const [activeTab, setActiveTab] = useState<'performance' | 'funnel'>('performance')
+  const [funnelData, setFunnelData] = useState<CreativeFunnel | null>(null)
+  const [funnelLoading, setFunnelLoading] = useState(false)
   const cs = currencySymbol(currency)
   const active = creative.effectiveStatus === 'ACTIVE'
 
@@ -252,6 +267,18 @@ function CreativeModal({ creative, adAccountId, currency, token, onClose }: {
       })
       .finally(() => setLoadingVideo(false))
   }, [creative.id, creative.videoId, token])
+
+  useEffect(() => {
+    if (activeTab !== 'funnel' || funnelData || funnelLoading) return
+    setFunnelLoading(true)
+    fetch(`/api/trafego/meta/creatives/${creative.id}/funnel${periodQuery}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : r.json().then(d => { throw new Error(d.error ?? 'Erro ao buscar funil') }))
+      .then(setFunnelData)
+      .catch(err => toast.error(err instanceof Error ? err.message : 'Erro ao buscar funil do criativo'))
+      .finally(() => setFunnelLoading(false))
+  }, [activeTab, creative.id, funnelData, funnelLoading, periodQuery, token])
 
   const metrics = [
     { label: 'Investido',   value: `${cs} ${creative.spend.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` },
@@ -292,6 +319,18 @@ function CreativeModal({ creative, adAccountId, currency, token, onClose }: {
           </div>
         </div>
 
+        <div className="px-6 border-b border-[#1e1635] flex items-center gap-5">
+          <button onClick={() => setActiveTab('performance')}
+            className={`py-3 text-xs font-medium border-b-2 transition-colors ${activeTab === 'performance' ? 'text-white border-[#8b5cf6]' : 'text-slate-500 border-transparent hover:text-slate-300'}`}>
+            Performance
+          </button>
+          <button onClick={() => setActiveTab('funnel')}
+            className={`py-3 text-xs font-medium border-b-2 transition-colors flex items-center gap-1.5 ${activeTab === 'funnel' ? 'text-white border-[#8b5cf6]' : 'text-slate-500 border-transparent hover:text-slate-300'}`}>
+            <BarChart3 className="w-3.5 h-3.5" /> Funil CRM
+          </button>
+        </div>
+
+        {activeTab === 'performance' ? (
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="rounded-xl overflow-hidden bg-black flex items-center justify-center" style={{ minHeight: 280 }}>
             {creative.videoId ? (
@@ -355,6 +394,80 @@ function CreativeModal({ creative, adAccountId, currency, token, onClose }: {
             </div>
           </div>
         </div>
+        ) : (
+          <div className="p-6 space-y-5">
+            {funnelLoading ? (
+              <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 text-[#8b5cf6] animate-spin" /></div>
+            ) : funnelData ? (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    ['Leads atribuídos', funnelData.summary.totalLeads.toLocaleString('pt-BR')],
+                    ['Agendamentos', funnelData.summary.meetings.toLocaleString('pt-BR')],
+                    ['Vendas', funnelData.summary.sales.toLocaleString('pt-BR')],
+                    ['Faturamento', `${cs} ${funnelData.summary.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-lg border border-[#1e1635] bg-[#120d26] p-3">
+                      <p className="text-sm font-bold text-white">{value}</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">{label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div>
+                  <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-3">Distribuição por etapa atual</p>
+                  <div className="space-y-2.5">
+                    {funnelData.funnel.map(stage => {
+                      const max = Math.max(...funnelData.funnel.map(item => item.count), 1)
+                      return (
+                        <div key={stage.id} className="grid grid-cols-[minmax(110px,180px)_1fr_28px] items-center gap-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: stage.color }} />
+                            <span className="text-xs text-slate-300 truncate">{stage.name}</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-[#1a1430] overflow-hidden">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${(stage.count / max) * 100}%`, background: stage.color }} />
+                          </div>
+                          <span className="text-xs font-semibold text-white text-right">{stage.count}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-3">Leads deste criativo</p>
+                  {funnelData.leads.length === 0 ? (
+                    <p className="text-xs text-slate-500 py-5 text-center border border-dashed border-[#2d2550] rounded-lg">Nenhum lead atribuído no período selecionado.</p>
+                  ) : (
+                    <div className="divide-y divide-[#1e1635] border border-[#1e1635] rounded-lg overflow-hidden">
+                      {funnelData.leads.map(lead => (
+                        <div key={lead.id} className="p-3 flex items-center gap-3 bg-[#100b22]">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="text-xs font-medium text-white truncate">{lead.name}</p>
+                              <span className="px-1.5 py-0.5 rounded text-[9px] flex-shrink-0" style={{ color: lead.stage.color, background: `${lead.stage.color}18` }}>{lead.stage.name}</span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[10px] text-slate-500">
+                              {lead.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{lead.phone}</span>}
+                              {lead.email && <span className="flex items-center gap-1 truncate"><Mail className="w-3 h-3" />{lead.email}</span>}
+                            </div>
+                          </div>
+                          {lead.phone && (
+                            <a href={`/conversas?leadId=${encodeURIComponent(lead.id)}&phone=${encodeURIComponent(lead.phone)}`}
+                              className="w-7 h-7 rounded-md border border-[#2d2550] text-slate-400 hover:text-emerald-400 flex items-center justify-center" title="Abrir conversa">
+                              <MessageCircle className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : null}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -600,12 +713,15 @@ export default function TrafegoPagoPage() {
   const [creativesLoading, setCreativesLoading] = useState(false)
   const [creativeAdAccountId, setCreativeAdAccountId] = useState('')
   const [creativeStatusFilter, setCreativeStatusFilter] = useState<'all' | 'active' | 'paused'>('all')
-  const [creativeSort, setCreativeSort] = useState<'spend' | 'ctr' | 'leads'>('spend')
+  const [creativeSort, setCreativeSort] = useState<'spend' | 'ctr' | 'leads' | 'meetings' | 'sales'>('spend')
   const [selectedCreative, setSelectedCreative] = useState<Creative | null>(null)
 
   // Chave de período usada tanto pro fetch dos overrides manuais quanto pra escopar onde eles
   // se aplicam (editar "CPL" em Julho não deve valer também pra Agosto).
   const periodKey = period === 'custom' && customRange ? `custom:${customRange.from}:${customRange.to}` : period
+  const creativePeriodQuery = period === 'custom' && customRange
+    ? `?period=custom&from=${customRange.from}&to=${customRange.to}`
+    : `?period=${period}`
 
   useEffect(() => {
     if (!token) return
@@ -807,6 +923,7 @@ export default function TrafegoPagoPage() {
           adAccountId={creativeAdAccountId}
           currency={currency}
           token={token!}
+          periodQuery={creativePeriodQuery}
           onClose={() => setSelectedCreative(null)}
         />
       )}
@@ -903,14 +1020,14 @@ export default function TrafegoPagoPage() {
                     <div className="flex items-center gap-1.5 text-xs text-slate-500">
                       <ArrowUpDown className="w-3.5 h-3.5" /> Ordenar:
                     </div>
-                    {(['spend', 'ctr', 'leads'] as const).map(s => (
+                    {(['spend', 'ctr', 'leads', 'meetings', 'sales'] as const).map(s => (
                       <button key={s} onClick={() => setCreativeSort(s)}
                         className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
                         style={creativeSort === s
                           ? { background: '#6a11cb', color: '#fff' }
                           : { background: 'rgba(15,11,30,0.7)', color: '#94a3b8', border: '1px solid #1e1635' }}
                       >
-                        {s === 'spend' ? 'Gasto' : s === 'ctr' ? 'CTR' : 'Leads'}
+                        {s === 'spend' ? 'Gasto' : s === 'ctr' ? 'CTR' : s === 'leads' ? 'Leads Meta' : s === 'meetings' ? 'Agendamentos' : 'Vendas'}
                       </button>
                     ))}
                   </div>
@@ -953,6 +1070,11 @@ export default function TrafegoPagoPage() {
                               <div className="flex items-center justify-between mt-1.5 text-[10px] text-slate-500">
                                 <span>{c.impressions.toLocaleString('pt-BR')} impr.</span>
                                 <span className="text-emerald-400">{c.ctr.toFixed(2)}%</span>
+                              </div>
+                              <div className="grid grid-cols-3 gap-1 mt-2 pt-2 border-t border-[#1e1635] text-center">
+                                <div><p className="text-[11px] font-semibold text-white">{c.crmLeads}</p><p className="text-[9px] text-slate-600">Leads CRM</p></div>
+                                <div><p className="text-[11px] font-semibold text-sky-400">{c.meetings}</p><p className="text-[9px] text-slate-600">Agenda.</p></div>
+                                <div><p className="text-[11px] font-semibold text-emerald-400">{c.sales}</p><p className="text-[9px] text-slate-600">Vendas</p></div>
                               </div>
                             </div>
                           </button>

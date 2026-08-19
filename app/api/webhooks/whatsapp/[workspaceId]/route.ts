@@ -71,11 +71,12 @@ export async function POST(
 
         if (existingLead) {
           // New ad click on existing contact — update attribution data
-          if (ctwaClid && !existingLead.ctwaClid) {
+          if ((ctwaClid && !existingLead.ctwaClid) || (metaAdId && !existingLead.metaAdId)) {
             await prisma.lead.update({
               where: { id: existingLead.id },
               data: {
-                ctwaClid,
+                ...(ctwaClid && !existingLead.ctwaClid && { ctwaClid }),
+                ...(metaAdId && !existingLead.metaAdId && { metaAdId }),
                 ...(adMeta && { metadata: adMeta }),
               },
             })
@@ -101,6 +102,7 @@ export async function POST(
               ...identity,
               source: 'whatsapp',
               ctwaClid,
+              metaAdId,
               metadata: adMeta ?? undefined,
               pipelineStageId: firstStage.id,
             },

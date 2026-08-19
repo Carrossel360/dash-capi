@@ -128,21 +128,30 @@ export async function POST(
   const phone        = normalizePhone(rawPhone)
 
   const direction    = fromMe ? 'outbound' : 'inbound'
+  const adReply = contextInfo?.['externalAdReply'] as Record<string, unknown> | undefined
+  const isMetaAd = contextInfo?.['conversionSource'] === 'FB_Ads'
+    || contextInfo?.['entryPointConversionSource'] === 'ctwa_ad'
+    || adReply?.['sourceType'] === 'ad'
+    || Boolean(adReply?.['ctwaClid'])
+    || Boolean(adReply?.['sourceId'] ?? adReply?.['sourceID'])
+  const metaAdId = isMetaAd
+    ? String(adReply?.['sourceId'] ?? adReply?.['sourceID'] ?? '').trim() || null
+    : null
 
   // Find existing lead by phone
   const leadPhone = `+55${phone}`
-  let lead: { id: string; name: string } | null = await findDuplicateLead(workspaceId, leadPhone, null)
+  let lead: { id: string; name: string; metaAdId: string | null } | null = await findDuplicateLead(workspaceId, leadPhone, null)
+
+  if (lead && direction === 'inbound' && metaAdId && !lead.metaAdId) {
+    await prisma.lead.update({ where: { id: lead.id }, data: { metaAdId } })
+    lead = { ...lead, metaAdId }
+  }
 
   // Sem lead ainda + primeira mensagem do cliente: cria o Lead já com a origem identificada.
   // Prioridade: (1) contexto real de anúncio Meta anexado pela própria mensagem (contextInfo),
   // (2) frase cadastrada em Configurações (link do site/Instagram/Google com texto pré-preenchido),
   // (3) sem identificação — ainda assim vira lead, só sem origem marcada.
   if (!lead && direction === 'inbound') {
-    const adReply = contextInfo?.['externalAdReply'] as Record<string, unknown> | undefined
-    const isMetaAd = contextInfo?.['conversionSource'] === 'FB_Ads'
-      || contextInfo?.['entryPointConversionSource'] === 'ctwa_ad'
-      || adReply?.['sourceType'] === 'ad'
-
     // source = plataforma/campanha de origem (Meta, Google Ads...) — só recebe um valor real
     // quando dá pra confirmar de verdade; sem confirmação, fica "Indefinido" (nunca herda o
     // canal). utmMedium = canal de entrega (sempre conhecido — toda mensagem daqui é WhatsApp).
@@ -157,9 +166,9 @@ export async function POST(
       source = 'Meta'
       utmSource = 'meta'
       ctwaClid = (adReply?.['ctwaClid'] as string) ?? null
-      utmCampaign = (adReply?.['title'] as string) ?? (adReply?.['sourceID'] as string) ?? null
+      utmCampaign = (adReply?.['title'] as string) ?? metaAdId
       metadata = {
-        adSourceId:  adReply?.['sourceID'] ?? undefined,
+        adSourceId:  metaAdId ?? undefined,
         adSourceUrl: adReply?.['sourceURL'] ?? undefined,
         adTitle:     adReply?.['title'] ?? undefined,
         adBody:      adReply?.['body'] ?? undefined,
@@ -183,7 +192,7 @@ export async function POST(
 
     if (firstStage) {
       const identity = await getLeadIdentity(workspaceId, leadPhone, null)
-      let newLead: { id: string; name: string }
+      let newLead: { id: string; name: string; metaAdId: string | null }
       try {
         newLead = await prisma.lead.create({
           data: {
@@ -194,17 +203,18 @@ export async function POST(
             source,
             utmSource, utmMedium, utmCampaign,
             ctwaClid,
+            metaAdId,
             metadata: metadata as Prisma.InputJsonValue | undefined,
             pipelineStageId: firstStage.id,
             notes: content ? `Primeira mensagem: ${content}` : undefined,
           },
-          select: { id: true, name: true },
+          select: { id: true, name: true, metaAdId: true },
         })
       } catch (error) {
         if (!isLeadIdentityConflict(error)) throw error
         const duplicate = await findDuplicateLead(workspaceId, leadPhone, null)
         if (!duplicate) throw error
-        newLead = { id: duplicate.id, name: duplicate.name }
+        newLead = { id: duplicate.id, name: duplicate.name, metaAdId: duplicate.metaAdId }
       }
       lead = newLead
 

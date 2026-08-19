@@ -208,15 +208,21 @@ export async function syncWorkspaceMetaLeads(workspace: Workspace): Promise<Sync
       }),
       prisma.lead.findMany({
         where: { workspaceId: workspace.id },
-        select: { id: true, phone: true, email: true },
+        select: { id: true, phone: true, email: true, metaAdId: true },
       }),
       Promise.all(forms.map(async form => ({ form, leads: await fetchFormLeads(form.id, accessToken) }))),
     ])
     if (!firstStage) return 'ok'
 
-    const existingIds = new Set(existingLeads.map(lead => lead.id))
-    const existingPhones = new Set(existingLeads.map(lead => normalizeLeadPhone(lead.phone, workspace.currency)).filter(Boolean))
-    const existingEmails = new Set(existingLeads.map(lead => normalizeLeadEmail(lead.email)).filter(Boolean))
+    const existingById = new Map(existingLeads.map(lead => [lead.id, lead]))
+    const existingByPhone = new Map<string, typeof existingLeads[number]>()
+    const existingByEmail = new Map<string, typeof existingLeads[number]>()
+    for (const existingLead of existingLeads) {
+      const phoneKey = normalizeLeadPhone(existingLead.phone, workspace.currency)
+      const emailKey = normalizeLeadEmail(existingLead.email)
+      if (phoneKey) existingByPhone.set(phoneKey, existingLead)
+      if (emailKey) existingByEmail.set(emailKey, existingLead)
+    }
     const configuredAdAccountId = workspace.metaAdAccountId?.replace(/^act_/, '') ?? null
     const adAccountCache = new Map<string, string | null>()
 
@@ -230,7 +236,14 @@ export async function syncWorkspaceMetaLeads(workspace: Workspace): Promise<Sync
 
     for (const { form, leads } of formLeads) {
       for (const lead of leads) {
-        if (existingIds.has(lead.id)) continue
+        const sameMetaLead = existingById.get(lead.id)
+        if (sameMetaLead) {
+          if (lead.adId && !sameMetaLead.metaAdId) {
+            await prisma.lead.update({ where: { id: sameMetaLead.id }, data: { metaAdId: lead.adId } })
+            sameMetaLead.metaAdId = lead.adId
+          }
+          continue
+        }
 
         // A Página identifica de onde o formulário foi listado, mas uma configuração humana
         // incorreta pode apontar dois clientes para a Página errada. O anúncio oferece uma
@@ -254,7 +267,15 @@ export async function syncWorkspaceMetaLeads(workspace: Workspace): Promise<Sync
         // também é alimentado pelo mesmo n8n puxando esses formulários; ou até WhatsApp) —
         // o id da Meta não bate com o desses outros caminhos, então sem checar telefone/e-mail
         // aqui duplicaria todo mundo que já existe. Mesma lógica que o fluxo n8n já usa.
-        if ((phoneKey && existingPhones.has(phoneKey)) || (emailKey && existingEmails.has(emailKey))) continue
+        const duplicateLead = (phoneKey ? existingByPhone.get(phoneKey) : null)
+          ?? (emailKey ? existingByEmail.get(emailKey) : null)
+        if (duplicateLead) {
+          if (lead.adId && !duplicateLead.metaAdId) {
+            await prisma.lead.update({ where: { id: duplicateLead.id }, data: { metaAdId: lead.adId } })
+            duplicateLead.metaAdId = lead.adId
+          }
+          continue
+        }
 
         let newLead: { id: string }
         try {
@@ -270,6 +291,7 @@ export async function syncWorkspaceMetaLeads(workspace: Workspace): Promise<Sync
               source: 'Meta',
               utmSource: 'meta',
               utmMedium: 'Formulário Nativo',
+              metaAdId: lead.adId,
               pipelineStageId: firstStage.id,
               createdAt: lead.createdTime ? new Date(lead.createdTime) : undefined,
               metadata: {
@@ -291,9 +313,10 @@ export async function syncWorkspaceMetaLeads(workspace: Workspace): Promise<Sync
           throw error
         }
 
-        existingIds.add(lead.id)
-        if (phoneKey) existingPhones.add(phoneKey)
-        if (emailKey) existingEmails.add(emailKey)
+        const indexedLead = { id: lead.id, phone: phoneFormatted, email, metaAdId: lead.adId }
+        existingById.set(lead.id, indexedLead)
+        if (phoneKey) existingByPhone.set(phoneKey, indexedLead)
+        if (emailKey) existingByEmail.set(emailKey, indexedLead)
 
         await enqueueCapiEvent({
           workspaceId: workspace.id,

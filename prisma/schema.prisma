@@ -214,6 +214,7 @@ model Lead {
   fbclid          String?
   gclid           String?
   ctwaClid        String?
+  metaAdId        String?
   pipelineStageId String        @map("stageId")
   dealValue       Float?
   closedAt        DateTime?
@@ -231,6 +232,7 @@ model Lead {
 
   @@unique([workspaceId, normalizedEmail])
   @@unique([workspaceId, normalizedPhone])
+  @@index([workspaceId, metaAdId])
 }
 
 model Deal {

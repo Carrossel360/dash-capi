@@ -51,11 +51,42 @@ export async function GET(req: NextRequest) {
     const { since, until } = resolveRange(period, from, to)
 
     const ads = await fetchMetaAdCreatives({ adAccountId: workspace.metaAdAccountId, accessToken, since, until })
+    const adIds = ads.map(ad => ad.id)
+    const crmRows = adIds.length ? await prisma.lead.findMany({
+      where: {
+        workspaceId: auth.workspaceId,
+        metaAdId: { in: adIds },
+        createdAt: {
+          gte: new Date(`${since}T00:00:00.000Z`),
+          lte: new Date(`${until}T23:59:59.999Z`),
+        },
+      },
+      select: {
+        metaAdId: true,
+        dealValue: true,
+        closedAt: true,
+        stage: { select: { isMeetingStage: true, triggerCapiEvent: true } },
+        deals: { select: { value: true } },
+      },
+    }) : []
+    const crmByAd = new Map<string, { leads: number; meetings: number; sales: number; revenue: number }>()
+    for (const lead of crmRows) {
+      if (!lead.metaAdId) continue
+      const summary = crmByAd.get(lead.metaAdId) ?? { leads: 0, meetings: 0, sales: 0, revenue: 0 }
+      const isSale = Boolean(lead.closedAt) || lead.stage.triggerCapiEvent === 'purchase'
+      const dealsValue = lead.deals.reduce((total, deal) => total + deal.value, 0)
+      summary.leads += 1
+      if (lead.stage.isMeetingStage) summary.meetings += 1
+      if (isSale) summary.sales += 1
+      if (isSale) summary.revenue += dealsValue || lead.dealValue || 0
+      crmByAd.set(lead.metaAdId, summary)
+    }
 
     const creatives = ads.map(ad => {
       const row = ad.insights?.data?.[0]
       const spend = Number(row?.spend) || 0
       const leads = leadCount(row?.actions) + sumActions(row?.actions, MESSAGING_ACTION_TYPES)
+      const crm = crmByAd.get(ad.id) ?? { leads: 0, meetings: 0, sales: 0, revenue: 0 }
       return {
         id: ad.id,
         name: ad.name,
@@ -74,6 +105,10 @@ export async function GET(req: NextRequest) {
         cpc: Number(row?.cpc) || 0,
         leads,
         cpl: leads > 0 ? spend / leads : 0,
+        crmLeads: crm.leads,
+        meetings: crm.meetings,
+        sales: crm.sales,
+        revenue: crm.revenue,
       }
     })
 
