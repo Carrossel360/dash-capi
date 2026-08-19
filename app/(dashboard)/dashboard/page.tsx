@@ -57,6 +57,32 @@ function fmt(n: number, prefix = '') {
   return `${prefix}${n.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`
 }
 
+function fmtMoney(n: number, currency: string, compact = true) {
+  if (compact && Math.abs(n) >= 1000) {
+    return `${currency}${(n / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}K`
+  }
+  return `${currency}${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function parseMoneyInput(input: string): number {
+  let normalized = input.trim().replace(/\s/g, '').replace(/R\$|US\$/gi, '')
+  const thousands = /k$/i.test(normalized)
+  normalized = normalized.replace(/k$/i, '')
+
+  if (normalized.includes(',') && normalized.includes('.')) {
+    normalized = normalized.lastIndexOf(',') > normalized.lastIndexOf('.')
+      ? normalized.replace(/\./g, '').replace(',', '.')
+      : normalized.replace(/,/g, '')
+  } else if (normalized.includes(',')) {
+    normalized = normalized.replace(',', '.')
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(normalized)) {
+    normalized = normalized.replace(/\./g, '')
+  }
+
+  const value = Number(normalized)
+  return thousands ? value * 1000 : value
+}
+
 // Últimos 12 meses calendário (mais recente primeiro) — usado pro seletor "mês a mês".
 function lastMonths(n: number): { key: string; label: string }[] {
   const now = new Date()
@@ -176,7 +202,7 @@ export default function DashboardPage() {
       setRevenueReferenceType('date')
       setRevenueReferenceDate(localDateKey(date))
     }
-    setRevenueInput(String(revenue))
+    setRevenueInput(revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
     setRevenueEditorOpen(true)
   }
 
@@ -260,7 +286,7 @@ export default function DashboardPage() {
 
   async function saveManualRevenue() {
     if (!revenueInput.trim()) { toast.error('Informe o faturamento'); return }
-    const value = Number(revenueInput.replace(',', '.'))
+    const value = parseMoneyInput(revenueInput)
     if (!Number.isFinite(value) || value < 0) { toast.error('Informe um valor válido'); return }
     if (revenueReferenceType === 'month' && !revenueReferenceMonth) { toast.error('Selecione o mês de referência'); return }
     if (revenueReferenceType === 'date' && !revenueReferenceDate) { toast.error('Selecione a data de referência'); return }
@@ -293,7 +319,7 @@ export default function DashboardPage() {
       const res = await fetch(`/api/manual-metrics?${params}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
       if (!res.ok) throw new Error()
       setManualRevenue(null)
-      setRevenueInput(String(data.crmDeals))
+      setRevenueInput(data.crmDeals.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
       setRevenueEditorOpen(false)
       toast.success('Cálculo automático restaurado')
     } catch { toast.error('Erro ao restaurar faturamento') } finally { setSavingRevenue(false) }
@@ -309,7 +335,7 @@ export default function DashboardPage() {
   const kpis = [
     { label: 'Investimento', href: '/trafego-pago', value: `${curr} ${fmt(totalSpend)}`, icon: DollarSign, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)', border: 'rgba(139,92,246,0.25)', sub: `Meta: ${curr}${fmt(data.metaSpend)} · Google: ${curr}${fmt(data.googSpend)}` },
     { label: 'Leads', href: '/trafego-pago', value: fmt(totalLeads), icon: Users, color: '#10b981', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.25)', sub: `Meta: ${data.metaLeads} · Google: ${data.googLeads}` },
-    { label: 'Faturamento', href: data.hasReconciliation ? '/trafego-pago?tab=cruzamento' : '/pipeline', value: `${curr} ${fmt(revenue)}`, icon: DollarSign, color: '#F5A314', bg: 'rgba(245,163,20,0.1)', border: 'rgba(245,163,20,0.25)', sub: manualRevenue !== null ? 'Valor ajustado manualmente' : data.hasReconciliation ? 'Conciliação Matri' : 'Vendas marcadas no CRM', editable: true },
+    { label: 'Faturamento', href: data.hasReconciliation ? '/trafego-pago?tab=cruzamento' : '/pipeline', value: fmtMoney(revenue, curr), icon: DollarSign, color: '#F5A314', bg: 'rgba(245,163,20,0.1)', border: 'rgba(245,163,20,0.25)', sub: manualRevenue !== null ? 'Valor ajustado manualmente' : data.hasReconciliation ? 'Conciliação Matri' : 'Vendas marcadas no CRM', editable: true },
     { label: 'ROAS', href: data.hasReconciliation ? '/trafego-pago?tab=cruzamento' : '/pipeline', value: `${roas.toFixed(1)}x`, icon: Percent, color: '#2575fc', bg: 'rgba(37,117,252,0.1)', border: 'rgba(37,117,252,0.25)', sub: 'Faturamento ÷ Investimento' },
   ]
 
@@ -317,7 +343,7 @@ export default function DashboardPage() {
     { label: 'Tráfego Pago', href: '/trafego-pago', icon: TrendingUp, color: '#8b5cf6', badge: 'Meta + Google',
       stats: [{ label: 'Gasto', value: `${curr}${fmt(totalSpend)}` }, { label: 'Leads', value: fmt(totalLeads) }, { label: 'ROAS', value: `${roas.toFixed(1)}x` }] },
     { label: data.hasReconciliation ? 'Cruzamento Matri' : 'CRM Pipeline', href: data.hasReconciliation ? '/trafego-pago?tab=cruzamento' : '/pipeline', icon: Users, color: '#10b981', badge: data.hasReconciliation ? 'Leads e Faturamento' : 'Leads e Vendas',
-      stats: [{ label: 'Leads', value: String(data.crmLeads) }, { label: 'Vendas', value: `${curr}${fmt(revenue)}` }, { label: 'CAPI', value: '—' }] },
+      stats: [{ label: 'Leads', value: String(data.crmLeads) }, { label: 'Vendas', value: fmtMoney(revenue, curr) }, { label: 'CAPI', value: '—' }] },
     { label: 'Social Media', href: '/social-media', icon: Share2, color: '#ec4899', badge: 'Instagram · Facebook',
       stats: [
         { label: 'Seguidores', value: data.hasInstagram && data.igFollowers != null ? fmt(data.igFollowers) : '—' },
@@ -401,8 +427,8 @@ export default function DashboardPage() {
               {editable && canEditRevenue && (
                 <button type="button" title="Editar faturamento"
                   onClick={openRevenueEditor}
-                  className="absolute top-4 right-4 w-8 h-8 rounded-lg border border-amber-400/25 bg-amber-400/10 text-amber-400 flex items-center justify-center hover:bg-amber-400/20 transition-all">
-                  <Pencil className="w-3.5 h-3.5" />
+                  className="absolute top-3 right-3 w-6 h-6 rounded-md text-slate-500 flex items-center justify-center hover:bg-white/5 hover:text-amber-400 transition-all">
+                  <Pencil className="w-3 h-3" />
                 </button>
               )}
             </div>
@@ -484,12 +510,12 @@ export default function DashboardPage() {
                   </tr>
                   <tr className="border-b border-[#1e1635]/50">
                     <td className="px-4 py-3 text-slate-400">{data.hasReconciliation ? 'Faturamento (conciliação Matri)' : 'Faturamento (vendas marcadas)'}</td>
-                    <td className="px-4 py-3 text-white font-semibold text-right">{curr} {fmt(revenue)}</td>
+                    <td className="px-4 py-3 text-white font-semibold text-right">{fmtMoney(revenue, curr, false)}</td>
                   </tr>
                   <tr className="border-b border-[#1e1635]/50">
                     <td className="px-4 py-3 text-slate-400">Ticket médio</td>
                     <td className="px-4 py-3 text-white font-semibold text-right">
-                      {curr} {fmt(data.crmLeads > 0 ? revenue / data.crmLeads : 0)}
+                      {fmtMoney(data.crmLeads > 0 ? revenue / data.crmLeads : 0, curr, false)}
                     </td>
                   </tr>
                   <tr>
@@ -566,9 +592,10 @@ export default function DashboardPage() {
               </div>
               <div>
                 <label className="text-xs text-slate-400">Valor ({curr})</label>
-                <input type="number" min="0" step="0.01" autoFocus value={revenueInput} onChange={event => setRevenueInput(event.target.value)}
+                <input type="text" inputMode="decimal" autoFocus value={revenueInput} onChange={event => setRevenueInput(event.target.value)}
                   onKeyDown={event => { if (event.key === 'Enter') saveManualRevenue() }}
                   className="w-full mt-1.5 px-3 py-2.5 rounded-lg bg-[#1e1635] border border-[#2d2550] text-white outline-none focus:border-[#6a11cb]" />
+                <p className="text-[10px] text-slate-600 mt-1">Aceita 41900,50, 41.900,50 ou 41,9K.</p>
                 <p className="text-[10px] text-slate-600 mt-1.5">Cálculo automático atual: {curr} {data.crmDeals.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
               </div>
               <div className="flex items-center gap-2">
