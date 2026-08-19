@@ -245,7 +245,8 @@ export async function syncWorkspaceMetaLeads(workspace: Workspace): Promise<Sync
         }
 
         const { name, email, phone } = extractLeadContact(lead.fieldData)
-        const phoneFormatted = phone ? `+${phone.replace(/\D/g, '')}` : null
+        const phoneDigits = phone?.replace(/\D/g, '') ?? ''
+        const phoneFormatted = phoneDigits.length >= 7 ? `+${phoneDigits}` : null
         const phoneKey = normalizeLeadPhone(phoneFormatted, workspace.currency)
         const emailKey = normalizeLeadEmail(email)
 

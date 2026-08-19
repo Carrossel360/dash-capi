@@ -95,7 +95,7 @@ export async function fetchAdAccountId(adId: string, accessToken: string): Promi
 // Nomes de campo variam por formulário (idioma, campo custom) — cobre os mais comuns dos
 // formulários nativos da Meta em pt-BR/en (full_name/phone_number são os nomes padrão que a
 // própria Meta usa nos campos de autopreenchimento).
-const NAME_FIELDS = ['full_name', 'first_name', 'nome', 'name']
+const NAME_FIELDS = ['full_name', 'first_name', 'nome_completo', 'nome completo', 'nome', 'name']
 const EMAIL_FIELDS = ['email', 'e-mail']
 const PHONE_FIELDS = ['phone_number', 'phone', 'telefone', 'celular', 'whatsapp']
 
