@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db'
 // 'agencia' — métricas da Visão Geral da Agência sem fonte automática (item 4/12 do pedido):
 // reunioes/cac/ticket_medio_tipo1/qtd_ativos_tipo1/qtd_ativos_tipo2/ltv/churn/csat/nps/
 // mrr/mrr_projetado/custo_csp/custo_mcb — ver app/api/agency/overview/route.ts
-const VALID_SERVICES = ['meta_ads', 'google_ads', 'social_media', 'agencia']
+const VALID_SERVICES = ['meta_ads', 'google_ads', 'social_media', 'agencia', 'dashboard']
 
 export async function GET(req: NextRequest) {
   const auth = await getAuthPayload(req)
@@ -34,6 +34,10 @@ export async function PUT(req: NextRequest) {
   if (!service || !period || !metricKey || value === undefined || !VALID_SERVICES.includes(service)) {
     return NextResponse.json({ error: 'service, period, metricKey e value obrigatórios' }, { status: 400 })
   }
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue) || numericValue < 0) {
+    return NextResponse.json({ error: 'value deve ser um número maior ou igual a zero' }, { status: 400 })
+  }
 
   const row = await prisma.manualMetric.upsert({
     where: {
@@ -41,8 +45,8 @@ export async function PUT(req: NextRequest) {
         workspaceId: auth.workspaceId, service, metricKey, period,
       },
     },
-    create: { workspaceId: auth.workspaceId, service, metricKey, period, value: Number(value) },
-    update: { value: Number(value) },
+    create: { workspaceId: auth.workspaceId, service, metricKey, period, value: numericValue },
+    update: { value: numericValue },
   })
 
   return NextResponse.json(row)

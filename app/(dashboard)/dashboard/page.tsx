@@ -1,12 +1,13 @@
 'use client'
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { TrendingUp, Users, DollarSign, Share2, MapPin, ArrowUpRight, Loader2, Percent } from 'lucide-react'
+import { TrendingUp, Users, DollarSign, Share2, MapPin, ArrowUpRight, Loader2, Percent, Pencil, X, RotateCcw, Save } from 'lucide-react'
 import TopBar from '@/components/TopBar'
 import PeriodSelector, { type Period } from '@/components/PeriodSelector'
 import AgencyOverview from '@/components/AgencyOverview'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/store/auth'
+import toast from 'react-hot-toast'
 
 const currencySymbol = (c?: string) => c === 'USD' ? 'US$' : 'R$'
 
@@ -69,14 +70,22 @@ function lastMonths(n: number): { key: string; label: string }[] {
   return out
 }
 
+function localDateKey(date = new Date()): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 export default function DashboardPage() {
-  const { token, currentWorkspace } = useAuthStore()
+  const { token, currentWorkspace, accessibleWorkspaces } = useAuthStore()
   // Visão Geral da Agência (item 12/vídeo) — só quem administra o workspace da própria
   // Carrossel (isAgency:true) vê os blocos Comercial/Sucesso/Financeiro em vez do dashboard
   // de KPIs de cliente. Mesma rota (/dashboard), conteúdo ramifica pelo contexto atual.
   const isAgencyAdmin = !!currentWorkspace?.isAgency && ['admin', 'manager'].includes(currentWorkspace?.role ?? '')
   const isMatriClient = currentWorkspace?.name?.toLowerCase().trim() === 'matri' || currentWorkspace?.slug === 'matri'
   const curr = currencySymbol(currentWorkspace?.currency)
+  const canEditRevenue = accessibleWorkspaces.some(workspace => workspace.isAgency && ['admin', 'manager'].includes(workspace.role ?? ''))
   const [data, setData] = useState<DashData>(empty)
   const [monthlyChart, setMonthlyChart] = useState<MonthlyChartRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -84,6 +93,13 @@ export default function DashboardPage() {
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null)
   const [specificMonth, setSpecificMonth] = useState('')
   const [view, setView] = useState<'geral' | 'detalhada'>('geral')
+  const [manualRevenue, setManualRevenue] = useState<number | null>(null)
+  const [revenueEditorOpen, setRevenueEditorOpen] = useState(false)
+  const [revenueInput, setRevenueInput] = useState('')
+  const [savingRevenue, setSavingRevenue] = useState(false)
+  const [revenueReferenceType, setRevenueReferenceType] = useState<'month' | 'date'>('month')
+  const [revenueReferenceMonth, setRevenueReferenceMonth] = useState(() => localDateKey().slice(0, 7))
+  const [revenueReferenceDate, setRevenueReferenceDate] = useState(() => localDateKey())
 
   const monthOptions = useMemo(() => lastMonths(12), [])
 
@@ -123,6 +139,47 @@ export default function DashboardPage() {
     return periodToYearMonth() ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   }
 
+  function manualRevenuePeriod(): string {
+    const month = periodToYearMonth()
+    if (month) return `month:${month}`
+    if (period === 'custom' && customRange) {
+      return customRange.from === customRange.to
+        ? `date:${customRange.from}`
+        : `custom:${customRange.from}:${customRange.to}`
+    }
+    if (period === 'today') return `date:${localDateKey()}`
+    if (period === 'yesterday') {
+      const yesterday = new Date()
+      yesterday.setDate(yesterday.getDate() - 1)
+      return `date:${localDateKey(yesterday)}`
+    }
+    return period
+  }
+
+  function selectedRevenueReference(): string {
+    return revenueReferenceType === 'month'
+      ? `month:${revenueReferenceMonth}`
+      : `date:${revenueReferenceDate}`
+  }
+
+  function openRevenueEditor() {
+    const month = periodToYearMonth()
+    if (month) {
+      setRevenueReferenceType('month')
+      setRevenueReferenceMonth(month)
+    } else if (period === 'custom' && customRange && customRange.from === customRange.to) {
+      setRevenueReferenceType('date')
+      setRevenueReferenceDate(customRange.from)
+    } else if (period === 'today' || period === 'yesterday') {
+      const date = new Date()
+      if (period === 'yesterday') date.setDate(date.getDate() - 1)
+      setRevenueReferenceType('date')
+      setRevenueReferenceDate(localDateKey(date))
+    }
+    setRevenueInput(String(revenue))
+    setRevenueEditorOpen(true)
+  }
+
   const load = useCallback(async () => {
     if (!token) return
     if (isAgencyAdmin) { setLoading(false); return } // AgencyOverview busca os próprios dados
@@ -134,7 +191,7 @@ export default function DashboardPage() {
     const ym = periodToYearMonth()
     const gbpUrl = ym ? `/api/google-business?period=${ym}` : '/api/google-business'
     try {
-      const [metaRes, googRes, leadsRes, dealsRes, monthlyRes, socialRes, gbpRes, reconciliationRes] = await Promise.all([
+      const [metaRes, googRes, leadsRes, dealsRes, monthlyRes, socialRes, gbpRes, reconciliationRes, manualRevenueRes] = await Promise.all([
         fetch(`/api/trafego/meta?${periodQs}`, { headers: h }),
         fetch(`/api/trafego/google?${periodQs}`, { headers: h }),
         fetch(`/api/leads?${periodQs}`, { headers: h }),
@@ -148,6 +205,7 @@ export default function DashboardPage() {
         isMatriClient
           ? fetch(`/api/leads-cruzamento?period=${reconciliationPeriod()}`, { headers: h })
           : Promise.resolve(null),
+        fetch(`/api/manual-metrics?service=dashboard&period=${encodeURIComponent(manualRevenuePeriod())}`, { headers: h }),
       ])
 
       const meta = metaRes.ok ? await metaRes.json() : null
@@ -158,6 +216,7 @@ export default function DashboardPage() {
       const social = socialRes.ok ? await socialRes.json() : null
       const gbp = gbpRes.ok ? await gbpRes.json() : null
       const reconciliation = reconciliationRes?.ok ? await reconciliationRes.json() : null
+      const manualRevenueData = manualRevenueRes.ok ? await manualRevenueRes.json() : null
 
       const leads = Array.isArray(leadsArr) ? leadsArr : []
       const dealLeads = Array.isArray(dealsArr) ? dealsArr : []
@@ -167,6 +226,8 @@ export default function DashboardPage() {
         : 0
       const hasReconciliation = isMatriClient && reconciliationRevenue > 0
       const crmDeals = hasReconciliation ? reconciliationRevenue : crmDealsFromPipeline
+      const savedManualRevenue = manualRevenueData?.overrides?.faturamento
+      setManualRevenue(typeof savedManualRevenue === 'number' ? savedManualRevenue : null)
 
       // Sem `period` explícito, /api/google-business devolve os últimos 12 meses (mais antigo
       // primeiro) — pega o mais recente. Com `period`, devolve um único registro (ou null).
@@ -197,16 +258,58 @@ export default function DashboardPage() {
 
   useEffect(() => { load() }, [load])
 
+  async function saveManualRevenue() {
+    if (!revenueInput.trim()) { toast.error('Informe o faturamento'); return }
+    const value = Number(revenueInput.replace(',', '.'))
+    if (!Number.isFinite(value) || value < 0) { toast.error('Informe um valor válido'); return }
+    if (revenueReferenceType === 'month' && !revenueReferenceMonth) { toast.error('Selecione o mês de referência'); return }
+    if (revenueReferenceType === 'date' && !revenueReferenceDate) { toast.error('Selecione a data de referência'); return }
+    const reference = selectedRevenueReference()
+    setSavingRevenue(true)
+    try {
+      const res = await fetch('/api/manual-metrics', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ service: 'dashboard', period: reference, metricKey: 'faturamento', value }),
+      })
+      if (!res.ok) throw new Error()
+      setManualRevenue(value)
+      if (revenueReferenceType === 'month') {
+        handleMonthPick(revenueReferenceMonth)
+      } else {
+        setSpecificMonth('')
+        setPeriod('custom')
+        setCustomRange({ from: revenueReferenceDate, to: revenueReferenceDate })
+      }
+      setRevenueEditorOpen(false)
+      toast.success('Faturamento atualizado')
+    } catch { toast.error('Erro ao atualizar faturamento') } finally { setSavingRevenue(false) }
+  }
+
+  async function restoreAutomaticRevenue() {
+    setSavingRevenue(true)
+    try {
+      const params = new URLSearchParams({ service: 'dashboard', period: manualRevenuePeriod(), metricKey: 'faturamento' })
+      const res = await fetch(`/api/manual-metrics?${params}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error()
+      setManualRevenue(null)
+      setRevenueInput(String(data.crmDeals))
+      setRevenueEditorOpen(false)
+      toast.success('Cálculo automático restaurado')
+    } catch { toast.error('Erro ao restaurar faturamento') } finally { setSavingRevenue(false) }
+  }
+
   const totalSpend = data.metaSpend + data.googSpend
   const totalLeads = data.metaLeads + data.googLeads
+  const revenue = manualRevenue ?? data.crmDeals
   // ROAS real = faturamento fechado no CRM ÷ investimento em tráfego pago — substitui o campo
   // manual/legado `metaRoas` (nunca era calculado de verdade, ver lib/trafego-aggregate.ts).
-  const roas = totalSpend > 0 ? data.crmDeals / totalSpend : 0
+  const roas = totalSpend > 0 ? revenue / totalSpend : 0
 
   const kpis = [
     { label: 'Investimento', href: '/trafego-pago', value: `${curr} ${fmt(totalSpend)}`, icon: DollarSign, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)', border: 'rgba(139,92,246,0.25)', sub: `Meta: ${curr}${fmt(data.metaSpend)} · Google: ${curr}${fmt(data.googSpend)}` },
     { label: 'Leads', href: '/trafego-pago', value: fmt(totalLeads), icon: Users, color: '#10b981', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.25)', sub: `Meta: ${data.metaLeads} · Google: ${data.googLeads}` },
-    { label: 'Faturamento', href: data.hasReconciliation ? '/trafego-pago?tab=cruzamento' : '/pipeline', value: `${curr} ${fmt(data.crmDeals)}`, icon: DollarSign, color: '#F5A314', bg: 'rgba(245,163,20,0.1)', border: 'rgba(245,163,20,0.25)', sub: data.hasReconciliation ? 'Conciliação Matri' : 'Vendas marcadas no CRM' },
+    { label: 'Faturamento', href: data.hasReconciliation ? '/trafego-pago?tab=cruzamento' : '/pipeline', value: `${curr} ${fmt(revenue)}`, icon: DollarSign, color: '#F5A314', bg: 'rgba(245,163,20,0.1)', border: 'rgba(245,163,20,0.25)', sub: manualRevenue !== null ? 'Valor ajustado manualmente' : data.hasReconciliation ? 'Conciliação Matri' : 'Vendas marcadas no CRM', editable: true },
     { label: 'ROAS', href: data.hasReconciliation ? '/trafego-pago?tab=cruzamento' : '/pipeline', value: `${roas.toFixed(1)}x`, icon: Percent, color: '#2575fc', bg: 'rgba(37,117,252,0.1)', border: 'rgba(37,117,252,0.25)', sub: 'Faturamento ÷ Investimento' },
   ]
 
@@ -214,7 +317,7 @@ export default function DashboardPage() {
     { label: 'Tráfego Pago', href: '/trafego-pago', icon: TrendingUp, color: '#8b5cf6', badge: 'Meta + Google',
       stats: [{ label: 'Gasto', value: `${curr}${fmt(totalSpend)}` }, { label: 'Leads', value: fmt(totalLeads) }, { label: 'ROAS', value: `${roas.toFixed(1)}x` }] },
     { label: data.hasReconciliation ? 'Cruzamento Matri' : 'CRM Pipeline', href: data.hasReconciliation ? '/trafego-pago?tab=cruzamento' : '/pipeline', icon: Users, color: '#10b981', badge: data.hasReconciliation ? 'Leads e Faturamento' : 'Leads e Vendas',
-      stats: [{ label: 'Leads', value: String(data.crmLeads) }, { label: 'Vendas', value: `${curr}${fmt(data.crmDeals)}` }, { label: 'CAPI', value: '—' }] },
+      stats: [{ label: 'Leads', value: String(data.crmLeads) }, { label: 'Vendas', value: `${curr}${fmt(revenue)}` }, { label: 'CAPI', value: '—' }] },
     { label: 'Social Media', href: '/social-media', icon: Share2, color: '#ec4899', badge: 'Instagram · Facebook',
       stats: [
         { label: 'Seguidores', value: data.hasInstagram && data.igFollowers != null ? fmt(data.igFollowers) : '—' },
@@ -283,17 +386,26 @@ export default function DashboardPage() {
 
         {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {kpis.map(({ label, href, value, icon: Icon, color, bg, border, sub }) => (
-            <Link key={label} href={href} className="glass card-hover rounded-xl p-4 block" style={{ borderColor: border, background: `linear-gradient(135deg, ${bg} 0%, rgba(10,8,24,0.9) 100%)` }}>
-              <div className="flex items-start justify-between mb-3">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: bg }}>
-                  <Icon className="w-4 h-4" style={{ color }} />
+          {kpis.map(({ label, href, value, icon: Icon, color, bg, border, sub, editable }) => (
+            <div key={label} className="glass card-hover rounded-xl relative" style={{ borderColor: border, background: `linear-gradient(135deg, ${bg} 0%, rgba(10,8,24,0.9) 100%)` }}>
+              <Link href={href} className="p-4 block">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: bg }}>
+                    <Icon className="w-4 h-4" style={{ color }} />
+                  </div>
                 </div>
-              </div>
-              <p className="text-xl font-bold text-white">{value}</p>
-              <p className="text-xs text-slate-500 mt-0.5">{label}</p>
-              {sub && <p className="text-[10px] text-slate-600 mt-1">{sub}</p>}
-            </Link>
+                <p className="text-xl font-bold text-white">{value}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{label}</p>
+                {sub && <p className={`text-[10px] mt-1 ${manualRevenue !== null && label === 'Faturamento' ? 'text-amber-400' : 'text-slate-600'}`}>{sub}</p>}
+              </Link>
+              {editable && canEditRevenue && (
+                <button type="button" title="Editar faturamento"
+                  onClick={openRevenueEditor}
+                  className="absolute top-4 right-4 w-8 h-8 rounded-lg border border-amber-400/25 bg-amber-400/10 text-amber-400 flex items-center justify-center hover:bg-amber-400/20 transition-all">
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           ))}
         </div>
 
@@ -372,12 +484,12 @@ export default function DashboardPage() {
                   </tr>
                   <tr className="border-b border-[#1e1635]/50">
                     <td className="px-4 py-3 text-slate-400">{data.hasReconciliation ? 'Faturamento (conciliação Matri)' : 'Faturamento (vendas marcadas)'}</td>
-                    <td className="px-4 py-3 text-white font-semibold text-right">{curr} {fmt(data.crmDeals)}</td>
+                    <td className="px-4 py-3 text-white font-semibold text-right">{curr} {fmt(revenue)}</td>
                   </tr>
                   <tr className="border-b border-[#1e1635]/50">
                     <td className="px-4 py-3 text-slate-400">Ticket médio</td>
                     <td className="px-4 py-3 text-white font-semibold text-right">
-                      {curr} {fmt(data.crmLeads > 0 ? data.crmDeals / data.crmLeads : 0)}
+                      {curr} {fmt(data.crmLeads > 0 ? revenue / data.crmLeads : 0)}
                     </td>
                   </tr>
                   <tr>
@@ -421,6 +533,60 @@ export default function DashboardPage() {
             </AreaChart>
           </ResponsiveContainer>
         </div>
+
+        {revenueEditorOpen && (
+          <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 theme-locked-modal">
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setRevenueEditorOpen(false)} />
+            <div className="relative w-full max-w-sm rounded-xl border border-[#2d2550] p-5 shadow-2xl space-y-4" style={{ background: '#0d0a1f' }}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-white">Editar faturamento</h3>
+                  <p className="text-[11px] text-slate-500 mt-1">Ajuste válido somente para o período selecionado.</p>
+                </div>
+                <button onClick={() => setRevenueEditorOpen(false)} className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-white">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div>
+                <label className="text-xs text-slate-400">Referência</label>
+                <div className="grid grid-cols-2 gap-1 mt-1.5 p-1 rounded-lg bg-[#15102a] border border-[#2d2550]">
+                  {(['month', 'date'] as const).map(type => (
+                    <button key={type} type="button" onClick={() => setRevenueReferenceType(type)}
+                      className={`px-3 py-2 rounded-md text-xs font-medium transition-colors ${revenueReferenceType === type ? 'bg-[#6a11cb] text-white' : 'text-slate-400 hover:text-white'}`}>
+                      {type === 'month' ? 'Mês' : 'Data'}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type={revenueReferenceType === 'month' ? 'month' : 'date'}
+                  value={revenueReferenceType === 'month' ? revenueReferenceMonth : revenueReferenceDate}
+                  onChange={event => revenueReferenceType === 'month' ? setRevenueReferenceMonth(event.target.value) : setRevenueReferenceDate(event.target.value)}
+                  className="w-full mt-2 px-3 py-2.5 rounded-lg bg-[#1e1635] border border-[#2d2550] text-white outline-none focus:border-[#6a11cb]"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400">Valor ({curr})</label>
+                <input type="number" min="0" step="0.01" autoFocus value={revenueInput} onChange={event => setRevenueInput(event.target.value)}
+                  onKeyDown={event => { if (event.key === 'Enter') saveManualRevenue() }}
+                  className="w-full mt-1.5 px-3 py-2.5 rounded-lg bg-[#1e1635] border border-[#2d2550] text-white outline-none focus:border-[#6a11cb]" />
+                <p className="text-[10px] text-slate-600 mt-1.5">Cálculo automático atual: {curr} {data.crmDeals.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {manualRevenue !== null && (
+                  <button onClick={restoreAutomaticRevenue} disabled={savingRevenue}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#2d2550] text-xs text-slate-400 hover:text-white disabled:opacity-50">
+                    <RotateCcw className="w-3.5 h-3.5" /> Automático
+                  </button>
+                )}
+                <button onClick={saveManualRevenue} disabled={savingRevenue}
+                  className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded-lg gradient-brand text-xs font-semibold text-white disabled:opacity-50">
+                  {savingRevenue ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                  Salvar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       </main>
     </div>
