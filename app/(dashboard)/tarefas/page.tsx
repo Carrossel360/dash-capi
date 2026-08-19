@@ -236,7 +236,7 @@ function SpaceNav({
               <div className="group flex items-center gap-1.5 px-2 py-1.5 hover:bg-white/[0.03] rounded-lg mx-1 cursor-pointer"
                 onMouseEnter={() => setHover(space.id)} onMouseLeave={() => setHover(null)}
                 onClick={() => {
-                  setExpanded(prev => ({ ...prev, [space.id]: true }))
+                  setExpanded(prev => ({ ...prev, [space.id]: !prev[space.id] }))
                   onSelectList(null, space.id)
                 }}>
                 <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: space.color }} />
