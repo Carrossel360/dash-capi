@@ -1,6 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
-import { X, Plus, Trash2, ChevronDown, Calendar, User, Flag, Tag, Loader2 } from 'lucide-react'
+import { X, Plus, ChevronDown, Calendar, User, Flag, Tag, Loader2, Building2, Clock3 } from 'lucide-react'
+import type { TaskClientOption, TaskStatusOption } from './task-types'
 
 export interface TaskSpace {
   id: string; name: string; color: string
@@ -13,24 +14,20 @@ export interface TaskList { id: string; name: string; color: string }
 export interface Member { id: string; name: string; email: string; role: string }
 export interface CustomField {
   id: string; name: string; type: string
+  spaceId?: string | null; folderId?: string | null; projectId?: string | null
   options?: { label: string; color?: string }[] | null
   required?: boolean
 }
 export interface TaskDraft {
   title: string; description: string; status: string; priority: string
-  assigneeId: string; assigneeName: string
+  assigneeIds: string[]
   startDate: string; dueDate: string
+  estimatedMinutes: string; clientWorkspaceId: string; serviceKey: string
   projectId: string; taskTags: string[]
   subtasks: { title: string; done: boolean }[]
   customFieldValues: Record<string, string>
 }
 
-const STATUSES = [
-  { key: 'todo',        label: 'A Fazer',      color: '#64748b' },
-  { key: 'in_progress', label: 'Em Progresso', color: '#2575fc' },
-  { key: 'in_review',   label: 'Em Revisão',   color: '#F5A314' },
-  { key: 'done',        label: 'Concluído',     color: '#10b981' },
-]
 const PRIORITIES = [
   { key: 'urgent', label: 'Urgente', color: '#ef4444' },
   { key: 'high',   label: 'Alta',    color: '#F5A314' },
@@ -75,32 +72,47 @@ function Dropdown<T extends { key: string; label: string; color?: string }>({
 }
 
 export default function CreateTaskModal({
-  spaces, members, initialStatus, initialProjectId, token, userName,
+  spaces, members, statuses, clients, initialStatus, initialProjectId, token, userName,
   onCreated, onClose,
 }: {
-  spaces: TaskSpace[]; members: Member[]
+  spaces: TaskSpace[]; members: Member[]; statuses: TaskStatusOption[]; clients: TaskClientOption[]
   initialStatus?: string; initialProjectId?: string
   token: string; userName: string
   onCreated: (task: unknown) => void; onClose: () => void
 }) {
   const [draft, setDraft] = useState<TaskDraft>({
     title: '', description: '', status: initialStatus ?? 'todo',
-    priority: 'medium', assigneeId: '', assigneeName: '',
+    priority: 'medium', assigneeIds: [],
     startDate: '', dueDate: '', projectId: initialProjectId ?? '',
+    estimatedMinutes: '', clientWorkspaceId: '', serviceKey: '',
     taskTags: [], subtasks: [], customFieldValues: {},
   })
   const [subtaskInput, setSubtaskInput] = useState('')
   const [tagInput, setTagInput] = useState('')
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [customFields, setCustomFields] = useState<CustomField[]>([])
+  const [taskOptions, setTaskOptions] = useState<{ id: string; title: string }[]>([])
   const titleRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { titleRef.current?.focus() }, [])
+  useEffect(() => {
+    titleRef.current?.focus()
+    fetch('/api/tasks/search', { headers: { Authorization: `Bearer ${token}` } }).then(res => res.json()).then(data => setTaskOptions(data.tasks ?? []))
+  }, [token])
 
-  // Get custom fields for the selected space (via the list)
   const selectedList = spaces.flatMap(s => [...s.lists, ...s.folders.flatMap(f => f.lists)]).find(l => l.id === draft.projectId)
   const selectedSpace = spaces.find(s => s.lists.some(l => l.id === draft.projectId) || s.folders.some(f => f.lists.some(l => l.id === draft.projectId)))
-  const customFields = selectedSpace?.customFields ?? []
+  const selectedFolder = selectedSpace?.folders.find(f => f.lists.some(l => l.id === draft.projectId))
+  const selectedClient = clients.find(client => client.id === draft.clientWorkspaceId)
+
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (selectedSpace?.id) params.set('spaceId', selectedSpace.id)
+    if (selectedFolder?.id) params.set('folderId', selectedFolder.id)
+    if (draft.projectId) params.set('projectId', draft.projectId)
+    fetch(`/api/tasks/custom-fields?${params}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => res.json()).then(data => setCustomFields(data.fields ?? [])).catch(() => setCustomFields([]))
+  }, [draft.projectId, selectedSpace?.id, selectedFolder?.id, token])
 
   const set = (key: keyof TaskDraft, val: unknown) => setDraft(prev => ({ ...prev, [key]: val }))
 
@@ -126,8 +138,8 @@ export default function CreateTaskModal({
         body: JSON.stringify({
           ...draft,
           projectId: draft.projectId || null,
-          assigneeId: draft.assigneeId || null,
-          assigneeName: draft.assigneeName || null,
+          assigneeIds: draft.assigneeIds,
+          estimatedMinutes: draft.estimatedMinutes ? Number(draft.estimatedMinutes) : null,
           startDate: draft.startDate || null,
           dueDate: draft.dueDate || null,
           createdByName: userName,
@@ -154,9 +166,10 @@ export default function CreateTaskModal({
     } finally { setSaving(false) }
   }
 
-  const statusMeta = STATUSES.find(s => s.key === draft.status) ?? STATUSES[0]
+  const statusOptions = statuses.map(status => ({ ...status, label: status.name }))
+  const statusMeta = statusOptions.find(s => s.key === draft.status) ?? statusOptions[0] ?? { key: 'todo', label: 'A Fazer', color: '#64748b' }
   const prioMeta = PRIORITIES.find(p => p.key === draft.priority) ?? PRIORITIES[2]
-  const assigneeMeta = members.find(m => m.id === draft.assigneeId)
+  const assigneeMeta = members.filter(m => draft.assigneeIds.includes(m.id))
 
   // Build flat list selector options
   const listOptions = spaces.flatMap(s => [
@@ -179,7 +192,7 @@ export default function CreateTaskModal({
               <span className="w-2 h-2 rounded-full" style={{ background: statusMeta.color }} />
             </Pill>
             {openDropdown === 'status' && (
-              <Dropdown options={STATUSES} value={draft.status}
+              <Dropdown options={statusOptions} value={draft.status}
                 onChange={s => set('status', s.key)} onClose={() => setOpenDropdown(null)} />
             )}
           </div>
@@ -201,13 +214,13 @@ export default function CreateTaskModal({
             <button onClick={() => setOpenDropdown(d => d === 'assignee' ? null : 'assignee')}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80 border"
               style={{ background: 'rgba(255,255,255,0.04)', color: '#94a3b8', borderColor: '#2d2550' }}>
-              {assigneeMeta ? (
+              {assigneeMeta.length ? (
                 <>
                   <span className="w-5 h-5 rounded-full text-[9px] flex items-center justify-center text-white font-bold"
                     style={{ background: 'linear-gradient(135deg,#6a11cb,#2575fc)' }}>
-                    {assigneeMeta.name[0].toUpperCase()}
+                    {assigneeMeta[0].name[0].toUpperCase()}
                   </span>
-                  {assigneeMeta.name.split(' ')[0]}
+                  {assigneeMeta.length === 1 ? assigneeMeta[0].name.split(' ')[0] : `${assigneeMeta.length} responsáveis`}
                 </>
               ) : (
                 <><User className="w-3 h-3" />Responsável</>
@@ -216,17 +229,17 @@ export default function CreateTaskModal({
             </button>
             {openDropdown === 'assignee' && (
               <div className="absolute top-full left-0 mt-1 rounded-xl border border-[#2d2550] shadow-2xl z-50 overflow-hidden min-w-[180px]" style={{ background: '#0d0a1f' }}>
-                <button onClick={() => { set('assigneeId', ''); set('assigneeName', ''); setOpenDropdown(null) }}
+                <button onClick={() => set('assigneeIds', [])}
                   className="w-full px-3 py-2 text-xs text-slate-500 hover:bg-white/5 text-left">Sem responsável</button>
                 {members.map(m => (
-                  <button key={m.id} onClick={() => { set('assigneeId', m.id); set('assigneeName', m.name); setOpenDropdown(null) }}
+                  <button key={m.id} onClick={() => set('assigneeIds', draft.assigneeIds.includes(m.id) ? draft.assigneeIds.filter(id => id !== m.id) : [...draft.assigneeIds, m.id])}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-300 hover:bg-white/5">
                     <span className="w-5 h-5 rounded-full text-[9px] flex items-center justify-center text-white font-bold"
                       style={{ background: 'linear-gradient(135deg,#6a11cb,#2575fc)' }}>
                       {m.name[0].toUpperCase()}
                     </span>
                     {m.name}
-                    {m.id === draft.assigneeId && <span className="ml-auto opacity-60 text-[10px]">✓</span>}
+                    {draft.assigneeIds.includes(m.id) && <span className="ml-auto opacity-60 text-[10px]">✓</span>}
                   </button>
                 ))}
               </div>
@@ -299,6 +312,33 @@ export default function CreateTaskModal({
                 onChange={e => set('dueDate', e.target.value)}
                 className="bg-transparent text-slate-300 outline-none cursor-pointer"
                 style={{ colorScheme: 'dark' }} />
+            </label>
+            <label className="flex items-center gap-2 text-xs text-slate-500 ml-auto">
+              <Clock3 className="w-3.5 h-3.5" />
+              <span>Estimativa:</span>
+              <input type="number" min="0" step="15" value={draft.estimatedMinutes}
+                onChange={e => set('estimatedMinutes', e.target.value)} placeholder="min"
+                className="w-16 bg-transparent text-slate-300 outline-none" />
+            </label>
+          </div>
+
+          <div className="px-5 py-3 grid grid-cols-2 gap-3 border-b border-[#1e1635]">
+            <label className="text-[10px] text-slate-500">
+              <span className="flex items-center gap-1 mb-1"><Building2 className="w-3 h-3" /> Cliente</span>
+              <select value={draft.clientWorkspaceId}
+                onChange={e => setDraft(prev => ({ ...prev, clientWorkspaceId: e.target.value, serviceKey: '' }))}
+                className="w-full text-xs bg-[#0f0b1e] border border-[#2d2550] rounded-lg px-2.5 py-2 text-slate-300 outline-none">
+                <option value="">Sem cliente vinculado</option>
+                {clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
+              </select>
+            </label>
+            <label className="text-[10px] text-slate-500">
+              <span className="block mb-1">Serviço do cliente</span>
+              <select value={draft.serviceKey} onChange={e => set('serviceKey', e.target.value)} disabled={!selectedClient}
+                className="w-full text-xs bg-[#0f0b1e] border border-[#2d2550] rounded-lg px-2.5 py-2 text-slate-300 outline-none disabled:opacity-50">
+                <option value="">Sem serviço vinculado</option>
+                {selectedClient?.services.map(service => <option key={service.key} value={service.key}>{service.label}</option>)}
+              </select>
             </label>
           </div>
 
@@ -387,7 +427,22 @@ export default function CreateTaskModal({
                     <label className="text-[10px] text-slate-500 block mb-1">
                       {field.name}{field.required && <span className="text-red-400 ml-0.5">*</span>}
                     </label>
-                    {field.type === 'select' ? (
+                    {field.type === 'task' ? (
+                      <select value={draft.customFieldValues[field.id] ?? ''} onChange={e => set('customFieldValues', { ...draft.customFieldValues, [field.id]: e.target.value })}
+                        className="w-full text-xs bg-[#0f0b1e] border border-[#2d2550] rounded-lg px-2 py-1.5 text-slate-300 outline-none">
+                        <option value="">—</option>{taskOptions.map(option => <option key={option.id} value={option.id}>{option.title}</option>)}
+                      </select>
+                    ) : field.type === 'client' ? (
+                      <select value={draft.customFieldValues[field.id] ?? ''} onChange={e => set('customFieldValues', { ...draft.customFieldValues, [field.id]: e.target.value })}
+                        className="w-full text-xs bg-[#0f0b1e] border border-[#2d2550] rounded-lg px-2 py-1.5 text-slate-300 outline-none">
+                        <option value="">—</option>{clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
+                      </select>
+                    ) : field.type === 'service' ? (
+                      <select value={draft.customFieldValues[field.id] ?? ''} onChange={e => set('customFieldValues', { ...draft.customFieldValues, [field.id]: e.target.value })}
+                        className="w-full text-xs bg-[#0f0b1e] border border-[#2d2550] rounded-lg px-2 py-1.5 text-slate-300 outline-none">
+                        <option value="">—</option>{Array.from(new Map(clients.flatMap(client => client.services).map(service => [service.key, service])).values()).map(service => <option key={service.key} value={service.key}>{service.label}</option>)}
+                      </select>
+                    ) : field.type === 'select' ? (
                       <select value={draft.customFieldValues[field.id] ?? ''}
                         onChange={e => set('customFieldValues', { ...draft.customFieldValues, [field.id]: e.target.value })}
                         className="w-full text-xs bg-[#0f0b1e] border border-[#2d2550] rounded-lg px-2 py-1.5 text-slate-300 outline-none">

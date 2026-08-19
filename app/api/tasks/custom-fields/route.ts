@@ -8,9 +8,19 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const spaceId = searchParams.get('spaceId')
+  const folderId = searchParams.get('folderId')
+  const projectId = searchParams.get('projectId')
 
   const fields = await prisma.customField.findMany({
-    where: { workspaceId: auth.workspaceId, ...(spaceId ? { spaceId } : {}) },
+    where: {
+      workspaceId: auth.workspaceId,
+      OR: [
+        { spaceId: null, folderId: null, projectId: null },
+        ...(spaceId ? [{ spaceId, folderId: null, projectId: null }] : []),
+        ...(folderId ? [{ folderId, projectId: null }] : []),
+        ...(projectId ? [{ projectId }] : []),
+      ],
+    },
     orderBy: { position: 'asc' },
   })
   return NextResponse.json({ fields })
@@ -22,14 +32,23 @@ export async function POST(req: NextRequest) {
   if (!['admin', 'manager'].includes(auth.role))
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const { spaceId, name, type, options, required } = await req.json()
+  const { spaceId, folderId, projectId, name, type, options, required } = await req.json()
   if (!name?.trim()) return NextResponse.json({ error: 'Name required' }, { status: 400 })
 
-  const count = await prisma.customField.count({ where: { workspaceId: auth.workspaceId, spaceId: spaceId ?? null } })
+  const count = await prisma.customField.count({
+    where: {
+      workspaceId: auth.workspaceId,
+      spaceId: spaceId ?? null,
+      folderId: folderId ?? null,
+      projectId: projectId ?? null,
+    },
+  })
   const field = await prisma.customField.create({
     data: {
       workspaceId: auth.workspaceId,
       spaceId: spaceId ?? null,
+      folderId: folderId ?? null,
+      projectId: projectId ?? null,
       name: name.trim(),
       type: type ?? 'text',
       options: options ?? null,

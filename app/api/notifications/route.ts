@@ -13,7 +13,10 @@ export async function GET(req: NextRequest) {
 
   const notifications = await prisma.notification.findMany({
     where: {
-      ...(isAgencyManager ? {} : { workspaceId: auth.workspaceId }),
+      AND: [
+        isAgencyManager ? {} : { workspaceId: auth.workspaceId },
+        { OR: [{ recipientUserId: null }, { recipientUserId: auth.userId }] },
+      ],
       ...(unreadOnly ? { readAt: null } : {}),
     },
     orderBy: { createdAt: 'desc' },

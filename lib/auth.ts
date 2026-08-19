@@ -37,7 +37,7 @@ export async function isAgencyStaff(userId: string): Promise<boolean> {
 // (admin/manager veem tudo, e workspaces de cliente não usam esse escopo). Implementa a
 // "Seleção de Espaço" do nível de acesso Equipe, via TaskSpaceMember.
 export async function getAccessibleTaskSpaceIds(auth: JWTPayload): Promise<string[] | null> {
-  if (['admin', 'manager'].includes(auth.role)) return null
+  if (auth.role !== 'viewer') return null
   const ws = await prisma.workspace.findUnique({ where: { id: auth.workspaceId }, select: { isAgency: true } })
   if (!ws?.isAgency) return null
   const memberships = await prisma.taskSpaceMember.findMany({

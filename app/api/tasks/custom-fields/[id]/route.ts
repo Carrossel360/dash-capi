@@ -16,6 +16,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(data.type !== undefined && { type: data.type }),
       ...(data.options !== undefined && { options: data.options }),
       ...(data.required !== undefined && { required: data.required }),
+      ...(data.position !== undefined && { position: Number(data.position) }),
+      ...(data.spaceId !== undefined && { spaceId: data.spaceId || null }),
+      ...(data.folderId !== undefined && { folderId: data.folderId || null }),
+      ...(data.projectId !== undefined && { projectId: data.projectId || null }),
     },
   })
   return NextResponse.json({ ok: true })

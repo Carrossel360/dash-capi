@@ -1,16 +1,18 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   Plus, ChevronRight, ChevronDown, LayoutGrid, List, Settings2,
   Folder, FolderOpen, CheckSquare, Loader2, MoreHorizontal, Trash2,
-  X, Hash,
+  X, Hash, Filter, Search, BookmarkPlus,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import TopBar from '@/components/TopBar'
 import { useAuthStore } from '@/lib/store/auth'
 import CreateTaskModal from './CreateTaskModal'
 import TaskPanel from './TaskPanel'
-import type { TaskSpace, Member } from './CreateTaskModal'
+import TaskSettingsModal from './TaskSettingsModal'
+import type { TaskSpace, Member, CustomField } from './CreateTaskModal'
+import { EMPTY_FILTERS, statusBg, type TaskClientOption, type TaskFilters, type TaskSavedViewOption, type TaskStatusOption } from './task-types'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -19,16 +21,13 @@ interface TaskSummary {
   assigneeId: string | null; assigneeName: string | null
   startDate: string | null; dueDate: string | null
   projectId: string | null; taskTags: string[]
+  clientWorkspaceId?: string | null; serviceKey?: string | null
+  assignees?: { userId: string; userName: string }[]
+  customFieldValues?: { customFieldId: string; value: string | null; field: CustomField }[]
   project: { id: string; name: string; color: string } | null
   _count: { comments: number; subtasks: number }
 }
 
-const STATUSES = [
-  { key: 'todo',        label: 'A Fazer',      color: '#64748b', bg: 'rgba(100,116,139,0.12)' },
-  { key: 'in_progress', label: 'Em Progresso', color: '#2575fc', bg: 'rgba(37,117,252,0.12)'  },
-  { key: 'in_review',   label: 'Em Revisão',   color: '#F5A314', bg: 'rgba(245,163,20,0.12)'  },
-  { key: 'done',        label: 'Concluído',     color: '#10b981', bg: 'rgba(16,185,129,0.12)'  },
-]
 const PRIO_COLORS: Record<string, string> = {
   urgent: '#ef4444', high: '#F5A314', medium: '#8b5cf6', low: '#64748b',
 }
@@ -363,11 +362,20 @@ function SpaceNav({
 export default function TarefasPage() {
   const { token, user, currentWorkspace } = useAuthStore()
   const role = currentWorkspace?.role ?? ''
-  const canEdit = ['admin', 'manager'].includes(role)
+  const canManage = ['admin', 'manager'].includes(role)
+  const canEdit = ['admin', 'manager', 'attendant'].includes(role)
 
   const [spaces, setSpaces]   = useState<TaskSpace[]>([])
   const [members, setMembers] = useState<Member[]>([])
   const [tasks, setTasks]     = useState<TaskSummary[]>([])
+  const [statuses, setStatuses] = useState<TaskStatusOption[]>([])
+  const [clients, setClients] = useState<TaskClientOption[]>([])
+  const [savedViews, setSavedViews] = useState<TaskSavedViewOption[]>([])
+  const [activeCustomFields, setActiveCustomFields] = useState<CustomField[]>([])
+  const [filters, setFilters] = useState<TaskFilters>(EMPTY_FILTERS)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const defaultViewApplied = useRef(false)
   const [loading, setLoading] = useState(true)
   const [activeListId, setActiveListId] = useState<string | null>(null)
   const [activeSpaceId, setActiveSpaceId] = useState<string | null>(null)
@@ -387,23 +395,57 @@ export default function TarefasPage() {
     setSpaces(d.spaces ?? [])
   }, [token, h])
 
+  const loadConfiguration = useCallback(async () => {
+    if (!token) return
+    const [statusRes, optionRes, viewRes] = await Promise.all([
+      fetch('/api/tasks/statuses', { headers: h() }),
+      fetch('/api/tasks/options', { headers: h() }),
+      fetch('/api/tasks/views', { headers: h() }),
+    ])
+    const [statusData, optionData, viewData] = await Promise.all([statusRes.json(), optionRes.json(), viewRes.json()])
+    setStatuses(statusData.statuses ?? [])
+    setClients(optionData.clients ?? [])
+    setSavedViews(viewData.views ?? [])
+    const defaultView = (viewData.views ?? []).find((item: TaskSavedViewOption) => item.isDefault)
+    if (defaultView && !defaultViewApplied.current) {
+      defaultViewApplied.current = true
+      setFilters({ ...EMPTY_FILTERS, ...(defaultView.filters ?? {}) })
+      setView(defaultView.viewType)
+    }
+  }, [token, h])
+
   const loadTasks = useCallback(async () => {
     if (!token) return
     setLoading(true)
     try {
-      const params = activeListId ? `?projectId=${activeListId}` : activeSpaceId ? `?spaceId=${activeSpaceId}` : ''
+      const params = new URLSearchParams()
+      if (activeListId) params.set('projectId', activeListId)
+      else if (activeSpaceId) params.set('spaceId', activeSpaceId)
+      if (filters.search) params.set('search', filters.search)
+      if (filters.statuses.length) params.set('statuses', filters.statuses.join(','))
+      if (filters.priorities.length) params.set('priorities', filters.priorities.join(','))
+      if (filters.assigneeId) params.set('assigneeId', filters.assigneeId)
+      if (filters.clientId) params.set('clientId', filters.clientId)
+      if (filters.serviceKey) params.set('serviceKey', filters.serviceKey)
+      if (filters.dueFrom) params.set('dueFrom', filters.dueFrom)
+      if (filters.dueTo) params.set('dueTo', `${filters.dueTo}T23:59:59.999`)
       const [tRes, mRes] = await Promise.all([
-        fetch(`/api/tasks${params}`, { headers: h() }),
+        fetch(`/api/tasks?${params}`, { headers: h() }),
         fetch('/api/workspace/members', { headers: h() }),
       ])
       const [td, md] = await Promise.all([tRes.json(), mRes.json()])
       setTasks(td.tasks ?? [])
       setMembers(md.members ?? [])
     } finally { setLoading(false) }
-  }, [token, activeListId, activeSpaceId, h])
+  }, [token, activeListId, activeSpaceId, filters, h])
 
   useEffect(() => { loadSpaces() }, [loadSpaces])
+  useEffect(() => { loadConfiguration() }, [loadConfiguration])
   useEffect(() => { loadTasks() }, [loadTasks])
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('taskId')
+    if (id) setSelectedTaskId(id)
+  }, [])
 
   function handleSelectList(listId: string | null, spaceId: string | null) {
     setActiveListId(listId)
@@ -446,8 +488,27 @@ export default function TarefasPage() {
   const activeFolder = activeSpace?.folders.find(f => f.lists.some(l => l.id === activeListId))
   const activeList = activeSpace ? [...activeSpace.lists, ...activeSpace.folders.flatMap(f => f.lists)].find(l => l.id === activeListId) : null
 
+  useEffect(() => {
+    if (!token) return
+    const params = new URLSearchParams()
+    if (activeSpace?.id) params.set('spaceId', activeSpace.id)
+    if (activeFolder?.id) params.set('folderId', activeFolder.id)
+    if (activeListId) params.set('projectId', activeListId)
+    fetch(`/api/tasks/custom-fields?${params}`, { headers: h() }).then(res => res.json()).then(data => setActiveCustomFields(data.fields ?? []))
+  }, [token, activeSpace?.id, activeFolder?.id, activeListId, h])
+
   const filteredTasks = tasks
   const byStatus = (status: string) => filteredTasks.filter(t => t.status === status)
+  const selectedClient = clients.find(client => client.id === filters.clientId)
+  const activeFilterCount = Object.entries(filters).filter(([, value]) => Array.isArray(value) ? value.length : Boolean(value)).length
+
+  async function saveCurrentView() {
+    const name = prompt('Nome desta visualização')?.trim()
+    if (!name) return
+    const isDefault = confirm('Usar esta visualização como padrão ao abrir Tarefas?')
+    const res = await fetch('/api/tasks/views', { method: 'POST', headers: h(), body: JSON.stringify({ name, viewType: view, filters, scopeType: activeListId ? 'list' : activeSpaceId ? 'space' : 'workspace', scopeId: activeListId ?? activeSpaceId, isDefault }) })
+    if (res.ok) { toast.success('Visualização salva'); loadConfiguration() }
+  }
 
   if (!canEdit) {
     return (
@@ -472,7 +533,7 @@ export default function TarefasPage() {
           onSelectList={handleSelectList}
           onRefresh={() => { loadSpaces(); loadTasks() }}
           token={token ?? ''}
-          canEdit={canEdit}
+          canEdit={canManage}
         />
 
         {/* Main */}
@@ -496,6 +557,27 @@ export default function TarefasPage() {
             </div>
 
             <div className="flex items-center gap-2">
+              <div className="relative hidden xl:block">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600" />
+                <input value={filters.search} onChange={e => setFilters(prev => ({ ...prev, search: e.target.value }))}
+                  placeholder="Buscar tarefas..." className="w-44 pl-8 pr-2 py-1.5 rounded-md bg-[#0f0b1e] border border-[#2d2550] text-xs text-slate-300 outline-none focus:border-purple-600" />
+              </div>
+              {savedViews.length > 0 && (
+                <select aria-label="Visualizações salvas" onChange={e => {
+                  const saved = savedViews.find(item => item.id === e.target.value)
+                  if (saved) { setFilters({ ...EMPTY_FILTERS, ...(saved.filters ?? {}) }); setView(saved.viewType) }
+                }} className="max-w-36 bg-[#0f0b1e] border border-[#2d2550] rounded-md px-2 py-1.5 text-xs text-slate-400 outline-none">
+                  <option value="">Visualizações</option>
+                  {savedViews.map(saved => <option key={saved.id} value={saved.id}>{saved.name}</option>)}
+                </select>
+              )}
+              <button onClick={() => setFiltersOpen(open => !open)} title="Filtrar tarefas"
+                className="relative w-8 h-8 rounded-md border border-[#2d2550] flex items-center justify-center text-slate-500 hover:text-white">
+                <Filter className="w-3.5 h-3.5" />
+                {activeFilterCount > 0 && <span className="absolute -right-1 -top-1 min-w-4 h-4 px-1 rounded-full bg-purple-700 text-[9px] text-white flex items-center justify-center">{activeFilterCount}</span>}
+              </button>
+              <button onClick={saveCurrentView} title="Salvar visualização" className="w-8 h-8 rounded-md border border-[#2d2550] flex items-center justify-center text-slate-500 hover:text-white"><BookmarkPlus className="w-3.5 h-3.5" /></button>
+              {canManage && <button onClick={() => setSettingsOpen(true)} title="Configurar status e campos" className="w-8 h-8 rounded-md border border-[#2d2550] flex items-center justify-center text-slate-500 hover:text-white"><Settings2 className="w-3.5 h-3.5" /></button>}
               {/* View toggle */}
               <div className="flex items-center rounded-lg border border-[#2d2550] overflow-hidden">
                 {(['board', 'list'] as const).map(v => (
@@ -519,6 +601,27 @@ export default function TarefasPage() {
             </div>
           </div>
 
+          {filtersOpen && (
+            <div className="px-5 py-3 border-b border-[#1e1635] bg-[#0a0818] grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2 flex-shrink-0">
+              <input value={filters.search} onChange={e => setFilters(prev => ({ ...prev, search: e.target.value }))} placeholder="Nome ou descrição" className="xl:hidden bg-[#0f0b1e] border border-[#2d2550] rounded-md px-2.5 py-2 text-xs text-slate-300 outline-none" />
+              <select value={filters.assigneeId} onChange={e => setFilters(prev => ({ ...prev, assigneeId: e.target.value }))} className="bg-[#0f0b1e] border border-[#2d2550] rounded-md px-2 py-2 text-xs text-slate-400 outline-none">
+                <option value="">Todos responsáveis</option>{members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}
+              </select>
+              <select value={filters.clientId} onChange={e => setFilters(prev => ({ ...prev, clientId: e.target.value, serviceKey: '' }))} className="bg-[#0f0b1e] border border-[#2d2550] rounded-md px-2 py-2 text-xs text-slate-400 outline-none">
+                <option value="">Todos clientes</option>{clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
+              </select>
+              <select value={filters.serviceKey} onChange={e => setFilters(prev => ({ ...prev, serviceKey: e.target.value }))} disabled={!selectedClient} className="bg-[#0f0b1e] border border-[#2d2550] rounded-md px-2 py-2 text-xs text-slate-400 outline-none disabled:opacity-50">
+                <option value="">Todos serviços</option>{selectedClient?.services.map(service => <option key={service.key} value={service.key}>{service.label}</option>)}
+              </select>
+              <select value={filters.priorities[0] ?? ''} onChange={e => setFilters(prev => ({ ...prev, priorities: e.target.value ? [e.target.value] : [] }))} className="bg-[#0f0b1e] border border-[#2d2550] rounded-md px-2 py-2 text-xs text-slate-400 outline-none">
+                <option value="">Todas prioridades</option>{Object.entries(PRIO_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+              </select>
+              <input type="date" title="Prazo inicial" value={filters.dueFrom} onChange={e => setFilters(prev => ({ ...prev, dueFrom: e.target.value }))} className="bg-[#0f0b1e] border border-[#2d2550] rounded-md px-2 py-2 text-xs text-slate-400 outline-none" style={{ colorScheme: 'dark' }} />
+              <input type="date" title="Prazo final" value={filters.dueTo} onChange={e => setFilters(prev => ({ ...prev, dueTo: e.target.value }))} className="bg-[#0f0b1e] border border-[#2d2550] rounded-md px-2 py-2 text-xs text-slate-400 outline-none" style={{ colorScheme: 'dark' }} />
+              <button onClick={() => setFilters(EMPTY_FILTERS)} className="px-3 py-2 text-xs text-slate-500 hover:text-white border border-[#2d2550] rounded-md">Limpar</button>
+            </div>
+          )}
+
           {/* Content */}
           {loading ? (
             <div className="flex-1 flex items-center justify-center">
@@ -530,13 +633,13 @@ export default function TarefasPage() {
               {view === 'board' && (
                 <div className="flex-1 overflow-x-auto overflow-y-hidden p-5">
                   <div className="flex gap-4 h-full" style={{ minWidth: 'max-content' }}>
-                    {STATUSES.map(st => {
+                    {statuses.map(st => {
                       const isOver = dragOverStatus === st.key
                       return (
                         <div
                           key={st.key}
                           className="w-[300px] flex flex-col flex-shrink-0 rounded-xl transition-all duration-150"
-                          style={isOver ? { background: st.bg, outline: `2px dashed ${st.color}60`, outlineOffset: '-2px' } : {}}
+                          style={isOver ? { background: statusBg(st.color), outline: `2px dashed ${st.color}60`, outlineOffset: '-2px' } : {}}
                           onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverStatus !== st.key) setDragOverStatus(st.key) }}
                           onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverStatus(null) }}
                           onDrop={(e) => {
@@ -550,7 +653,7 @@ export default function TarefasPage() {
                           <div className="flex items-center justify-between mb-3 px-1">
                             <div className="flex items-center gap-2">
                               <span className="w-2.5 h-2.5 rounded-full" style={{ background: st.color }} />
-                              <span className="text-xs font-semibold text-slate-300">{st.label}</span>
+                              <span className="text-xs font-semibold text-slate-300">{st.name}</span>
                               <span className="text-[10px] text-slate-600 bg-[#0f0b1e] px-1.5 py-0.5 rounded-full">{byStatus(st.key).length}</span>
                             </div>
                             {canEdit && (
@@ -574,7 +677,7 @@ export default function TarefasPage() {
                             {byStatus(st.key).length === 0 && (
                               <div
                                 className="h-20 rounded-xl border border-dashed flex items-center justify-center transition-all"
-                                style={{ borderColor: isOver ? st.color : '#1e1635', background: isOver ? st.bg : 'transparent' }}
+                                style={{ borderColor: isOver ? st.color : '#1e1635', background: isOver ? statusBg(st.color) : 'transparent' }}
                               >
                                 {!isOver && canEdit && (
                                   <button onClick={() => { setCreateStatus(st.key); setCreateOpen(true) }}
@@ -600,17 +703,17 @@ export default function TarefasPage() {
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="border-b border-[#1e1635]">
-                          {['Tarefa','Status','Prioridade','Responsável','Início','Prazo','Lista'].map(col => (
+                          {['Tarefa','Status','Prioridade','Responsáveis','Cliente','Serviço','Início','Prazo','Lista', ...activeCustomFields.map(field => field.name)].map(col => (
                             <th key={col} className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider px-4 py-3">{col}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#1e1635]">
                         {filteredTasks.length === 0 && (
-                          <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-600 text-sm">Nenhuma tarefa ainda. Crie a primeira!</td></tr>
+                          <tr><td colSpan={9 + activeCustomFields.length} className="px-4 py-8 text-center text-slate-600 text-sm">Nenhuma tarefa ainda. Crie a primeira!</td></tr>
                         )}
                         {filteredTasks.map(task => {
-                          const st = STATUSES.find(s => s.key === task.status) ?? STATUSES[0]
+                          const st = statuses.find(s => s.key === task.status) ?? { key: task.status, name: task.status, color: '#64748b' }
                           const due = fmtDate(task.dueDate)
                           const start = fmtDate(task.startDate)
                           return (
@@ -628,14 +731,16 @@ export default function TarefasPage() {
                               </td>
                               <td className="px-4 py-2.5">
                                 <span className="text-[10px] px-2 py-1 rounded-lg font-medium"
-                                  style={{ background: st.bg, color: st.color }}>{st.label}</span>
+                                  style={{ background: statusBg(st.color), color: st.color }}>{st.name}</span>
                               </td>
                               <td className="px-4 py-2.5">
                                 <span className="text-[10px] font-medium" style={{ color: PRIO_COLORS[task.priority] }}>
                                   {PRIO_LABELS[task.priority]}
                                 </span>
                               </td>
-                              <td className="px-4 py-2.5 text-slate-400">{task.assigneeName ?? '—'}</td>
+                              <td className="px-4 py-2.5 text-slate-400">{task.assignees?.map(item => item.userName).join(', ') || task.assigneeName || '—'}</td>
+                              <td className="px-4 py-2.5 text-slate-400">{clients.find(client => client.id === task.clientWorkspaceId)?.name ?? '—'}</td>
+                              <td className="px-4 py-2.5 text-slate-400">{clients.flatMap(client => client.services).find(service => service.key === task.serviceKey)?.label ?? '—'}</td>
                               <td className="px-4 py-2.5">{start ? <span style={{ color: start.color }}>{start.label}</span> : <span className="text-slate-700">—</span>}</td>
                               <td className="px-4 py-2.5">{due ? <span style={{ color: due.color }}>{due.label}</span> : <span className="text-slate-700">—</span>}</td>
                               <td className="px-4 py-2.5">
@@ -646,6 +751,11 @@ export default function TarefasPage() {
                                   </span>
                                 ) : <span className="text-slate-700">—</span>}
                               </td>
+                              {activeCustomFields.map(field => {
+                                const value = task.customFieldValues?.find(item => item.customFieldId === field.id)?.value
+                                const display = field.type === 'client' ? clients.find(client => client.id === value)?.name : value
+                                return <td key={field.id} className="px-4 py-2.5 text-slate-400 max-w-40 truncate">{display || '—'}</td>
+                              })}
                             </tr>
                           )
                         })}
@@ -665,8 +775,11 @@ export default function TarefasPage() {
           taskId={selectedTaskId}
           spaces={spaces}
           members={members}
+          statuses={statuses}
+          clients={clients}
           token={token ?? ''}
           userName={user?.name ?? 'Usuário'}
+          canManage={canManage}
           onUpdated={handleTaskUpdated}
           onDeleted={handleTaskDeleted}
           onClose={() => setSelectedTaskId(null)}
@@ -678,12 +791,27 @@ export default function TarefasPage() {
         <CreateTaskModal
           spaces={spaces}
           members={members}
+          statuses={statuses}
+          clients={clients}
           initialStatus={createStatus}
           initialProjectId={activeListId ?? ''}
           token={token ?? ''}
           userName={user?.name ?? 'Usuário'}
           onCreated={handleTaskCreated}
           onClose={() => setCreateOpen(false)}
+        />
+      )}
+
+      {settingsOpen && (
+        <TaskSettingsModal
+          statuses={statuses}
+          spaces={spaces}
+          activeSpaceId={activeSpace?.id ?? null}
+          activeFolderId={activeFolder?.id ?? null}
+          activeProjectId={activeListId}
+          token={token ?? ''}
+          onChanged={() => { loadConfiguration(); loadSpaces() }}
+          onClose={() => setSettingsOpen(false)}
         />
       )}
     </div>

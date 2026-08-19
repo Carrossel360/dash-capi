@@ -1,14 +1,9 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { X, Plus, Trash2, Send, ChevronDown, Calendar, Flag, User, Loader2, MessageSquare } from 'lucide-react'
+import { X, Plus, Trash2, Send, ChevronDown, Flag, User, Loader2, Paperclip, Play, Square, Link2, CheckSquare, Activity, Clock3, Building2, FileText, Download } from 'lucide-react'
 import type { TaskSpace, Member, CustomField } from './CreateTaskModal'
-
-const STATUSES = [
-  { key: 'todo',        label: 'A Fazer',      color: '#64748b', bg: 'rgba(100,116,139,0.15)' },
-  { key: 'in_progress', label: 'Em Progresso', color: '#2575fc', bg: 'rgba(37,117,252,0.15)'  },
-  { key: 'in_review',   label: 'Em Revisão',   color: '#F5A314', bg: 'rgba(245,163,20,0.15)'  },
-  { key: 'done',        label: 'Concluído',     color: '#10b981', bg: 'rgba(16,185,129,0.15)'  },
-]
+import type { TaskClientOption, TaskStatusOption } from './task-types'
+import { statusBg } from './task-types'
 const PRIORITIES = [
   { key: 'urgent', label: 'Urgente', color: '#ef4444' },
   { key: 'high',   label: 'Alta',    color: '#F5A314' },
@@ -16,18 +11,28 @@ const PRIORITIES = [
   { key: 'low',    label: 'Baixa',   color: '#64748b' },
 ]
 
-interface Comment { id: string; userId: string; userName: string; content: string; createdAt: string }
+interface Attachment { id: string; name: string; url: string; mimeType: string; size?: number | null }
+interface Comment { id: string; userId: string; userName: string; content: string; createdAt: string; mentionUserIds?: string[]; attachments?: Attachment[] }
 interface Subtask  { id: string; title: string; status: string; _count?: { subtasks: number } }
 interface CFValue  { customFieldId: string; value: string | null; field: CustomField }
+interface Assignee { userId: string; userName: string }
+interface ChecklistItem { id: string; text: string; done: boolean }
+interface Relation { id: string; type: string; targetTask?: { id: string; title: string; status: string }; sourceTask?: { id: string; title: string; status: string } }
+interface ActivityRow { id: string; userName: string; action: string; metadata?: { fields?: string[] }; createdAt: string }
+interface TimeEntry { id: string; userId: string; startedAt: string; endedAt: string | null; durationSec: number | null }
 
 interface FullTask {
   id: string; title: string; description: string | null
   status: string; priority: string
   assigneeId: string | null; assigneeName: string | null
   startDate: string | null; dueDate: string | null
+  estimatedMinutes: number | null; timeSpentMinutes: number
+  clientWorkspaceId: string | null; serviceKey: string | null
   projectId: string | null; taskTags: string[]
   project: { id: string; name: string; color: string; spaceId: string | null } | null
-  subtasks: Subtask[]; comments: Comment[]; customFieldValues: CFValue[]
+  subtasks: Subtask[]; comments: Comment[]; customFieldValues: CFValue[]; assignees: Assignee[]
+  attachments: Attachment[]; checklistItems: ChecklistItem[]
+  sourceRelations: Relation[]; targetRelations: Relation[]; activities: ActivityRow[]; timeEntries: TimeEntry[]
   createdByName: string | null; createdAt: string
 }
 
@@ -41,11 +46,11 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
 }
 
 export default function TaskPanel({
-  taskId, spaces, members, token, userName,
+  taskId, spaces, members, statuses, clients, token, userName, canManage,
   onUpdated, onDeleted, onClose,
 }: {
-  taskId: string; spaces: TaskSpace[]; members: Member[]
-  token: string; userName: string
+  taskId: string; spaces: TaskSpace[]; members: Member[]; statuses: TaskStatusOption[]; clients: TaskClientOption[]
+  token: string; userName: string; canManage: boolean
   onUpdated: (id: string, data: Partial<FullTask>) => void
   onDeleted: (id: string) => void
   onClose: () => void
@@ -58,7 +63,15 @@ export default function TaskPanel({
   const [commentText, setCommentText] = useState('')
   const [sendingComment, setSendingComment] = useState(false)
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'details' | 'comments'>('details')
+  const [activeTab, setActiveTab] = useState<'details' | 'comments' | 'activity'>('details')
+  const [customFields, setCustomFields] = useState<CustomField[]>([])
+  const [checklistText, setChecklistText] = useState('')
+  const [relationQuery, setRelationQuery] = useState('')
+  const [relationResults, setRelationResults] = useState<{ id: string; title: string; status: string }[]>([])
+  const [taskOptions, setTaskOptions] = useState<{ id: string; title: string }[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [panelWidth, setPanelWidth] = useState(620)
+  const fileRef = useRef<HTMLInputElement>(null)
   const h = useCallback(() => ({ Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }), [token])
 
   const load = useCallback(async () => {
@@ -66,11 +79,36 @@ export default function TaskPanel({
     try {
       const res = await fetch(`/api/tasks/${taskId}`, { headers: h() })
       const d = await res.json()
-      if (d.task) { setTask(d.task); setTitleVal(d.task.title) }
+      if (d.task) {
+        setTask(d.task); setTitleVal(d.task.title)
+        const params = new URLSearchParams()
+        if (d.task.project?.spaceId) params.set('spaceId', d.task.project.spaceId)
+        if (d.task.project?.folderId) params.set('folderId', d.task.project.folderId)
+        if (d.task.projectId) params.set('projectId', d.task.projectId)
+        const fields = await fetch(`/api/tasks/custom-fields?${params}`, { headers: h() }).then(result => result.json())
+        setCustomFields(fields.fields ?? [])
+        const relatedOptions = await fetch(`/api/tasks/search?exclude=${taskId}`, { headers: h() }).then(result => result.json())
+        setTaskOptions(relatedOptions.tasks ?? [])
+      }
     } finally { setLoading(false) }
   }, [taskId, h])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    const saved = Number(localStorage.getItem('task-panel-width'))
+    if (saved) setPanelWidth(saved)
+  }, [])
+
+  function startResize(event: React.MouseEvent) {
+    event.preventDefault()
+    function move(moveEvent: MouseEvent) {
+      const width = Math.min(900, Math.max(440, window.innerWidth - moveEvent.clientX))
+      setPanelWidth(width)
+      localStorage.setItem('task-panel-width', String(width))
+    }
+    function stop() { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', stop) }
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', stop)
+  }
 
   async function patch(data: Record<string, unknown>) {
     if (!task) return
@@ -124,8 +162,9 @@ export default function TaskPanel({
     if (!commentText.trim() || !task) return
     setSendingComment(true)
     try {
+      const mentionUserIds = members.filter(member => commentText.toLowerCase().includes(`@${member.name.toLowerCase()}`)).map(member => member.id)
       const res = await fetch(`/api/tasks/${task.id}/comments`, {
-        method: 'POST', headers: h(), body: JSON.stringify({ content: commentText.trim(), userName }),
+        method: 'POST', headers: h(), body: JSON.stringify({ content: commentText.trim(), userName, mentionUserIds }),
       })
       const d = await res.json()
       if (d.comment) { setTask(prev => prev ? { ...prev, comments: [...prev.comments, d.comment] } : prev); setCommentText('') }
@@ -140,20 +179,66 @@ export default function TaskPanel({
     onClose()
   }
 
-  // Get custom fields for the task's space
-  const taskSpace = spaces.find(s => s.id === task?.project?.spaceId || s.lists.some(l => l.id === task?.projectId) || s.folders.some(f => f.lists.some(l => l.id === task?.projectId)))
-  const customFields: CustomField[] = taskSpace?.customFields ?? []
-
-  const statusMeta = STATUSES.find(s => s.key === (task?.status ?? 'todo')) ?? STATUSES[0]
+  const statusMeta = statuses.find(s => s.key === (task?.status ?? 'todo')) ?? statuses[0] ?? { key: 'todo', name: 'A Fazer', color: '#64748b' }
   const prioMeta   = PRIORITIES.find(p => p.key === (task?.priority ?? 'medium')) ?? PRIORITIES[2]
 
   const completedSubs = task?.subtasks.filter(s => s.status === 'done').length ?? 0
   const totalSubs = task?.subtasks.length ?? 0
+  const selectedClient = clients.find(client => client.id === task?.clientWorkspaceId)
+  const runningTime = task?.timeEntries.find(entry => !entry.endedAt)
+
+  async function addChecklist() {
+    if (!task || !checklistText.trim()) return
+    const res = await fetch(`/api/tasks/${task.id}/checklist`, { method: 'POST', headers: h(), body: JSON.stringify({ text: checklistText }) })
+    const data = await res.json()
+    if (data.item) { setTask(prev => prev ? { ...prev, checklistItems: [...prev.checklistItems, data.item] } : prev); setChecklistText('') }
+  }
+
+  async function toggleChecklist(item: ChecklistItem) {
+    const res = await fetch(`/api/tasks/${taskId}/checklist`, { method: 'PATCH', headers: h(), body: JSON.stringify({ itemId: item.id, done: !item.done }) })
+    const data = await res.json()
+    if (data.item) setTask(prev => prev ? { ...prev, checklistItems: prev.checklistItems.map(row => row.id === item.id ? data.item : row) } : prev)
+  }
+
+  async function removeChecklist(itemId: string) {
+    await fetch(`/api/tasks/${taskId}/checklist?itemId=${itemId}`, { method: 'DELETE', headers: h() })
+    setTask(prev => prev ? { ...prev, checklistItems: prev.checklistItems.filter(item => item.id !== itemId) } : prev)
+  }
+
+  async function trackTime(action: 'start' | 'stop') {
+    const res = await fetch(`/api/tasks/${taskId}/time`, { method: 'POST', headers: h(), body: JSON.stringify({ action }) })
+    if (res.ok) load()
+  }
+
+  async function searchRelations(value: string) {
+    setRelationQuery(value)
+    if (value.trim().length < 2) return setRelationResults([])
+    const data = await fetch(`/api/tasks/search?q=${encodeURIComponent(value)}&exclude=${taskId}`, { headers: h() }).then(res => res.json())
+    setRelationResults(data.tasks ?? [])
+  }
+
+  async function addRelation(targetTaskId: string) {
+    await fetch(`/api/tasks/${taskId}/relations`, { method: 'POST', headers: h(), body: JSON.stringify({ targetTaskId, type: 'related' }) })
+    setRelationQuery(''); setRelationResults([]); load()
+  }
+
+  async function uploadFiles(files: FileList | null) {
+    if (!files?.length) return
+    setUploading(true)
+    try {
+      for (const file of Array.from(files)) {
+        const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file) })
+        await fetch(`/api/tasks/${taskId}/attachments`, { method: 'POST', headers: h(), body: JSON.stringify({ dataUrl, name: file.name, mimeType: file.type, size: file.size }) })
+      }
+      load()
+    } finally { setUploading(false); if (fileRef.current) fileRef.current.value = '' }
+  }
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end theme-locked-modal" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="h-full w-full max-w-[520px] border-l border-[#2d2550] flex flex-col overflow-hidden shadow-2xl animate-[slideInRight_0.2s_ease]"
-        style={{ background: '#080612' }}>
+      <div className="h-full w-full border-l border-[#2d2550] flex flex-col overflow-hidden shadow-2xl animate-[slideInRight_0.2s_ease] relative"
+        style={{ background: '#080612', maxWidth: panelWidth }}>
+        <div onMouseDown={startResize} title="Arrastar para ajustar largura" className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-purple-600/60 z-50" />
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1e1635] flex-shrink-0">
@@ -164,10 +249,10 @@ export default function TaskPanel({
             </div>
           )}
           <div className="flex items-center gap-1.5 ml-auto">
-            <button onClick={handleDelete}
+            {canManage && <button onClick={handleDelete}
               className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-all">
               <Trash2 className="w-3.5 h-3.5" />
-            </button>
+            </button>}
             <button onClick={onClose}
               className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 hover:text-white hover:bg-white/5 transition-all">
               <X className="w-4 h-4" />
@@ -207,14 +292,14 @@ export default function TaskPanel({
 
             {/* Tabs */}
             <div className="flex border-b border-[#1e1635] flex-shrink-0 px-5">
-              {(['details', 'comments'] as const).map(tab => (
+              {(['details', 'comments', 'activity'] as const).map(tab => (
                 <button key={tab} onClick={() => setActiveTab(tab)}
                   className="py-2.5 px-1 mr-5 text-xs font-medium border-b-2 transition-all"
                   style={{
                     borderColor: activeTab === tab ? '#8b5cf6' : 'transparent',
                     color: activeTab === tab ? '#8b5cf6' : '#64748b',
                   }}>
-                  {tab === 'details' ? 'Detalhes' : `Comentários${task.comments.length > 0 ? ` (${task.comments.length})` : ''}`}
+                  {tab === 'details' ? 'Detalhes' : tab === 'comments' ? `Comentários${task.comments.length > 0 ? ` (${task.comments.length})` : ''}` : 'Atividade'}
                 </button>
               ))}
             </div>
@@ -228,18 +313,18 @@ export default function TaskPanel({
                     <div className="relative">
                       <button onClick={() => setOpenDropdown(d => d === 'status' ? null : 'status')}
                         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all"
-                        style={{ background: statusMeta.bg, color: statusMeta.color }}>
+                        style={{ background: statusBg(statusMeta.color), color: statusMeta.color }}>
                         <span className="w-2 h-2 rounded-full" style={{ background: statusMeta.color }} />
-                        {statusMeta.label}
+                        {statusMeta.name}
                         <ChevronDown className="w-3 h-3 opacity-60" />
                       </button>
                       {openDropdown === 'status' && (
                         <div className="absolute left-0 top-full mt-1 rounded-xl border border-[#2d2550] shadow-2xl z-50 overflow-hidden" style={{ background: '#0d0a1f' }}>
-                          {STATUSES.map(s => (
+                          {statuses.map(s => (
                             <button key={s.key} onClick={() => { patch({ status: s.key }); setOpenDropdown(null) }}
                               className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-white/5"
                               style={{ color: s.color }}>
-                              <span className="w-2 h-2 rounded-full" style={{ background: s.color }} />{s.label}
+                              <span className="w-2 h-2 rounded-full" style={{ background: s.color }} />{s.name}
                               {s.key === task.status && <span className="ml-auto opacity-60">✓</span>}
                             </button>
                           ))}
@@ -277,14 +362,8 @@ export default function TaskPanel({
                     <div className="relative">
                       <button onClick={() => setOpenDropdown(d => d === 'assignee' ? null : 'assignee')}
                         className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-slate-400 hover:bg-white/5 transition-all">
-                        {task.assigneeName ? (
-                          <>
-                            <span className="w-5 h-5 rounded-full text-[9px] flex items-center justify-center text-white font-bold"
-                              style={{ background: 'linear-gradient(135deg,#6a11cb,#2575fc)' }}>
-                              {task.assigneeName[0].toUpperCase()}
-                            </span>
-                            {task.assigneeName}
-                          </>
+                        {task.assignees.length ? (
+                          <span>{task.assignees.length === 1 ? task.assignees[0].userName : `${task.assignees.length} responsáveis`}</span>
                         ) : (
                           <><User className="w-3.5 h-3.5" />Sem responsável</>
                         )}
@@ -292,17 +371,20 @@ export default function TaskPanel({
                       </button>
                       {openDropdown === 'assignee' && (
                         <div className="absolute left-0 top-full mt-1 rounded-xl border border-[#2d2550] shadow-2xl z-50 overflow-hidden min-w-[180px]" style={{ background: '#0d0a1f' }}>
-                          <button onClick={() => { patch({ assigneeId: null, assigneeName: null }); setOpenDropdown(null) }}
+                          <button onClick={() => patch({ assigneeIds: [] })}
                             className="w-full px-3 py-2 text-xs text-slate-500 hover:bg-white/5 text-left">Sem responsável</button>
                           {members.map(m => (
-                            <button key={m.id} onClick={() => { patch({ assigneeId: m.id, assigneeName: m.name }); setOpenDropdown(null) }}
+                            <button key={m.id} onClick={() => {
+                              const selected = task.assignees.map(item => item.userId)
+                              patch({ assigneeIds: selected.includes(m.id) ? selected.filter(id => id !== m.id) : [...selected, m.id] }).then(load)
+                            }}
                               className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-300 hover:bg-white/5">
                               <span className="w-5 h-5 rounded-full text-[9px] flex items-center justify-center text-white font-bold"
                                 style={{ background: 'linear-gradient(135deg,#6a11cb,#2575fc)' }}>
                                 {m.name[0].toUpperCase()}
                               </span>
                               {m.name}
-                              {m.id === task.assigneeId && <span className="ml-auto opacity-60 text-[10px]">✓</span>}
+                              {task.assignees.some(item => item.userId === m.id) && <span className="ml-auto opacity-60 text-[10px]">✓</span>}
                             </button>
                           ))}
                         </div>
@@ -328,6 +410,34 @@ export default function TaskPanel({
                       }} />
                   </FieldRow>
 
+                  <FieldRow label="Cliente">
+                    <select value={task.clientWorkspaceId ?? ''} onChange={e => patch({ clientWorkspaceId: e.target.value || null, serviceKey: null }).then(load)}
+                      className="w-full text-xs bg-[#0f0b1e] border border-[#1e1635] rounded-md px-2 py-1.5 text-slate-300 outline-none">
+                      <option value="">Sem cliente vinculado</option>
+                      {clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
+                    </select>
+                  </FieldRow>
+
+                  <FieldRow label="Serviço">
+                    <select value={task.serviceKey ?? ''} onChange={e => patch({ serviceKey: e.target.value || null })} disabled={!selectedClient}
+                      className="w-full text-xs bg-[#0f0b1e] border border-[#1e1635] rounded-md px-2 py-1.5 text-slate-300 outline-none disabled:opacity-50">
+                      <option value="">Sem serviço vinculado</option>
+                      {selectedClient?.services.map(service => <option key={service.key} value={service.key}>{service.label}</option>)}
+                    </select>
+                  </FieldRow>
+
+                  <FieldRow label="Tempo">
+                    <div className="flex items-center gap-2">
+                      <input type="number" min="0" step="15" value={task.estimatedMinutes ?? ''} onChange={e => patch({ estimatedMinutes: e.target.value ? Number(e.target.value) : null })}
+                        className="w-20 text-xs bg-[#0f0b1e] border border-[#1e1635] rounded-md px-2 py-1.5 text-slate-300 outline-none" placeholder="Estimativa" />
+                      <span className="text-[10px] text-slate-500">min estimados · {task.timeSpentMinutes} min registrados</span>
+                      <button onClick={() => trackTime(runningTime ? 'stop' : 'start')} title={runningTime ? 'Parar cronômetro' : 'Iniciar cronômetro'}
+                        className={`ml-auto w-7 h-7 rounded-md flex items-center justify-center ${runningTime ? 'text-red-400 bg-red-500/10' : 'text-emerald-400 bg-emerald-500/10'}`}>
+                        {runningTime ? <Square className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                      </button>
+                    </div>
+                  </FieldRow>
+
                   {/* Description */}
                   <div className="pt-3">
                     <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Descrição</p>
@@ -337,6 +447,38 @@ export default function TaskPanel({
                       defaultValue={task.description ?? ''}
                       onBlur={e => { if (e.target.value !== (task.description ?? '')) patch({ description: e.target.value }) }}
                     />
+                  </div>
+
+                  <div className="pt-3">
+                    <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Checklist</p>
+                    <div className="space-y-1.5 mb-2">
+                      {task.checklistItems.map(item => <div key={item.id} className="flex items-center gap-2 group">
+                        <button onClick={() => toggleChecklist(item)} className={`w-4 h-4 border rounded flex items-center justify-center ${item.done ? 'bg-emerald-500 border-emerald-500' : 'border-[#2d2550]'}`}>{item.done && <CheckSquare className="w-3 h-3 text-white" />}</button>
+                        <span className={`text-xs flex-1 ${item.done ? 'line-through text-slate-600' : 'text-slate-300'}`}>{item.text}</span>
+                        <button onClick={() => removeChecklist(item.id)} className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400"><X className="w-3 h-3" /></button>
+                      </div>)}
+                    </div>
+                    <div className="flex gap-2"><input value={checklistText} onChange={e => setChecklistText(e.target.value)} onKeyDown={e => e.key === 'Enter' && addChecklist()} placeholder="Adicionar item..." className="flex-1 text-xs bg-[#0f0b1e] border border-[#1e1635] rounded-md px-2.5 py-1.5 text-slate-300 outline-none" /><button onClick={addChecklist} className="w-8 rounded-md bg-purple-700 text-white flex items-center justify-center"><Plus className="w-3.5 h-3.5" /></button></div>
+                  </div>
+
+                  <div className="pt-3">
+                    <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Relações e dependências</p>
+                    <div className="space-y-1 mb-2">{[...task.sourceRelations, ...task.targetRelations].map(relation => {
+                      const linked = relation.targetTask ?? relation.sourceTask
+                      return linked ? <div key={relation.id} className="flex items-center gap-2 text-xs text-slate-400"><Link2 className="w-3 h-3" /><span className="truncate">{linked.title}</span><span className="ml-auto text-[10px] text-slate-600">{relation.type}</span></div> : null
+                    })}</div>
+                    <div className="relative"><input value={relationQuery} onChange={e => searchRelations(e.target.value)} placeholder="Buscar tarefa para relacionar..." className="w-full text-xs bg-[#0f0b1e] border border-[#1e1635] rounded-md px-2.5 py-1.5 text-slate-300 outline-none" />
+                      {relationResults.length > 0 && <div className="absolute z-30 top-full left-0 right-0 mt-1 max-h-36 overflow-y-auto border border-[#2d2550] rounded-md bg-[#0d0a1f]">{relationResults.map(result => <button key={result.id} onClick={() => addRelation(result.id)} className="w-full px-3 py-2 text-left text-xs text-slate-300 hover:bg-white/5">{result.title}</button>)}</div>}
+                    </div>
+                  </div>
+
+                  <div className="pt-3">
+                    <div className="flex items-center justify-between mb-2"><p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Anexos</p><button onClick={() => fileRef.current?.click()} disabled={uploading} className="flex items-center gap-1 text-[10px] text-purple-400"><Paperclip className="w-3 h-3" />Anexar</button></div>
+                    <input ref={fileRef} type="file" multiple className="hidden" onChange={e => uploadFiles(e.target.files)} />
+                    <div className="grid grid-cols-2 gap-2">{task.attachments.map(file => <a key={file.id} href={file.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 min-w-0 border border-[#1e1635] rounded-md p-2 hover:border-purple-600/50">
+                      {file.mimeType.startsWith('image/') ? <img src={file.url} alt="" className="w-8 h-8 rounded object-cover" /> : file.mimeType.startsWith('audio/') ? <audio src={file.url} controls className="w-24 h-7" /> : <FileText className="w-5 h-5 text-slate-500" />}
+                      {!file.mimeType.startsWith('audio/') && <span className="text-[10px] text-slate-400 truncate">{file.name}</span>}
+                    </a>)}</div>
                   </div>
 
                   {/* Subtasks */}
@@ -393,7 +535,19 @@ export default function TaskPanel({
                           return (
                             <div key={field.id} className="flex items-center gap-3">
                               <span className="text-[10px] text-slate-500 w-28 flex-shrink-0">{field.name}</span>
-                              {field.type === 'select' ? (
+                              {field.type === 'task' ? (
+                                <select value={val} onChange={e => patchCF(field.id, e.target.value)} className="flex-1 text-xs bg-[#0f0b1e] border border-[#1e1635] rounded px-2 py-1 text-slate-300 outline-none">
+                                  <option value="">—</option>{taskOptions.map(option => <option key={option.id} value={option.id}>{option.title}</option>)}
+                                </select>
+                              ) : field.type === 'client' ? (
+                                <select value={val} onChange={e => patchCF(field.id, e.target.value)} className="flex-1 text-xs bg-[#0f0b1e] border border-[#1e1635] rounded px-2 py-1 text-slate-300 outline-none">
+                                  <option value="">—</option>{clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
+                                </select>
+                              ) : field.type === 'service' ? (
+                                <select value={val} onChange={e => patchCF(field.id, e.target.value)} className="flex-1 text-xs bg-[#0f0b1e] border border-[#1e1635] rounded px-2 py-1 text-slate-300 outline-none">
+                                  <option value="">—</option>{Array.from(new Map(clients.flatMap(client => client.services).map(service => [service.key, service])).values()).map(service => <option key={service.key} value={service.key}>{service.label}</option>)}
+                                </select>
+                              ) : field.type === 'select' ? (
                                 <select value={val}
                                   onChange={e => patchCF(field.id, e.target.value)}
                                   className="flex-1 text-xs bg-[#0f0b1e] border border-[#1e1635] rounded px-2 py-1 text-slate-300 outline-none">
@@ -452,19 +606,28 @@ export default function TaskPanel({
                     ))}
                   </div>
                   <div className="flex gap-2 sticky bottom-0 pb-1">
-                    <input
-                      className="flex-1 text-xs text-slate-300 bg-[#0f0b1e] border border-[#2d2550] rounded-xl px-3 py-2 outline-none focus:border-[#6a11cb] transition-colors placeholder-slate-600"
-                      placeholder="Comentar..."
-                      value={commentText}
-                      onChange={e => setCommentText(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') sendComment() }}
-                    />
+                    <div className="flex-1">
+                      <input className="w-full text-xs text-slate-300 bg-[#0f0b1e] border border-[#2d2550] rounded-md px-3 py-2 outline-none focus:border-[#6a11cb] transition-colors placeholder-slate-600"
+                        placeholder="Comentar e usar @Nome para mencionar..." value={commentText}
+                        onChange={e => setCommentText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') sendComment() }} />
+                      {commentText.endsWith('@') && <div className="flex gap-1 mt-1 overflow-x-auto">{members.slice(0, 8).map(member => <button key={member.id} onClick={() => setCommentText(`${commentText}${member.name} `)} className="whitespace-nowrap px-2 py-1 rounded bg-white/5 text-[10px] text-slate-400">{member.name}</button>)}</div>}
+                    </div>
                     <button onClick={sendComment} disabled={sendingComment || !commentText.trim()}
                       className="px-3 rounded-xl flex items-center gap-1 text-xs font-medium disabled:opacity-50 transition-all"
                       style={{ background: 'linear-gradient(135deg,#6a11cb,#2575fc)', color: 'white' }}>
                       {sendingComment ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                     </button>
                   </div>
+                </div>
+              )}
+
+              {activeTab === 'activity' && (
+                <div className="px-5 py-4 space-y-3">
+                  {task.activities.length === 0 && <p className="text-xs text-slate-600 text-center py-6">Nenhuma atividade registrada.</p>}
+                  {task.activities.map(row => <div key={row.id} className="flex gap-2.5">
+                    <div className="w-6 h-6 rounded-full bg-purple-700/30 flex items-center justify-center"><Activity className="w-3 h-3 text-purple-400" /></div>
+                    <div><p className="text-xs text-slate-300"><strong>{row.userName}</strong> {row.action === 'created' ? 'criou a tarefa' : row.action === 'commented' ? 'comentou' : 'atualizou a tarefa'}</p><p className="text-[10px] text-slate-600 mt-0.5">{new Date(row.createdAt).toLocaleString('pt-BR')}</p></div>
+                  </div>)}
                 </div>
               )}
             </div>
