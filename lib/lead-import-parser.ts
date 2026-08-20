@@ -25,6 +25,17 @@ export function normalizeImportedPhone(raw: string, currency: string): string | 
 
 export function parseImportedDate(value?: string): Date | undefined {
   if (!value?.trim()) return undefined
+  const dateOnly = value.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (dateOnly) {
+    const [, day, month, year] = dateOnly
+    const parsed = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), 12))
+    if (
+      parsed.getUTCFullYear() === Number(year)
+      && parsed.getUTCMonth() === Number(month) - 1
+      && parsed.getUTCDate() === Number(day)
+    ) return parsed
+    return undefined
+  }
   const monthAliases: Record<string, string> = {
     'jan.': 'Jan', 'fev.': 'Feb', 'mar.': 'Mar', 'abr.': 'Apr', 'mai.': 'May', 'jun.': 'Jun',
     'jul.': 'Jul', 'ago.': 'Aug', 'set.': 'Sep', 'out.': 'Oct', 'nov.': 'Nov', 'dez.': 'Dec',
@@ -131,6 +142,10 @@ function looksLikePhone(value: string): boolean {
   return value.replace(/\D/g, '').length >= 7
 }
 
+function isGoogleLocalServicesPlaceholderPhone(value: string): boolean {
+  return value.replace(/\D/g, '') === '1111111111'
+}
+
 function importKeyPart(value: string): string {
   return normalizeLabel(value).replace(/\|/g, '/')
 }
@@ -140,8 +155,9 @@ export function parseImportText(text: string): ParsedImportRow[] {
   if (table.length === 0) return []
 
   const headers = table[0].map(normalizeLabel)
-  const isAdaptedGoogleLocalServices = ['nome', 'telefone', 'tipo de servicos', 'lead type', 'lead received', 'origem']
-    .every(header => headers.includes(header))
+  const adaptedServiceHeader = headers.includes('tipo de servico') || headers.includes('tipo de servicos')
+  const isAdaptedGoogleLocalServices = adaptedServiceHeader
+    && ['nome', 'telefone', 'lead type', 'lead received', 'origem'].every(header => headers.includes(header))
   const isGoogleLocalServices = ['customer', 'job type', 'lead type', 'lead received']
     .every(header => headers.includes(header))
   const knownHeaders: string[] = Object.values(HEADER_ALIASES).flat()
@@ -151,7 +167,7 @@ export function parseImportText(text: string): ParsedImportRow[] {
   if (isAdaptedGoogleLocalServices) {
     const nameIdx = headers.indexOf('nome')
     const phoneIdx = headers.indexOf('telefone')
-    const serviceTypeIdx = headers.indexOf('tipo de servicos')
+    const serviceTypeIdx = headers.findIndex(header => header === 'tipo de servico' || header === 'tipo de servicos')
     const locationIdx = headers.indexOf('location')
     const leadTypeIdx = headers.indexOf('lead type')
     const chargeStatusIdx = headers.indexOf('charge status')
@@ -164,7 +180,9 @@ export function parseImportText(text: string): ParsedImportRow[] {
     return dataRows.map(row => {
       const name = valueAt(row, nameIdx) || 'Sem nome'
       const rawPhone = valueAt(row, phoneIdx)
-      const phone = looksLikePhone(rawPhone) ? rawPhone : ''
+      const phone = looksLikePhone(rawPhone) && !isGoogleLocalServicesPlaceholderPhone(rawPhone)
+        ? rawPhone
+        : ''
       const serviceType = valueAt(row, serviceTypeIdx)
       const location = valueAt(row, locationIdx)
       const leadType = valueAt(row, leadTypeIdx)
