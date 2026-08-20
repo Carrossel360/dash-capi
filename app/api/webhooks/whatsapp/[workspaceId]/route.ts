@@ -3,6 +3,19 @@ import { prisma } from '@/lib/db'
 import { enqueueCapiEvent } from '@/lib/capi-events'
 import { findDuplicateLead, getLeadIdentity, isLeadIdentityConflict } from '@/lib/lead-identity'
 
+function messageText(message: any): string {
+  if (typeof message?.text?.body === 'string') return message.text.body.trim()
+  if (typeof message?.button?.text === 'string') return message.button.text.trim()
+  if (typeof message?.interactive?.button_reply?.title === 'string') return message.interactive.button_reply.title.trim()
+  if (typeof message?.interactive?.list_reply?.title === 'string') return message.interactive.list_reply.title.trim()
+  return ''
+}
+
+function canFillSource(source: string | null | undefined): boolean {
+  const normalized = source?.trim().toLowerCase()
+  return !normalized || normalized === 'indefinido' || normalized === 'whatsapp'
+}
+
 // GET — Meta webhook verification (step 1 of setup)
 export async function GET(
   req: NextRequest,
@@ -62,19 +75,58 @@ export async function POST(
         const referral = message.referral ?? {}
         const ctwaClid = (referral.ctwa_clid as string) || null
         const metaAdId = (referral.source_id as string) || null
-        const adMeta   = metaAdId ? { metaAdId, adHeadline: referral.headline ?? null } : undefined
+        const hasMetaReferral = Boolean(metaAdId || ctwaClid)
+        const text = messageText(message)
+        const adMeta = hasMetaReferral ? {
+          metaAdId,
+          adHeadline: referral.headline ?? null,
+          adBody: referral.body ?? null,
+          adSourceUrl: referral.source_url ?? null,
+          adSourceType: referral.source_type ?? null,
+        } : undefined
         const contact  = contacts.find((c: any) => c.wa_id === waId)
         const name     = contact?.profile?.name || waId
         const phone    = '+' + waId
 
+        let source = 'Indefinido'
+        let utmSource: string | null = null
+        const utmMedium = 'WhatsApp'
+        let utmCampaign: string | null = null
+
+        if (hasMetaReferral) {
+          source = 'Meta'
+          utmSource = 'meta'
+          utmCampaign = (referral.headline as string) || metaAdId
+        } else if (text) {
+          const phrases = await prisma.trackingPhrase.findMany({ where: { workspaceId } })
+          const normalizedText = text.toLocaleLowerCase('pt-BR')
+          const matched = phrases.find(item => {
+            const phrase = item.phrase.trim().toLocaleLowerCase('pt-BR')
+            return phrase.length > 0 && normalizedText.includes(phrase)
+          })
+          if (matched) {
+            source = matched.source
+            utmCampaign = matched.campaign ?? null
+          }
+        }
+
         const existingLead = await findDuplicateLead(workspaceId, phone, null)
 
         if (existingLead) {
-          // New ad click on existing contact — update attribution data
-          if ((ctwaClid && !existingLead.ctwaClid) || (metaAdId && !existingLead.metaAdId)) {
+          // Enriquece contatos antigos sem substituir uma origem válida que a equipe já definiu.
+          const fillSource = source !== 'Indefinido' && canFillSource(existingLead.source)
+          if (
+            fillSource
+            || (ctwaClid && !existingLead.ctwaClid)
+            || (metaAdId && !existingLead.metaAdId)
+          ) {
             await prisma.lead.update({
               where: { id: existingLead.id },
               data: {
+                ...(fillSource && { source }),
+                ...(fillSource && utmSource && !existingLead.utmSource && { utmSource }),
+                ...(fillSource && !existingLead.utmMedium && { utmMedium }),
+                ...(fillSource && utmCampaign && !existingLead.utmCampaign && { utmCampaign }),
                 ...(ctwaClid && !existingLead.ctwaClid && { ctwaClid }),
                 ...(metaAdId && !existingLead.metaAdId && { metaAdId }),
                 ...(adMeta && { metadata: adMeta }),
@@ -100,10 +152,14 @@ export async function POST(
               name,
               phone,
               ...identity,
-              source: 'whatsapp',
+              source,
+              utmSource,
+              utmMedium,
+              utmCampaign,
               ctwaClid,
               metaAdId,
               metadata: adMeta ?? undefined,
+              notes: text ? `Primeira mensagem: ${text}` : undefined,
               pipelineStageId: firstStage.id,
             },
           })
