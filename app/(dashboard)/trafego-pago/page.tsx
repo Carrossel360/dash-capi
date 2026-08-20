@@ -18,6 +18,10 @@ import LeadReconciliationPanel from '@/components/LeadReconciliationPanel'
 import { useAuthStore } from '@/lib/store/auth'
 
 const currencySymbol = (c?: string) => c === 'USD' ? 'US$' : 'R$'
+const formatGoogleConversions = (value: number) => value.toLocaleString('pt-BR', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+})
 
 /* ── KPI definitions (labels / icons / formatters — values come from API) ── */
 const metaKpiDefs = [
@@ -46,7 +50,7 @@ const googleKpiDefs = [
   { key: 'clicks',                  label: 'Cliques',             fmt: (v: number) => v.toLocaleString('pt-BR'),                                                                     icon: MousePointer, color: '#2575fc' },
   { key: 'ctr',                     label: 'CTR',                 fmt: (v: number) => `${v.toFixed(2)}%`,                                                                            icon: TrendingUp,   color: '#10b981' },
   { key: 'cpc',                     label: 'CPC Médio',           fmt: (v: number, c: string) => `${currencySymbol(c)} ${v.toFixed(2)}`,                                             icon: DollarSign,   color: '#F5A314' },
-  { key: 'conversions',             label: 'Conversões',          fmt: (v: number) => v.toLocaleString('pt-BR'),                                                                     icon: ShoppingCart, color: '#10b981' },
+  { key: 'conversions',             label: 'Conversões',          fmt: formatGoogleConversions,                                                                                     icon: ShoppingCart, color: '#10b981' },
   { key: 'cost_per_conversion',     label: 'Custo/Conversão',     fmt: (v: number, c: string) => `${currencySymbol(c)} ${v.toFixed(2)}`,                                             icon: DollarSign,   color: '#F5A314' },
   { key: 'roas',                    label: 'ROAS',                fmt: (v: number) => `${v.toFixed(1)}x`,                                                                            icon: TrendingUp,   color: '#10b981' },
   { key: 'quality_score',           label: 'Índice de Qualidade', fmt: (v: number) => `${v}/10`,                                                                                     icon: TrendingUp,   color: '#8b5cf6' },
@@ -117,7 +121,7 @@ function ResultsBreakdown({ fromForm, fromConversas }: { fromForm: number | null
 // de só duas fontes fixas.
 function MetricBreakdown({ items }: { items: { label: string; count: number }[] }) {
   if (!items.length) return null
-  return <p className="text-[10px] text-slate-600 mt-0.5">{items.map(i => `${i.count} ${i.label}`).join(' + ')}</p>
+  return <p className="text-[10px] text-slate-600 mt-0.5">{items.map(i => `${formatGoogleConversions(i.count)} ${i.label}`).join(' + ')}</p>
 }
 
 // CTR do KPI é ponderado pelo total de impressões do período — uma campanha de alto volume
@@ -185,7 +189,7 @@ function KeywordListCard({ title, loading, rows }: {
                   <p className="text-[9px] text-slate-600">Cliques</p>
                 </div>
                 <div>
-                  <p className={`text-xs ${r.conversions > 0 ? 'text-emerald-400 font-medium' : 'text-slate-500'}`}>{r.conversions}</p>
+                  <p className={`text-xs ${r.conversions > 0 ? 'text-emerald-400 font-medium' : 'text-slate-500'}`}>{formatGoogleConversions(r.conversions)}</p>
                   <p className="text-[9px] text-slate-600">Conv.</p>
                 </div>
               </div>
