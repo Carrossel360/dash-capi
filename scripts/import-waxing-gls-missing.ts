@@ -1,9 +1,9 @@
 /**
- * Audita e corrige a importacao GLS da Waxing sem excluir leads.
+ * Audita e corrige uma importacao GLS sem excluir leads.
  *
  * Uso:
  *   npx tsx scripts/import-waxing-gls-missing.ts --file=/caminho/leads.csv
- *   npx tsx scripts/import-waxing-gls-missing.ts --file=/caminho/leads.csv --apply
+ *   npx tsx scripts/import-waxing-gls-missing.ts --workspace=uuid --file=/caminho/leads.csv --apply
  */
 
 import fs from 'fs'
@@ -18,7 +18,9 @@ for (const file of ['.env', '.env.local']) {
   }
 }
 
-const WORKSPACE_ID = '298b48d4-6559-4682-a5a3-9b52c5d76966'
+const DEFAULT_WORKSPACE_ID = '298b48d4-6559-4682-a5a3-9b52c5d76966'
+const workspaceId = process.argv.find(arg => arg.startsWith('--workspace='))?.slice('--workspace='.length)
+  || DEFAULT_WORKSPACE_ID
 const filePath = process.argv.find(arg => arg.startsWith('--file='))?.slice('--file='.length)
 const apply = process.argv.includes('--apply')
 
@@ -40,6 +42,19 @@ function normalizedPhone(value: string | null | undefined, currency: string): st
   return digits.length >= 7 ? digits : null
 }
 
+function isPlaceholderPhone(value: string | null | undefined): boolean {
+  return /^1{9}\d$/.test(value?.replace(/\D/g, '') ?? '')
+}
+
+function normalizedName(value: string | null | undefined): string {
+  return (value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+}
+
+function isGenericName(value: string | null | undefined): boolean {
+  const name = normalizedName(value)
+  return !name || name === 'sem nome' || name === 'customer'
+}
+
 function jsonObject(value: Prisma.JsonValue | null): Prisma.JsonObject {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Prisma.JsonObject : {}
 }
@@ -47,10 +62,10 @@ function jsonObject(value: Prisma.JsonValue | null): Prisma.JsonObject {
 async function main() {
   const rows = parseImportText(fs.readFileSync(csvFilePath, 'utf8'))
   const [workspace, stages, existingLeads] = await Promise.all([
-    prisma.workspace.findUniqueOrThrow({ where: { id: WORKSPACE_ID }, select: { name: true, currency: true } }),
-    prisma.pipelineStage.findMany({ where: { workspaceId: WORKSPACE_ID }, orderBy: { order: 'asc' } }),
+    prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { name: true, currency: true } }),
+    prisma.pipelineStage.findMany({ where: { workspaceId }, orderBy: { order: 'asc' } }),
     prisma.lead.findMany({
-      where: { workspaceId: WORKSPACE_ID },
+      where: { workspaceId },
       select: {
         id: true, name: true, phone: true, normalizedPhone: true, email: true,
         pipelineStageId: true, metadata: true, createdAt: true,
@@ -92,10 +107,9 @@ async function main() {
     else missing.push(row)
   }
 
-  const placeholderLead = existingLeads.find(lead => normalizedPhone(lead.phone, workspace.currency) === '1111111111')
-  const placeholderTargetIndex = placeholderLead
-    ? missing.findIndex(row => !row.phone && Boolean(row.importKey))
-    : -1
+  const placeholderLeads = existingLeads.filter(lead => isPlaceholderPhone(lead.phone) || isPlaceholderPhone(lead.normalizedPhone))
+  const missingWithoutPhone = missing.filter(row => !row.phone && Boolean(row.importKey))
+  const placeholdersToRepair = Math.min(placeholderLeads.length, missingWithoutPhone.length)
 
   console.log(JSON.stringify({
     workspace: workspace.name,
@@ -103,15 +117,26 @@ async function main() {
     uniqueLogicalLeads: uniqueRows.size,
     repeatedInFile,
     matchedExisting: matched.length,
-    placeholderToRepair: placeholderTargetIndex >= 0 ? 1 : 0,
-    toCreate: missing.length - (placeholderTargetIndex >= 0 ? 1 : 0),
+    placeholderLeadsFound: placeholderLeads.length,
+    placeholdersToRepair,
+    toCreate: missing.length - placeholdersToRepair,
     apply,
   }, null, 2))
 
   if (!apply) return
 
-  if (placeholderTargetIndex >= 0 && placeholderLead) {
-    const row = missing.splice(placeholderTargetIndex, 1)[0]
+  let repairedPlaceholders = 0
+  for (const placeholderLead of placeholderLeads) {
+    const noPhoneIndexes = missing
+      .map((row, index) => ({ row, index }))
+      .filter(candidate => !candidate.row.phone && Boolean(candidate.row.importKey))
+    if (noPhoneIndexes.length === 0) break
+
+    const sameName = !isGenericName(placeholderLead.name)
+      ? noPhoneIndexes.find(candidate => normalizedName(candidate.row.name) === normalizedName(placeholderLead.name))
+      : undefined
+    const targetIndex = sameName?.index ?? noPhoneIndexes[0].index
+    const row = missing.splice(targetIndex, 1)[0]
     const stage = stagesByName.get(normalizeStageName(row.status ?? '')) ?? stages[0]
     const receivedAt = parseImportedDate(row.receivedAt)
     await prisma.lead.update({
@@ -128,6 +153,7 @@ async function main() {
         metadata: { ...jsonObject(placeholderLead.metadata), ...(row.metadata ?? {}), importKey: row.importKey } as Prisma.InputJsonValue,
       },
     })
+    repairedPlaceholders++
   }
 
   let created = 0
@@ -137,7 +163,7 @@ async function main() {
     const receivedAt = parseImportedDate(row.receivedAt)
     await prisma.lead.create({
       data: {
-        workspaceId: WORKSPACE_ID,
+        workspaceId,
         name: row.name || 'Sem nome',
         phone,
         normalizedPhone: normalizedPhone(phone, workspace.currency),
@@ -154,7 +180,7 @@ async function main() {
     created++
   }
 
-  console.log(JSON.stringify({ repairedPlaceholder: placeholderTargetIndex >= 0 ? 1 : 0, created }, null, 2))
+  console.log(JSON.stringify({ repairedPlaceholders, created }, null, 2))
 }
 
 main()

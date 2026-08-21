@@ -143,7 +143,7 @@ function looksLikePhone(value: string): boolean {
 }
 
 function isGoogleLocalServicesPlaceholderPhone(value: string): boolean {
-  return value.replace(/\D/g, '') === '1111111111'
+  return /^1{9}\d$/.test(value.replace(/\D/g, ''))
 }
 
 function importKeyPart(value: string): string {
@@ -156,8 +156,10 @@ export function parseImportText(text: string): ParsedImportRow[] {
 
   const headers = table[0].map(normalizeLabel)
   const adaptedServiceHeader = headers.includes('tipo de servico') || headers.includes('tipo de servicos')
+  const adaptedDateHeader = headers.includes('lead received') || headers.includes('last activity')
   const isAdaptedGoogleLocalServices = adaptedServiceHeader
-    && ['nome', 'telefone', 'lead type', 'lead received', 'origem'].every(header => headers.includes(header))
+    && adaptedDateHeader
+    && ['nome', 'telefone', 'lead type', 'origem'].every(header => headers.includes(header))
   const isGoogleLocalServices = ['customer', 'job type', 'lead type', 'lead received']
     .every(header => headers.includes(header))
   const knownHeaders: string[] = Object.values(HEADER_ALIASES).flat()
@@ -171,7 +173,9 @@ export function parseImportText(text: string): ParsedImportRow[] {
     const locationIdx = headers.indexOf('location')
     const leadTypeIdx = headers.indexOf('lead type')
     const chargeStatusIdx = headers.indexOf('charge status')
-    const receivedAtIdx = headers.indexOf('lead received')
+    const receivedAtIdx = headers.includes('lead received')
+      ? headers.indexOf('lead received')
+      : headers.indexOf('last activity')
     const statusIdx = findColumn(headers, HEADER_ALIASES.status)
     const sourceIdx = findColumn(headers, HEADER_ALIASES.source)
     const notesIdx = findColumn(headers, HEADER_ALIASES.notes)
