@@ -3,8 +3,11 @@ import { prisma } from '@/lib/db'
 import { syncWorkspace, syncWorkspaceLocalServices, syncWorkspaceMetaLeads } from '@/lib/ads-sync'
 import { syncWorkspaceInstagram } from '@/lib/social-sync'
 
-// Disparado pelo cron-job.org a cada 1h. Header CRON_SECRET protege contra chamadas externas
-// (mesmo padrão de app/api/cron/capi/route.ts).
+export const dynamic = 'force-dynamic'
+export const maxDuration = 300
+
+// Disparado a cada hora pelo Vercel Cron. O cron-job.org pode continuar como redundância;
+// todos os dados são gravados por upsert e a importação de leads tem deduplicação.
 export async function GET(req: NextRequest) {
   const cronSecret = req.headers.get('authorization')
   if (process.env.CRON_SECRET && cronSecret !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -20,6 +23,12 @@ export async function GET(req: NextRequest) {
   let socialOk = 0, socialSkip = 0, socialErr = 0
   let localOk = 0, localSkip = 0, localErr = 0
   let leadsOk = 0, leadsSkip = 0, leadsErr = 0
+  const errors: Array<{ workspaceId: string; workspace: string; integration: string; error: string }> = []
+
+  function recordError(workspace: { id: string; name: string }, integration: string, error: string) {
+    errors.push({ workspaceId: workspace.id, workspace: workspace.name, integration, error })
+    console.error(`[cron/ads-sync] ${integration}`, workspace.id, error)
+  }
 
   // Workspaces em paralelo (eram sequenciais) — com 20+ clientes, um por vez estourava
   // o timeout de 30s do cron-job.org (chegava a ~37s). Cada syncWorkspace/syncWorkspaceInstagram
@@ -32,21 +41,21 @@ export async function GET(req: NextRequest) {
     const leads = await syncWorkspaceMetaLeads(workspace)
     if (leads === 'ok') leadsOk++
     else if (leads === 'skip') leadsSkip++
-    else { leadsErr++; console.error('[cron/ads-sync] leads', workspace.id, leads.error) }
+    else { leadsErr++; recordError(workspace, 'leads', leads.error) }
 
     const { meta, google } = await syncWorkspace(workspace)
     if (meta === 'ok') metaOk++
     else if (meta === 'skip') metaSkip++
-    else { metaErr++; console.error('[cron/ads-sync] meta', workspace.id, meta.error) }
+    else { metaErr++; recordError(workspace, 'meta', meta.error) }
 
     if (google === 'ok') googleOk++
     else if (google === 'skip') googleSkip++
-    else { googleErr++; console.error('[cron/ads-sync] google', workspace.id, google.error) }
+    else { googleErr++; recordError(workspace, 'google', google.error) }
 
     const social = await syncWorkspaceInstagram(workspace)
     if (social === 'ok') socialOk++
     else if (social === 'skip') socialSkip++
-    else { socialErr++; console.error('[cron/ads-sync] social', workspace.id, social.error) }
+    else { socialErr++; recordError(workspace, 'social', social.error) }
 
     // Só roda de verdade pra workspaces com localServicesAccountId configurado (skip imediato
     // pros demais) — cada chamada pode levar até ~25s (limitação da própria API, ver comentário
@@ -54,7 +63,7 @@ export async function GET(req: NextRequest) {
     const local = await syncWorkspaceLocalServices(workspace)
     if (local === 'ok') localOk++
     else if (local === 'skip') localSkip++
-    else { localErr++; console.error('[cron/ads-sync] local', workspace.id, local.error) }
+    else { localErr++; recordError(workspace, 'local', local.error) }
 
   }))
 
@@ -65,5 +74,6 @@ export async function GET(req: NextRequest) {
     social: { ok: socialOk, skip: socialSkip, error: socialErr },
     local: { ok: localOk, skip: localSkip, error: localErr },
     leads: { ok: leadsOk, skip: leadsSkip, error: leadsErr },
+    errors,
   })
 }
